@@ -30,12 +30,13 @@ const AnimatedFace: React.FC<AnimatedFaceProps> = ({ emotion }) => {
   // Emotion configurations
   const emotionConfigs = {
     neutral: {
-      eyeShape: { width: 0.8, height: 0.3, curve: 0.1 },
-      eyebrowShape: { left: { x: -0.3, y: -0.2, angle: 0 }, right: { x: 0.3, y: -0.2, angle: 0 } },
-      mouthShape: { width: 0.4, height: 0.1, curve: 0.05 },
-      eyeColor: '#4A90E2',
-      mouthColor: '#8B4513',
-      eyebrowColor: '#8B4513'
+      eyeShape: { width: 1.0, height: 1.0, curve: 0 },
+      eyebrowShape: { left: { x: -0.3, y: -0.3, angle: 0 }, right: { x: 0.3, y: -0.3, angle: 0 } },
+      mouthShape: { width: 0, height: 0, curve: 0 }, // No mouth for neutral
+      eyeColor: '#00FFFF',
+      mouthColor: 'transparent',
+      eyebrowColor: '#00FFFF',
+      glowColor: '#00FFFF'
     },
     happy: {
       eyeShape: { width: 0.6, height: 0.2, curve: 0.3 },
@@ -87,9 +88,105 @@ const AnimatedFace: React.FC<AnimatedFaceProps> = ({ emotion }) => {
     }
   };
 
-  // Helper functions
-  const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
-  const easeInOutCubic = (t: number) => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+  // LIVING neon face with breathing and pulsing glow
+  const drawLivingNeonFace = useCallback((ctx: CanvasRenderingContext2D, time: number, breathingPhase: number) => {
+    // Enhanced breathing animation - more noticeable but still subtle
+    const breathingScale = 1 + Math.sin(breathingPhase) * 0.03; // 3% size variation
+    
+    // Multi-layered glow pulsing - different frequencies for depth
+    const primaryGlow = 0.85 + Math.sin(time * 1.2) * 0.15; // Main glow pulse
+    const secondaryGlow = 0.9 + Math.sin(time * 2.1) * 0.1; // Secondary shimmer
+    const tertiaryGlow = 0.95 + Math.sin(time * 3.3) * 0.05; // Fine shimmer
+    
+    ctx.save();
+    
+    // Apply breathing scale to the entire face
+    ctx.scale(breathingScale, breathingScale);
+    
+    // Set up the exact proportions from the image
+    const faceWidth = 200;
+    const faceHeight = 150;
+    const cornerRadius = 20; // Rounded corners as shown in image
+    
+    // Draw the rounded rectangular head outline with enhanced breathing glow
+    ctx.shadowBlur = 30 + Math.sin(time * 1.5) * 10; // Pulsing shadow blur
+    ctx.shadowColor = '#00FFFF';
+    ctx.strokeStyle = '#00FFFF';
+    ctx.lineWidth = 6;
+    ctx.globalAlpha = primaryGlow;
+    
+    ctx.beginPath();
+    ctx.roundRect(-faceWidth/2, -faceHeight/2, faceWidth, faceHeight, cornerRadius);
+    ctx.stroke();
+    
+    // Draw left eye with living glow effects
+    ctx.save();
+    ctx.translate(-50, -10);
+    
+    // Single outer ring with pulsing glow
+    ctx.shadowBlur = 30 + Math.sin(time * 1.8) * 8;
+    ctx.shadowColor = '#00FFFF';
+    ctx.strokeStyle = '#00FFFF';
+    ctx.lineWidth = 5;
+    ctx.globalAlpha = secondaryGlow;
+    ctx.beginPath();
+    ctx.arc(0, 0, 25, 0, Math.PI * 2);
+    ctx.stroke();
+    
+    // Dark pupil center
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = '#000000';
+    ctx.globalAlpha = 1;
+    ctx.beginPath();
+    ctx.arc(0, 0, 15, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Bright center dot with enhanced glisten
+    ctx.fillStyle = '#00FFFF';
+    ctx.shadowBlur = 8 + Math.sin(time * 2.5) * 4; // Pulsing glisten
+    ctx.shadowColor = '#00FFFF';
+    ctx.globalAlpha = tertiaryGlow;
+    ctx.beginPath();
+    ctx.arc(-3, -3, 4, 0, Math.PI * 2);
+    ctx.fill();
+    
+    ctx.restore();
+    
+    // Draw right eye with living glow effects
+    ctx.save();
+    ctx.translate(50, -10);
+    
+    // Single outer ring with pulsing glow
+    ctx.shadowBlur = 30 + Math.sin(time * 1.8) * 8;
+    ctx.shadowColor = '#00FFFF';
+    ctx.strokeStyle = '#00FFFF';
+    ctx.lineWidth = 5;
+    ctx.globalAlpha = secondaryGlow;
+    ctx.beginPath();
+    ctx.arc(0, 0, 25, 0, Math.PI * 2);
+    ctx.stroke();
+    
+    // Dark pupil center
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = '#000000';
+    ctx.globalAlpha = 1;
+    ctx.beginPath();
+    ctx.arc(0, 0, 15, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Bright center dot with enhanced glisten
+    ctx.fillStyle = '#00FFFF';
+    ctx.shadowBlur = 8 + Math.sin(time * 2.5) * 4; // Pulsing glisten
+    ctx.shadowColor = '#00FFFF';
+    ctx.globalAlpha = tertiaryGlow;
+    ctx.beginPath();
+    ctx.arc(-3, -3, 4, 0, Math.PI * 2);
+    ctx.fill();
+    
+    ctx.restore();
+    
+    ctx.restore();
+  }, []);
 
   const drawEye = useCallback((ctx: CanvasRenderingContext2D, x: number, y: number, config: any, blink: number) => {
     const eyeWidth = config.width * 60 * (1 - blink * 0.8);
@@ -149,6 +246,8 @@ const AnimatedFace: React.FC<AnimatedFaceProps> = ({ emotion }) => {
   }, []);
 
   const drawMouth = useCallback((ctx: CanvasRenderingContext2D, x: number, y: number, config: any) => {
+    if (config.width === 0 || config.height === 0) return; // No mouth for neutral
+    
     ctx.save();
     ctx.translate(x, y);
     
@@ -189,7 +288,7 @@ const AnimatedFace: React.FC<AnimatedFaceProps> = ({ emotion }) => {
     const state = stateRef.current;
     const time = timeRef.current;
     
-    // Update animation state
+    // Update animation state with enhanced breathing
     state.eyeBlinkTimer += 0.016;
     if (state.eyeBlinkTimer > 3 + Math.random() * 2) {
       state.eyeBlink = Math.min(state.eyeBlink + 0.1, 1);
@@ -199,11 +298,14 @@ const AnimatedFace: React.FC<AnimatedFaceProps> = ({ emotion }) => {
       }
     }
     
-    state.breathingPhase += 0.02;
-    state.microMovements.headTilt = Math.sin(time * 0.5) * 0.02;
-    state.microMovements.eyeMovement.x = Math.sin(time * 0.3) * 2;
-    state.microMovements.eyeMovement.y = Math.cos(time * 0.4) * 1;
-    state.microMovements.mouthMovement = Math.sin(time * 0.2) * 0.5;
+    // Enhanced breathing animation
+    state.breathingPhase += 0.025; // Slightly faster breathing
+    
+    // Very subtle micro-movements for life
+    state.microMovements.headTilt = Math.sin(time * 0.3) * 0.001; // Gentle sway
+    state.microMovements.eyeMovement.x = Math.sin(time * 0.2) * 0.2; // Gentle eye drift
+    state.microMovements.eyeMovement.y = Math.cos(time * 0.25) * 0.1;
+    state.microMovements.mouthMovement = Math.sin(time * 0.15) * 0.3;
     
     // Clear canvas
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -211,72 +313,78 @@ const AnimatedFace: React.FC<AnimatedFaceProps> = ({ emotion }) => {
     // Set up coordinate system
     const centerX = canvas.width / 2;
     const centerY = canvas.height / 2;
-    const scale = 1 + Math.sin(state.breathingPhase) * 0.02;
     
     ctx.save();
     ctx.translate(centerX, centerY);
-    ctx.scale(scale, scale);
     ctx.rotate(state.microMovements.headTilt);
     
-    // Face background
-    const faceGradient = ctx.createRadialGradient(0, -50, 0, 0, 0, 120);
-    faceGradient.addColorStop(0, '#FFE4B5');
-    faceGradient.addColorStop(1, '#F4A460');
-    
-    ctx.fillStyle = faceGradient;
-    ctx.beginPath();
-    ctx.ellipse(0, 0, 120, 140, 0, 0, Math.PI * 2);
-    ctx.fill();
-    
-    // Face outline
-    ctx.strokeStyle = '#D2B48C';
-    ctx.lineWidth = 3;
-    ctx.stroke();
-    
-    // Get current emotion config (with transition)
+    // Get current emotion config
     const currentConfig = emotionConfigs[emotion];
     
-    // Draw eyebrows
-    drawEyebrow(ctx, -60 + state.microMovements.eyeMovement.x, -80, {
-      ...currentConfig.eyebrowShape.left,
-      eyebrowColor: currentConfig.eyebrowColor
-    });
-    drawEyebrow(ctx, 60 + state.microMovements.eyeMovement.x, -80, {
-      ...currentConfig.eyebrowShape.right,
-      eyebrowColor: currentConfig.eyebrowColor
-    });
-    
-    // Draw eyes
-    drawEye(ctx, -60 + state.microMovements.eyeMovement.x, -40 + state.microMovements.eyeMovement.y, 
-            currentConfig, state.eyeBlink);
-    drawEye(ctx, 60 + state.microMovements.eyeMovement.x, -40 + state.microMovements.eyeMovement.y, 
-            currentConfig, state.eyeBlink);
-    
-    // Draw nose
-    ctx.fillStyle = '#D2B48C';
-    ctx.beginPath();
-    ctx.ellipse(0, -10, 8, 12, 0, 0, Math.PI * 2);
-    ctx.fill();
-    
-    // Draw mouth
-    drawMouth(ctx, 0, 40 + state.microMovements.mouthMovement, currentConfig);
-    
-    // Draw cheeks (for happy emotion)
-    if (emotion === 'happy') {
-      ctx.fillStyle = 'rgba(255, 107, 107, 0.3)';
+    if (emotion === 'neutral') {
+      // LIVING neon face with enhanced breathing and glow
+      drawLivingNeonFace(ctx, time, state.breathingPhase);
+      
+    } else {
+      // Original rendering for other emotions
+      
+      // Face background
+      const faceGradient = ctx.createRadialGradient(0, -50, 0, 0, 0, 120);
+      faceGradient.addColorStop(0, '#FFE4B5');
+      faceGradient.addColorStop(1, '#F4A460');
+      
+      ctx.fillStyle = faceGradient;
       ctx.beginPath();
-      ctx.ellipse(-80, 20, 20, 15, 0, 0, Math.PI * 2);
+      ctx.ellipse(0, 0, 120, 140, 0, 0, Math.PI * 2);
       ctx.fill();
+      
+      // Face outline
+      ctx.strokeStyle = '#D2B48C';
+      ctx.lineWidth = 3;
+      ctx.stroke();
+      
+      // Draw eyebrows
+      drawEyebrow(ctx, -60 + state.microMovements.eyeMovement.x, -80, {
+        ...currentConfig.eyebrowShape.left,
+        eyebrowColor: currentConfig.eyebrowColor
+      });
+      drawEyebrow(ctx, 60 + state.microMovements.eyeMovement.x, -80, {
+        ...currentConfig.eyebrowShape.right,
+        eyebrowColor: currentConfig.eyebrowColor
+      });
+      
+      // Draw eyes
+      drawEye(ctx, -60 + state.microMovements.eyeMovement.x, -40 + state.microMovements.eyeMovement.y, 
+              currentConfig, state.eyeBlink);
+      drawEye(ctx, 60 + state.microMovements.eyeMovement.x, -40 + state.microMovements.eyeMovement.y, 
+              currentConfig, state.eyeBlink);
+      
+      // Draw nose
+      ctx.fillStyle = '#D2B48C';
       ctx.beginPath();
-      ctx.ellipse(80, 20, 20, 15, 0, 0, Math.PI * 2);
+      ctx.ellipse(0, -10, 8, 12, 0, 0, Math.PI * 2);
       ctx.fill();
+      
+      // Draw mouth
+      drawMouth(ctx, 0, 40 + state.microMovements.mouthMovement, currentConfig);
+      
+      // Draw cheeks (for happy emotion)
+      if (emotion === 'happy') {
+        ctx.fillStyle = 'rgba(255, 107, 107, 0.3)';
+        ctx.beginPath();
+        ctx.ellipse(-80, 20, 20, 15, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.ellipse(80, 20, 20, 15, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
     }
     
     ctx.restore();
     
     timeRef.current = time + 0.016;
     animationRef.current = requestAnimationFrame(animate);
-  }, [emotion, drawEye, drawEyebrow, drawMouth]);
+  }, [emotion, drawEye, drawEyebrow, drawMouth, drawLivingNeonFace]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -301,18 +409,19 @@ const AnimatedFace: React.FC<AnimatedFaceProps> = ({ emotion }) => {
       <canvas
         ref={canvasRef}
         style={{ 
-          border: '2px solid rgba(255, 255, 255, 0.3)', 
+          border: emotion === 'neutral' ? '2px solid #00FFFF' : '2px solid rgba(255, 255, 255, 0.3)', 
           borderRadius: '15px',
-          background: 'rgba(255, 255, 255, 0.1)',
-          backdropFilter: 'blur(10px)'
+          background: emotion === 'neutral' ? 'rgba(0, 0, 0, 1)' : 'rgba(255, 255, 255, 0.1)',
+          backdropFilter: 'blur(10px)',
+          boxShadow: emotion === 'neutral' ? '0 0 40px rgba(0, 255, 255, 0.4)' : 'none'
         }}
       />
       <p style={{ 
         marginTop: '1rem', 
         fontSize: '1.2rem', 
         textTransform: 'capitalize',
-        color: '#fff',
-        textShadow: '2px 2px 4px rgba(0,0,0,0.3)'
+        color: emotion === 'neutral' ? '#00FFFF' : '#fff',
+        textShadow: emotion === 'neutral' ? '0 0 15px #00FFFF' : '2px 2px 4px rgba(0,0,0,0.3)'
       }}>
         Current Emotion: <strong>{emotion}</strong>
       </p>
