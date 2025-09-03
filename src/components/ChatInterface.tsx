@@ -24,23 +24,6 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
   const [inputText, setInputText] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
 
-  // Generate response using OpenAI API via Tauri backend
-  const generateResponse = async (userMessage: string): Promise<{ text: string; emotion: Emotion }> => {
-    try {
-      const response = await invoke<{ text: string; emotion: string }>('generate_response', {
-        userMessage: userMessage
-      });
-      
-      return {
-        text: response.text,
-        emotion: response.emotion as Emotion
-      };
-    } catch (error) {
-      console.error('Error calling OpenAI API:', error);
-      throw new Error(`Failed to generate response: ${error}`);
-    }
-  };
-
   const handleSendMessage = async () => {
     if (!inputText.trim() || isProcessing) return;
 
@@ -56,33 +39,39 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
     setIsProcessing(true);
 
     try {
-      const response = await generateResponse(inputText);
-      
+      // Call the Rust backend command
+      const rawResponse: string = await invoke('generate_response', { userMessage: userMessage.text });
+
+      // Extract emotion from the end of the response
+      const emotionMatch = rawResponse.match(/\[(happy|sad|surprised|thinking|excited|confused|neutral)\]$/i);
+      const emotion: Emotion = emotionMatch ? (emotionMatch[1].toLowerCase() as Emotion) : 'neutral';
+      const text = rawResponse.replace(/\[(happy|sad|surprised|thinking|excited|confused|neutral)\]$/i, '').trim();
+
       const botMessage: ChatMessage = {
         id: (Date.now() + 1).toString(),
-        text: response.text,
+        text: text,
         isUser: false,
-        emotion: response.emotion,
+        emotion: emotion,
         timestamp: new Date()
       };
 
       setMessages(prev => [...prev, botMessage]);
-      
+
       // Change the robot's emotion based on the response
-      onEmotionChange(response.emotion);
-      
+      onEmotionChange(emotion);
+
     } catch (error) {
       console.error('Error generating response:', error);
-      
+
       // Add error message to chat
       const errorMessage: ChatMessage = {
         id: (Date.now() + 1).toString(),
-        text: `Sorry, I encountered an error: ${error}`,
+        text: `Sorry, I encountered an error: ${error}. Please try again.`,
         isUser: false,
         emotion: 'neutral',
         timestamp: new Date()
       };
-      
+
       setMessages(prev => [...prev, errorMessage]);
     } finally {
       setIsProcessing(false);
@@ -108,14 +97,13 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
       <div className="chat-messages">
         {messages.length === 0 ? (
           <div className="empty-state">
-            <p>Start a conversation with your AI robot! 🤖</p>
-            <p>Powered by OpenAI GPT-4o Mini</p>
+            <p>Start a conversation with your robot! 🤖</p>
             <p>Try saying things like:</p>
             <ul>
-              <li>"Tell me a joke"</li>
-              <li>"How are you feeling today?"</li>
-              <li>"What's the weather like?"</li>
-              <li>"Help me with a problem"</li>
+              <li>"I'm so happy today!"</li>
+              <li>"This is really confusing"</li>
+              <li>"Wow, that's surprising!"</li>
+              <li>"I'm feeling sad"</li>
             </ul>
           </div>
         ) : (
