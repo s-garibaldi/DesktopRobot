@@ -18,7 +18,7 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
   const [realtimeUrl, setRealtimeUrl] = useState('http://localhost:3000');
   const [iframeLoaded, setIframeLoaded] = useState(false);
   const [lastEmotionChange, setLastEmotionChange] = useState<number>(0);
-  const [agentConfig, setAgentConfig] = useState('simpleHandoff'); // Back to the working simple handoff
+  const [agentConfig, setAgentConfig] = useState('simpleHandoff'); // Keep simpleHandoff as default
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
   // Check if realtime service is available
@@ -191,7 +191,7 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
         </div>
         {isListening && <div className="status-indicator listening">🎤 Listening...</div>}
         {isSpeaking && <div className="status-indicator speaking">🔊 AI Speaking...</div>}
-        {iframeLoaded && <div className="status-indicator loaded">�� Interface Loaded</div>}
+        {iframeLoaded && <div className="status-indicator loaded">📱 Interface Loaded</div>}
       </div>
 
       {error && (
@@ -228,13 +228,17 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
               value={agentConfig} 
               onChange={(e) => setAgentConfig(e.target.value)}
             >
-              <option value="simpleHandoff">🎯 General Chat & Haikus (WORKING!)</option>
+              <option value="simpleHandoff">🎯 General Chat & Haikus</option>
+              <option value="musicalCompanion">🎵 Musical Companion (NEW!)</option>
               <option value="customerServiceRetail">🏔️ Snowy Peak Boards</option>
             </select>
           </label>
           <div className="agent-description">
             {agentConfig === 'simpleHandoff' && (
-              <span>🎯 General-purpose AI that can chat about anything and write haikus - this one works perfectly!</span>
+              <span>🎯 General-purpose AI that can chat about anything and write haikus</span>
+            )}
+            {agentConfig === 'musicalCompanion' && (
+              <span>🎵 Musical AI companion for guitar chords, songwriting, and music theory!</span>
             )}
             {agentConfig === 'customerServiceRetail' && (
               <span>🏔️ Snowy Peak Boards snowboard shop assistant</span>
@@ -284,7 +288,7 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
           <li><strong>Speech-to-Speech:</strong> Full voice conversations powered by OpenAI's Realtime API</li>
           <li><strong>Official Implementation:</strong> Uses the proven OpenAI Agents SDK without modifications</li>
           <li><strong>Smart Emotion Detection:</strong> Analyzes your speech and text input to determine appropriate facial expressions</li>
-          <li><strong>General Chat & Haikus:</strong> The AI can discuss any topic and write beautiful haikus!</li>
+          <li><strong>Multiple Agent Configurations:</strong> Switch between different AI personalities and capabilities</li>
         </ul>
         
         {iframeLoaded && (
@@ -303,14 +307,16 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
             <h5>Available Agent Configurations:</h5>
             <ul>
               <li><strong>🎯 General Chat & Haikus:</strong> Can discuss any topic and write haikus - perfect for general conversation and creativity!</li>
-              <li><strong>��️ Snowy Peak Boards:</strong> Specialized for snowboard shop assistance (limited scope)</li>
+              <li><strong>🎵 Musical Companion:</strong> Guitar chord recognition, songwriting suggestions, and music theory help!</li>
+              <li><strong>🏔️ Snowy Peak Boards:</strong> Specialized for snowboard shop assistance (limited scope)</li>
             </ul>
             
-            <h5>Try These Examples:</h5>
+            <h5>Musical Companion Examples:</h5>
             <ul>
-              <li><strong>General Chat:</strong> "Tell me about artificial intelligence" or "What's your favorite color?"</li>
-              <li><strong>Haikus:</strong> "Can you write a haiku about robots?" or "I'd like a haiku about the ocean"</li>
-              <li><strong>Creative:</strong> "Write me a poem" or "Tell me a story"</li>
+              <li><strong>Chord Recognition:</strong> "What's the fingering for C major?" or "Show me Am chord"</li>
+              <li><strong>Songwriting:</strong> "I want to write a happy pop song" or "Help me with a sad folk song"</li>
+              <li><strong>Music Theory:</strong> "Explain major scales" or "What are intervals?"</li>
+              <li><strong>Chord Progressions:</strong> "What chords go well with G?" or "Give me a blues progression"</li>
             </ul>
           </div>
         )}
