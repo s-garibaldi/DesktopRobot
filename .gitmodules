@@ -1,0 +1,3 @@
+[submodule "external/realtime-agents"]
+	path = external/realtime-agents
+	url = https://github.com/openai/openai-realtime-agents.git

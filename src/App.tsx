@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import AnimatedFace from './components/AnimatedFace';
 import EmotionControls from './components/EmotionControls';
-import ChatInterface from './components/ChatInterface';
+import RealtimeBridge from './components/RealtimeBridge';
 import './App.css';
 
 export type Emotion = 'neutral' | 'happy' | 'sad' | 'surprised' | 'thinking' | 'excited' | 'confused';
@@ -23,7 +23,7 @@ function App() {
           </div>
         </div>
         <div className="right-panel">
-          <ChatInterface 
+          <RealtimeBridge 
             currentEmotion={currentEmotion}
             onEmotionChange={setCurrentEmotion}
           />
