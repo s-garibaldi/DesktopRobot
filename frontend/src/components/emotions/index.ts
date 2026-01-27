@@ -7,9 +7,10 @@ import { drawSurprised } from './surprised';
 import { drawExcited } from './excited';
 import { drawConfused } from './confused';
 import { Emotion } from '../../App';
+import { EmotionDrawFunction, easeInOut } from './types';
 
 // Map emotions to their drawing functions
-export const emotionDrawFunctions: Record<Emotion, (ctx: CanvasRenderingContext2D, time: number, breathingPhase: number) => void> = {
+export const emotionDrawFunctions: Record<Emotion, EmotionDrawFunction> = {
   neutral: drawNeutral,
   happy: drawHappy,
   thinking: drawThinking,
@@ -21,3 +22,4 @@ export const emotionDrawFunctions: Record<Emotion, (ctx: CanvasRenderingContext2
 
 // Export individual functions for direct use if needed
 export { drawNeutral, drawHappy, drawThinking, drawSad, drawSurprised, drawExcited, drawConfused };
+export { easeInOut } from './types';

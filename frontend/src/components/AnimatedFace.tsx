@@ -1,6 +1,6 @@
 import React, { useRef, useEffect, useCallback } from 'react';
 import { Emotion } from '../App';
-import { emotionDrawFunctions } from './emotions';
+import { emotionDrawFunctions, easeInOut } from './emotions';
 
 interface AnimatedFaceProps {
   emotion: Emotion;
@@ -11,6 +11,9 @@ const AnimatedFace: React.FC<AnimatedFaceProps> = ({ emotion }) => {
   const animationRef = useRef<number>();
   const timeRef = useRef(0);
 
+  // Track previous emotion for transitions
+  const prevEmotionRef = useRef<Emotion>(emotion);
+  
   // Animation state
   const stateRef = useRef({
     eyeBlink: 0,
@@ -22,9 +25,11 @@ const AnimatedFace: React.FC<AnimatedFaceProps> = ({ emotion }) => {
       mouthMovement: 0
     },
     emotionTransition: {
-      progress: 1,
+      progress: 1, // 0 = fromEmotion, 1 = toEmotion
       fromEmotion: emotion,
-      toEmotion: emotion
+      toEmotion: emotion,
+      duration: 0.8, // Transition duration in seconds
+      elapsed: 0
     }
   });
 
@@ -37,6 +42,24 @@ const AnimatedFace: React.FC<AnimatedFaceProps> = ({ emotion }) => {
 
     const state = stateRef.current;
     const time = timeRef.current;
+    
+    // Check if emotion changed and start transition
+    if (emotion !== prevEmotionRef.current) {
+      state.emotionTransition.fromEmotion = prevEmotionRef.current;
+      state.emotionTransition.toEmotion = emotion;
+      state.emotionTransition.progress = 0;
+      state.emotionTransition.elapsed = 0;
+      prevEmotionRef.current = emotion;
+    }
+    
+    // Update transition progress
+    if (state.emotionTransition.progress < 1) {
+      state.emotionTransition.elapsed += 0.016; // ~60fps
+      state.emotionTransition.progress = Math.min(
+        state.emotionTransition.elapsed / state.emotionTransition.duration,
+        1
+      );
+    }
     
     // Update animation state with enhanced breathing
     state.eyeBlinkTimer += 0.016;
@@ -68,10 +91,32 @@ const AnimatedFace: React.FC<AnimatedFaceProps> = ({ emotion }) => {
     ctx.translate(centerX, centerY);
     ctx.rotate(state.microMovements.headTilt);
     
-    // Use the emotion-specific drawing function
-    const drawEmotion = emotionDrawFunctions[emotion];
-    if (drawEmotion) {
-      drawEmotion(ctx, time, state.breathingPhase);
+    // Draw with transition if in progress
+    if (state.emotionTransition.progress < 1) {
+      // Draw transition between emotions
+      const toDraw = emotionDrawFunctions[state.emotionTransition.toEmotion];
+      
+      // Use eased progress for smoother animation
+      const easedProgress = easeInOut(state.emotionTransition.progress);
+      
+      // Special handling for neutral <-> happy transition
+      if (state.emotionTransition.fromEmotion === 'neutral' && state.emotionTransition.toEmotion === 'happy') {
+        // Transition from neutral to happy
+        // happy expects: 0 = neutral, 1 = happy
+        toDraw(ctx, time, state.breathingPhase, easedProgress);
+      } else if (state.emotionTransition.fromEmotion === 'happy' && state.emotionTransition.toEmotion === 'neutral') {
+        // Transition from happy to neutral (reverse)
+        // neutral expects: 0 = happy, 1 = neutral
+        // So we pass easedProgress directly (0 -> 1) which correctly shows happy -> neutral
+        toDraw(ctx, time, state.breathingPhase, easedProgress);
+      } else {
+        // For other transitions, draw target emotion
+        toDraw(ctx, time, state.breathingPhase, easedProgress);
+      }
+    } else {
+      // Draw current emotion normally
+      const drawEmotion = emotionDrawFunctions[emotion];
+      drawEmotion(ctx, time, state.breathingPhase, 1);
     }
     
     ctx.restore();
