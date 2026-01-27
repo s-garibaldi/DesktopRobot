@@ -99,24 +99,71 @@ const AnimatedFace: React.FC<AnimatedFaceProps> = ({ emotion }) => {
       // Use eased progress for smoother animation
       const easedProgress = easeInOut(state.emotionTransition.progress);
       
-      // Special handling for neutral <-> happy transition
+      // Special handling for specific emotion transitions
       if (state.emotionTransition.fromEmotion === 'neutral' && state.emotionTransition.toEmotion === 'happy') {
         // Transition from neutral to happy
         // happy expects: 0 = neutral, 1 = happy
-        toDraw(ctx, time, state.breathingPhase, easedProgress);
+        toDraw(ctx, time, state.breathingPhase, easedProgress, 'neutral');
       } else if (state.emotionTransition.fromEmotion === 'happy' && state.emotionTransition.toEmotion === 'neutral') {
         // Transition from happy to neutral (reverse)
         // neutral expects: 0 = happy, 1 = neutral
-        // So we pass easedProgress directly (0 -> 1) which correctly shows happy -> neutral
-        toDraw(ctx, time, state.breathingPhase, easedProgress);
+        toDraw(ctx, time, state.breathingPhase, easedProgress, 'happy');
+      } else if (state.emotionTransition.fromEmotion === 'neutral' && state.emotionTransition.toEmotion === 'thinking') {
+        // Transition from neutral to thinking - dots and drips fade in
+        // thinking expects: 0 = neutral, 1 = thinking
+        toDraw(ctx, time, state.breathingPhase, easedProgress, 'neutral');
+      } else if (state.emotionTransition.fromEmotion === 'thinking' && state.emotionTransition.toEmotion === 'neutral') {
+        // Transition from thinking to neutral - dots and drips fade out
+        // Call thinking emotion with decreasing progress (1 -> 0) so dots fade out
+        const fromDraw = emotionDrawFunctions['thinking'];
+        if (fromDraw) {
+          fromDraw(ctx, time, state.breathingPhase, 1 - easedProgress, 'thinking');
+        }
+      } else if (state.emotionTransition.fromEmotion === 'thinking' && state.emotionTransition.toEmotion === 'happy') {
+        // Transition from thinking to happy - same eye morphing as neutral->happy, but dots fade out
+        // happy expects: 0 = neutral, 1 = happy
+        toDraw(ctx, time, state.breathingPhase, easedProgress, 'thinking');
+      } else if (state.emotionTransition.fromEmotion === 'happy' && state.emotionTransition.toEmotion === 'thinking') {
+        // Transition from happy to thinking - same eye morphing as happy->neutral, but dots fade in
+        // thinking expects: 0 = neutral, 1 = thinking
+        // But we're coming from happy, so we need to handle the eye morphing
+        toDraw(ctx, time, state.breathingPhase, easedProgress, 'happy');
+      } else if (state.emotionTransition.fromEmotion === 'neutral' && state.emotionTransition.toEmotion === 'listening') {
+        // Transition from neutral to listening - eyes get bigger and closer, pulsing increases
+        // listening expects: 0 = neutral, 1 = listening
+        toDraw(ctx, time, state.breathingPhase, easedProgress, 'neutral');
+      } else if (state.emotionTransition.fromEmotion === 'listening' && state.emotionTransition.toEmotion === 'neutral') {
+        // Transition from listening to neutral - eyes get smaller and further apart, pulsing decreases
+        // neutral expects: 0 = happy (for happy->neutral), but we need to handle listening->neutral
+        // Call listening emotion with reverse progress (1 -> 0) so it interpolates back to neutral
+        const fromDraw = emotionDrawFunctions['listening'];
+        if (fromDraw) {
+          fromDraw(ctx, time, state.breathingPhase, 1 - easedProgress, 'neutral');
+        }
+      } else if (state.emotionTransition.fromEmotion === 'happy' && state.emotionTransition.toEmotion === 'listening') {
+        // Transition from happy to listening - first happy->neutral, then neutral->listening
+        // listening expects: 0 = neutral, 1 = listening, but we're coming from happy
+        toDraw(ctx, time, state.breathingPhase, easedProgress, 'happy');
+      } else if (state.emotionTransition.fromEmotion === 'listening' && state.emotionTransition.toEmotion === 'happy') {
+        // Transition from listening to happy - first listening->neutral, then neutral->happy
+        // happy expects: 0 = neutral, 1 = happy, but we're coming from listening
+        toDraw(ctx, time, state.breathingPhase, easedProgress, 'listening');
+      } else if (state.emotionTransition.fromEmotion === 'thinking' && state.emotionTransition.toEmotion === 'listening') {
+        // Transition from thinking to listening - dots/drips fade out while eyes grow and move closer
+        // listening expects: 0 = neutral, 1 = listening, but we're coming from thinking
+        toDraw(ctx, time, state.breathingPhase, easedProgress, 'thinking');
+      } else if (state.emotionTransition.fromEmotion === 'listening' && state.emotionTransition.toEmotion === 'thinking') {
+        // Transition from listening to thinking - eyes shrink and move apart while dots/drips fade in
+        // thinking expects: 0 = neutral, 1 = thinking, but we're coming from listening
+        toDraw(ctx, time, state.breathingPhase, easedProgress, 'listening');
       } else {
         // For other transitions, draw target emotion
-        toDraw(ctx, time, state.breathingPhase, easedProgress);
+        toDraw(ctx, time, state.breathingPhase, easedProgress, state.emotionTransition.fromEmotion);
       }
     } else {
       // Draw current emotion normally
       const drawEmotion = emotionDrawFunctions[emotion];
-      drawEmotion(ctx, time, state.breathingPhase, 1);
+      drawEmotion(ctx, time, state.breathingPhase, 1, emotion);
     }
     
     ctx.restore();

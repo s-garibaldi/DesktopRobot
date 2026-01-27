@@ -4,7 +4,8 @@ export type EmotionDrawFunction = (
   ctx: CanvasRenderingContext2D,
   time: number,
   breathingPhase: number,
-  transitionProgress?: number
+  transitionProgress?: number,
+  fromEmotion?: string
 ) => void;
 
 // Helper function for smooth interpolation

@@ -105,7 +105,7 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
               
             case 'emotion_suggestion':
               // Handle emotion suggestions from user input
-              if (data.emotion && ['happy', 'sad', 'excited', 'thinking', 'confused', 'neutral', 'surprised'].includes(data.emotion)) {
+              if (data.emotion && ['happy', 'listening', 'excited', 'thinking', 'confused', 'neutral', 'surprised'].includes(data.emotion)) {
                 console.log('Received emotion suggestion from user input:', data.emotion);
                 handleEmotionChange(data.emotion as Emotion, data.source || 'user_input');
               }

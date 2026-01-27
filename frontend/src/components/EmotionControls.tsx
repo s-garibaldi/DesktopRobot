@@ -11,7 +11,7 @@ const EmotionControls: React.FC<EmotionControlsProps> = ({
   currentEmotion, 
   onEmotionChange 
 }) => {
-  const emotions: Emotion[] = ['neutral', 'happy', 'sad', 'surprised', 'thinking', 'excited', 'confused'];
+  const emotions: Emotion[] = ['neutral', 'happy', 'listening', 'surprised', 'thinking', 'excited', 'confused'];
 
   return (
     <div className="emotion-controls">
