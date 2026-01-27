@@ -1,25 +1,21 @@
 {
   "name": "desktop-robot",
-  "private": true,
   "version": "0.0.0",
-  "type": "module",
+  "private": true,
+  "description": "Desktop Robot - AI-powered animated robot with voice interaction",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc && vite build",
-    "preview": "vite preview",
-    "tauri": "tauri"
+    "dev:frontend": "cd frontend && npm run tauri dev",
+    "dev:backend": "cd backend && npm run dev",
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "install:all": "cd frontend && npm install && cd ../backend && npm install",
+    "build:frontend": "cd frontend && npm run tauri build",
+    "build:backend": "cd backend && npm run build"
   },
-  "dependencies": {
-    "@tauri-apps/api": "^1.5.0",
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0"
-  },
+  "workspaces": [
+    "frontend",
+    "backend"
+  ],
   "devDependencies": {
-    "@tauri-apps/cli": "^1.5.0",
-    "@types/react": "^18.2.15",
-    "@types/react-dom": "^18.2.7",
-    "@vitejs/plugin-react": "^4.0.3",
-    "typescript": "^5.0.2",
-    "vite": "^7.1.4"
+    "concurrently": "^8.2.2"
   }
 }

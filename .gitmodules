@@ -1,3 +1,6 @@
-[submodule "external/realtime-agents"]
-	path = external/realtime-agents
-	url = https://github.com/openai/openai-realtime-agents.git
+# Git submodules
+# Note: The backend was extracted from the submodule for easier development
+# If you need to update from the original repo, you can still reference:
+# [submodule "external/realtime-agents"]
+# 	path = external/realtime-agents
+# 	url = https://github.com/openai/openai-realtime-agents.git
