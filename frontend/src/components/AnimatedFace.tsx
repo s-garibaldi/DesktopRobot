@@ -49,6 +49,15 @@ const AnimatedFace: React.FC<AnimatedFaceProps> = ({ emotion }) => {
       state.emotionTransition.toEmotion = emotion;
       state.emotionTransition.progress = 0;
       state.emotionTransition.elapsed = 0;
+      // Use longer duration for neutral->time transition (1.2s for zoom + fade)
+      if (prevEmotionRef.current === 'neutral' && emotion === 'time') {
+        state.emotionTransition.duration = 1.2;
+      } else if (prevEmotionRef.current === 'time' && emotion === 'listening') {
+        // Time→listening: fast time fade, neutral zoom in, then neutral→listening (~1.8s)
+        state.emotionTransition.duration = 1.8;
+      } else {
+        state.emotionTransition.duration = 0.8; // Default duration
+      }
       prevEmotionRef.current = emotion;
     }
     
@@ -156,6 +165,36 @@ const AnimatedFace: React.FC<AnimatedFaceProps> = ({ emotion }) => {
         // Transition from listening to thinking - eyes shrink and move apart while dots/drips fade in
         // thinking expects: 0 = neutral, 1 = thinking, but we're coming from listening
         toDraw(ctx, time, state.breathingPhase, easedProgress, 'listening');
+      } else if (state.emotionTransition.fromEmotion === 'neutral' && state.emotionTransition.toEmotion === 'time') {
+        // Transition from neutral to time - face zooms to dot, then time fades in
+        // Duration is already set to 1.2s in the transition setup
+        toDraw(ctx, time, state.breathingPhase, easedProgress, 'neutral');
+      } else if (state.emotionTransition.fromEmotion === 'time' && state.emotionTransition.toEmotion === 'neutral') {
+        // Transition from time to neutral - time fades out, neutral zooms in from dot
+        const fromDraw = emotionDrawFunctions['time'];
+        if (fromDraw) {
+          fromDraw(ctx, time, state.breathingPhase, easedProgress, 'time');
+        }
+      } else if (state.emotionTransition.fromEmotion === 'time' && state.emotionTransition.toEmotion === 'listening') {
+        // Three-phase: (1) fast time fade out, (2) neutral zoom in from dot, (3) neutral→listening
+        const p = easedProgress;
+        const TIME_FADEOUT_END = 0.12;   // ~0.22s: time fades out
+        const NEUTRAL_ZOOM_END = 0.42;   // ~0.36s: neutral zoom in, then neutral→listening
+        const timeDraw = emotionDrawFunctions['time'];
+        const listenDraw = emotionDrawFunctions['listening'];
+        if (p < TIME_FADEOUT_END) {
+          // Phase 1: time fades out (map 0..TIME_FADEOUT_END → 0..0.15 for time.ts)
+          const timeProgress = (p / TIME_FADEOUT_END) * 0.15;
+          if (timeDraw) timeDraw(ctx, time, state.breathingPhase, timeProgress, 'time');
+        } else if (p < NEUTRAL_ZOOM_END) {
+          // Phase 2: neutral zooms in from dot (map TIME_FADEOUT_END..NEUTRAL_ZOOM_END → 0.15..1)
+          const timeProgress = 0.15 + ((p - TIME_FADEOUT_END) / (NEUTRAL_ZOOM_END - TIME_FADEOUT_END)) * 0.85;
+          if (timeDraw) timeDraw(ctx, time, state.breathingPhase, timeProgress, 'time');
+        } else {
+          // Phase 3: same as neutral→listening
+          const listenProgress = (p - NEUTRAL_ZOOM_END) / (1 - NEUTRAL_ZOOM_END);
+          if (listenDraw) listenDraw(ctx, time, state.breathingPhase, listenProgress, 'neutral');
+        }
       } else {
         // For other transitions, draw target emotion
         toDraw(ctx, time, state.breathingPhase, easedProgress, state.emotionTransition.fromEmotion);

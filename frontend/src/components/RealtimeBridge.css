@@ -2,6 +2,7 @@
   display: flex;
   flex-direction: column;
   height: 100%;
+  min-height: 80vh;
   background: rgba(255, 255, 255, 0.1);
   border-radius: 15px;
   padding: 1.5rem;
@@ -156,7 +157,7 @@
 
 .iframe-container {
   flex: 1;
-  min-height: 400px;
+  min-height: 650px;
   border-radius: 10px;
   overflow: hidden;
   box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
@@ -227,6 +228,8 @@
   margin-top: 1rem;
   padding-top: 1rem;
   border-top: 1px solid rgba(255, 255, 255, 0.2);
+  max-height: 220px;
+  overflow: auto;
 }
 
 .bridge-info h4 {

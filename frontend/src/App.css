@@ -17,6 +17,7 @@
   gap: 2rem;
   max-width: 1200px;
   margin: 0 auto;
+  align-items: stretch;
 }
 
 .left-panel {
@@ -29,6 +30,8 @@
 
 .right-panel {
   flex: 1;
+  display: flex;
+  min-height: 80vh;
 }
 
 .controls-section {

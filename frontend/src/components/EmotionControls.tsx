@@ -11,7 +11,12 @@ const EmotionControls: React.FC<EmotionControlsProps> = ({
   currentEmotion, 
   onEmotionChange 
 }) => {
-  const emotions: Emotion[] = ['neutral', 'happy', 'listening', 'surprised', 'thinking', 'excited', 'confused'];
+  const emotions: Emotion[] = ['neutral', 'happy', 'listening', 'time', 'thinking', 'excited', 'confused'];
+
+  const labelForEmotion = (emotion: Emotion) => {
+    if (emotion === 'time') return 'Time';
+    return emotion;
+  };
 
   return (
     <div className="emotion-controls">
@@ -23,7 +28,7 @@ const EmotionControls: React.FC<EmotionControlsProps> = ({
             onClick={() => onEmotionChange(emotion)}
             className={`emotion-button ${currentEmotion === emotion ? 'active' : ''}`}
           >
-            {emotion}
+            {labelForEmotion(emotion)}
           </button>
         ))}
       </div>

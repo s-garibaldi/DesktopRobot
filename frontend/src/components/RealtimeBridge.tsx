@@ -20,6 +20,7 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
   const [lastEmotionChange, setLastEmotionChange] = useState<number>(0);
   const [agentConfig, setAgentConfig] = useState('simpleHandoff'); // Keep simpleHandoff as default
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  const lastActivityTimeRef = useRef<number>(Date.now());
 
   // Check if realtime service is available
   const checkRealtimeService = async () => {
@@ -49,19 +50,93 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
     }
   };
 
-  // Enhanced emotion change handler with debouncing
-  const handleEmotionChange = (emotion: Emotion, source: string = 'unknown') => {
+  // Enhanced emotion change handler with debouncing.
+  // `force=true` bypasses debounce for system-triggered state changes (e.g., audio in/out).
+  const handleEmotionChange = (emotion: Emotion, source: string = 'unknown', force: boolean = false) => {
     const now = Date.now();
     const timeSinceLastChange = now - lastEmotionChange;
     
+    // Always reset activity timer when activity is detected (even if emotion change is debounced)
+    // This ensures idle timeout doesn't trigger during active transitions
+    if (emotion !== 'time' && source !== 'idle_timeout') {
+      lastActivityTimeRef.current = now;
+    }
+    
     // Debounce emotion changes to prevent rapid switching
-    if (timeSinceLastChange > 800) { // 800ms debounce for more responsive input emotions
+    if (force || timeSinceLastChange > 800) { // 800ms debounce for more responsive input emotions
       console.log(`Emotion change: ${currentEmotion} -> ${emotion} (from ${source})`);
       onEmotionChange(emotion);
       setLastEmotionChange(now);
     } else {
       console.log(`Emotion change debounced: ${emotion} (from ${source})`);
     }
+  };
+
+  type BackendBridgeLog = {
+    type: 'bridge_log';
+    payload: {
+      id: string;
+      direction: 'client' | 'server';
+      eventName: string;
+      eventType?: string;
+      timestamp: string;
+      level: 'info' | 'warn' | 'error';
+      details?: {
+        errorMessage?: string;
+        errorType?: string;
+        status?: number;
+      };
+    };
+  };
+
+  const AUDIO_INPUT_START_TYPES = new Set([
+    // OpenAI Realtime / WebRTC transport events (server-side VAD)
+    'input_audio_buffer.speech_started',
+    // Push-to-talk (client events). Treat as "about to speak" / listening.
+    'input_audio_buffer.clear',
+  ]);
+
+  const AUDIO_INPUT_STOP_TYPES = new Set([
+    // OpenAI Realtime / WebRTC transport events (server-side VAD)
+    'input_audio_buffer.speech_stopped',
+    // Push-to-talk end (client events)
+    'input_audio_buffer.commit',
+  ]);
+
+  const RESPONSE_START_TYPES = new Set([
+    // Response creation events - AI is starting to generate output
+    'response.create',
+    'response.audio_transcript.delta',
+    'response.audio_transcript.done',
+  ]);
+
+  const RESPONSE_END_TYPES = new Set([
+    // Response completion events
+    'response.done',
+    'response.audio_transcript.done',
+  ]);
+
+  const deriveAudioInputStateFromBackendLog = (log: BackendBridgeLog['payload']): 'start' | 'stop' | null => {
+    const eventType = log.eventType;
+    if (!eventType) return null;
+    if (AUDIO_INPUT_START_TYPES.has(eventType)) return 'start';
+    if (AUDIO_INPUT_STOP_TYPES.has(eventType)) return 'stop';
+    return null;
+  };
+
+  const deriveResponseStateFromBackendLog = (log: BackendBridgeLog['payload']): 'start' | 'end' | null => {
+    const eventType = log.eventType;
+    const eventName = (log.eventName || '').toLowerCase();
+    
+    // Check eventType first
+    if (eventType && RESPONSE_START_TYPES.has(eventType)) return 'start';
+    if (eventType && RESPONSE_END_TYPES.has(eventType)) return 'end';
+    
+    // Fallback: check eventName for response-related patterns
+    if (eventName.includes('response.create') || eventName.includes('response.audio_transcript')) return 'start';
+    if (eventName.includes('response.done')) return 'end';
+    
+    return null;
   };
 
   // Listen for messages from the iframe
@@ -75,40 +150,66 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
           const data = event.data;
           console.log('Processing message from realtime service:', data);
 
+          // Backend log bridge events (sanitized, high-volume). We only map selected ones to emotions.
+          if (data?.type === 'bridge_log' && data?.payload) {
+            const log = data as BackendBridgeLog;
+            
+            // Check for audio input events (user speaking)
+            const audioState = deriveAudioInputStateFromBackendLog(log.payload);
+            if (audioState === 'start') {
+              setIsListening(true);
+              lastActivityTimeRef.current = Date.now();
+              handleEmotionChange('listening', `backend_audio_input:${log.payload.eventType}`, true);
+              return;
+            }
+            if (audioState === 'stop') {
+              setIsListening(false);
+              lastActivityTimeRef.current = Date.now();
+              handleEmotionChange('neutral', `backend_audio_input:${log.payload.eventType}`, true);
+              return;
+            }
+            
+            // Check for response events (AI generating output)
+            const responseState = deriveResponseStateFromBackendLog(log.payload);
+            if (responseState === 'start') {
+              setIsSpeaking(true);
+              lastActivityTimeRef.current = Date.now();
+              handleEmotionChange('thinking', `backend_response:${log.payload.eventType || log.payload.eventName}`, true);
+              return;
+            }
+            if (responseState === 'end') {
+              setIsSpeaking(false);
+              lastActivityTimeRef.current = Date.now();
+              // Return to neutral when response ends (listening will override if user is speaking)
+              handleEmotionChange('neutral', `backend_response_end:${log.payload.eventType || log.payload.eventName}`, true);
+              return;
+            }
+            
+            return;
+          }
+
           // Handle different types of events from the realtime service
           switch (data.type) {
             case 'session_status':
               setIsConnected(data.connected);
-              break;
-              
-            case 'speech_started':
-              setIsListening(true);
-              // Don't change emotion immediately when speech starts - wait for input analysis
-              break;
-              
-            case 'speech_stopped':
-              setIsListening(false);
-              // Return to neutral when user stops speaking
-              handleEmotionChange('neutral', 'speech_stopped');
+              // Reset activity timer when connection status changes
+              if (data.connected) {
+                lastActivityTimeRef.current = Date.now();
+              }
               break;
               
             case 'ai_speaking_start':
               setIsSpeaking(true);
-              // Keep current emotion when AI starts speaking
+              lastActivityTimeRef.current = Date.now();
+              // Trigger "thinking" while the AI is outputting a response (speaking)
+              handleEmotionChange('thinking', 'ai_speaking_start', true);
               break;
               
             case 'ai_speaking_end':
               setIsSpeaking(false);
+              lastActivityTimeRef.current = Date.now();
               // Return to neutral when AI stops speaking
-              handleEmotionChange('neutral', 'ai_speaking_end');
-              break;
-              
-            case 'emotion_suggestion':
-              // Handle emotion suggestions from user input
-              if (data.emotion && ['happy', 'listening', 'excited', 'thinking', 'confused', 'neutral', 'surprised'].includes(data.emotion)) {
-                console.log('Received emotion suggestion from user input:', data.emotion);
-                handleEmotionChange(data.emotion as Emotion, data.source || 'user_input');
-              }
+              handleEmotionChange('neutral', 'ai_speaking_end', true);
               break;
               
             case 'error':
@@ -132,6 +233,36 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
     const interval = setInterval(checkRealtimeService, 10000); // Check every 10 seconds
     return () => clearInterval(interval);
   }, [realtimeUrl]);
+
+  // Idle timeout: switch to "time" after 10 seconds of no input/output activity
+  useEffect(() => {
+    if (!isConnected) return;
+
+    const checkIdleTimeout = () => {
+      const now = Date.now();
+      const timeSinceLastActivity = now - lastActivityTimeRef.current;
+      const IDLE_TIMEOUT_MS = 10000; // 10 seconds
+
+      // Only trigger if:
+      // 1. 10 seconds have passed since last activity
+      // 2. We're not already showing time
+      // 3. We're not currently transitioning (check by ensuring enough time has passed since last emotion change)
+      const timeSinceLastEmotionChange = now - lastEmotionChange;
+      const isTransitioning = timeSinceLastEmotionChange < 1000; // Transition duration is ~800ms, add buffer
+
+      // Idle → time trigger commented out for now
+      // if (timeSinceLastActivity >= IDLE_TIMEOUT_MS && currentEmotion !== 'time' && !isTransitioning) {
+      //   console.log('Idle timeout reached, switching to time display');
+      //   setLastEmotionChange(now);
+      //   onEmotionChange('time');
+      // }
+    };
+
+    // Check every second
+    const interval = setInterval(checkIdleTimeout, 1000);
+    
+    return () => clearInterval(interval);
+  }, [isConnected, currentEmotion, onEmotionChange, lastEmotionChange]);
 
   // Send message to iframe
   const sendMessageToIframe = (message: any) => {
@@ -308,15 +439,12 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
         
         {iframeLoaded && (
           <div className="troubleshooting">
-            <h5>Emotion Integration (Based on YOUR Input):</h5>
+            <h5>Emotion Integration:</h5>
             <ul>
-              <li>🤔 <strong>Thinking:</strong> When you say "let me think", "hmm", "maybe"</li>
-              <li>😊 <strong>Happy:</strong> When you say "great", "awesome", "thank you", "love it"</li>
-              <li>😢 <strong>Sad:</strong> When you say "help", "trouble", "problem", "worried"</li>
-              <li>🤯 <strong>Excited:</strong> When you say "excited", "amazing", "incredible", "wow"</li>
-              <li>😕 <strong>Confused:</strong> When you say "confused", "don't understand", "what", "how"</li>
-              <li>😮 <strong>Surprised:</strong> When you say "surprised", "no way", "really", "unbelievable"</li>
-              <li>😐 <strong>Neutral:</strong> Default state and when you stop speaking</li>
+              <li>🎤 <strong>Listening:</strong> While the backend detects audio input</li>
+              <li>💭 <strong>Thinking:</strong> While the AI is speaking a response</li>
+              <li>😐 <strong>Neutral:</strong> When audio input/output is idle</li>
+              <li>🕒 <strong>Time:</strong> Manual toggle to display the current time</li>
             </ul>
             
             <h5>Available Agent Configurations:</h5>
