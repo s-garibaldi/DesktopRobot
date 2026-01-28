@@ -366,10 +366,9 @@ export const drawThinking: EmotionDrawFunction = (ctx, time, breathingPhase, tra
   
   ctx.restore();
   
-    // Draw three animated dots (iMessage-style bouncing animation) - fade in during transition
-    // If coming from listening, dots fade in as transition progresses (listening->neutral->thinking)
-    // If coming from neutral, dots should also fade in
-    const dotsAlpha = transitionProgress; // Fade in as transition progresses
+    // Draw three animated dots (iMessage-style bouncing animation) - fade in/out with transition
+    // Caller passes progress 0→1 when entering thinking, 1→0 when leaving (so dots fade in/out)
+    const dotsAlpha = transitionProgress;
     if (dotsAlpha > 0) {
       ctx.save();
       ctx.translate(0, -50); // Position above the top of the eyes
@@ -378,26 +377,30 @@ export const drawThinking: EmotionDrawFunction = (ctx, time, breathingPhase, tra
       const bounceHeight = 8; // How high dots bounce
       const animationSpeed = 0.8; // Speed of animation
       
-      // Calculate bounce offset for each dot (sequential animation)
       const dot1Offset = Math.abs(Math.sin(time * animationSpeed * 2)) * bounceHeight;
       const dot2Offset = Math.abs(Math.sin(time * animationSpeed * 2 + Math.PI * 0.66)) * bounceHeight;
       const dot3Offset = Math.abs(Math.sin(time * animationSpeed * 2 + Math.PI * 1.33)) * bounceHeight;
       
-      // Draw three main dots with sequential bounce animation
       const dots = [
         { x: -dotSpacing, offset: dot1Offset },
         { x: 0, offset: dot2Offset },
         { x: dotSpacing, offset: dot3Offset }
       ];
       
+      const baseAlpha = secondaryGlow * dotsAlpha;
       dots.forEach((dot, index) => {
+        ctx.save();
+        ctx.translate(dot.x, -dot.offset);
         ctx.shadowBlur = 15 + Math.sin(time * 2 + index) * 5;
         ctx.shadowColor = '#00FFFF';
         ctx.fillStyle = '#00FFFF';
-        ctx.globalAlpha = secondaryGlow * dotsAlpha; // Fade in with transition
+        ctx.globalAlpha = baseAlpha;
         ctx.beginPath();
-        ctx.arc(dot.x, -dot.offset, 4, 0, Math.PI * 2);
+        ctx.arc(0, 0, 4, 0, Math.PI * 2);
         ctx.fill();
+        ctx.shadowBlur = 0;
+        ctx.shadowColor = 'transparent';
+        ctx.restore();
       });
       
       ctx.restore();

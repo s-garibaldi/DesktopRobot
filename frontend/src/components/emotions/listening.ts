@@ -434,14 +434,20 @@ export const drawListening: EmotionDrawFunction = (ctx, time, breathingPhase, tr
         { x: dotSpacing, offset: dot3Offset }
       ];
       
+      const baseAlpha = secondaryGlow * thinkingElementsAlpha;
       dots.forEach((dot, index) => {
+        ctx.save();
+        ctx.translate(dot.x, -dot.offset);
         ctx.shadowBlur = 10 + Math.sin(time * 2.5 + index) * 5;
         ctx.shadowColor = '#00FFFF';
         ctx.fillStyle = '#00FFFF';
-        ctx.globalAlpha = secondaryGlow * thinkingElementsAlpha;
+        ctx.globalAlpha = baseAlpha;
         ctx.beginPath();
-        ctx.arc(dot.x, -dot.offset, 4, 0, Math.PI * 2);
+        ctx.arc(0, 0, 4, 0, Math.PI * 2);
         ctx.fill();
+        ctx.shadowBlur = 0;
+        ctx.shadowColor = 'transparent';
+        ctx.restore();
       });
       
       ctx.restore();

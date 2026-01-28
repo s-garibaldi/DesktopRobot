@@ -1,6 +1,7 @@
 import React, { useRef, useEffect, useCallback } from 'react';
 import { Emotion } from '../App';
 import { emotionDrawFunctions, easeInOut } from './emotions';
+import { drawSpeakingMouth } from './emotions/speaking';
 
 interface AnimatedFaceProps {
   emotion: Emotion;
@@ -117,6 +118,17 @@ const AnimatedFace: React.FC<AnimatedFaceProps> = ({ emotion }) => {
         // Transition from happy to neutral (reverse)
         // neutral expects: 0 = happy, 1 = neutral
         toDraw(ctx, time, state.breathingPhase, easedProgress, 'happy');
+      } else if (state.emotionTransition.fromEmotion === 'happy' && state.emotionTransition.toEmotion === 'speaking') {
+        // Transition from happy to speaking: same as happy→neutral (crescent→circle, smile out) + waveform mouth fades in
+        const neutralDraw = emotionDrawFunctions['neutral'];
+        if (neutralDraw) {
+          neutralDraw(ctx, time, state.breathingPhase, easedProgress, 'happy');
+        }
+        const breathingScale = 1 + Math.sin(state.breathingPhase) * 0.03;
+        ctx.save();
+        ctx.scale(breathingScale, breathingScale);
+        drawSpeakingMouth(ctx, time, easedProgress);
+        ctx.restore();
       } else if (state.emotionTransition.fromEmotion === 'neutral' && state.emotionTransition.toEmotion === 'thinking') {
         // Transition from neutral to thinking - dots and drips fade in
         // thinking expects: 0 = neutral, 1 = thinking
@@ -128,6 +140,17 @@ const AnimatedFace: React.FC<AnimatedFaceProps> = ({ emotion }) => {
         if (fromDraw) {
           fromDraw(ctx, time, state.breathingPhase, 1 - easedProgress, 'thinking');
         }
+      } else if (state.emotionTransition.fromEmotion === 'thinking' && state.emotionTransition.toEmotion === 'speaking') {
+        // Transition from thinking to speaking: dots/drips fade out (like thinking→neutral) + mouth fades in
+        const fromDraw = emotionDrawFunctions['thinking'];
+        if (fromDraw) {
+          fromDraw(ctx, time, state.breathingPhase, 1 - easedProgress, 'thinking');
+        }
+        const breathingScale = 1 + Math.sin(state.breathingPhase) * 0.03;
+        ctx.save();
+        ctx.scale(breathingScale, breathingScale);
+        drawSpeakingMouth(ctx, time, easedProgress);
+        ctx.restore();
       } else if (state.emotionTransition.fromEmotion === 'thinking' && state.emotionTransition.toEmotion === 'happy') {
         // Transition from thinking to happy - same eye morphing as neutral->happy, but dots fade out
         // happy expects: 0 = neutral, 1 = happy
@@ -141,6 +164,33 @@ const AnimatedFace: React.FC<AnimatedFaceProps> = ({ emotion }) => {
         // Transition from neutral to listening - eyes get bigger and closer, pulsing increases
         // listening expects: 0 = neutral, 1 = listening
         toDraw(ctx, time, state.breathingPhase, easedProgress, 'neutral');
+      } else if (state.emotionTransition.fromEmotion === 'speaking' && state.emotionTransition.toEmotion === 'listening') {
+        // Transition from speaking to listening: same as neutral→listening (eyes grow, move closer) + mouth fades out
+        toDraw(ctx, time, state.breathingPhase, easedProgress, 'neutral');
+        const breathingScale = 1 + Math.sin(state.breathingPhase) * 0.03;
+        ctx.save();
+        ctx.scale(breathingScale, breathingScale);
+        drawSpeakingMouth(ctx, time, 1 - easedProgress);
+        ctx.restore();
+      } else if (state.emotionTransition.fromEmotion === 'speaking' && state.emotionTransition.toEmotion === 'neutral') {
+        // Transition from speaking to neutral: face and eyes stay (same), only mouth fades out
+        const fromDraw = emotionDrawFunctions['neutral'];
+        if (fromDraw) {
+          fromDraw(ctx, time, state.breathingPhase, 1, 'neutral');
+        }
+        const breathingScale = 1 + Math.sin(state.breathingPhase) * 0.03;
+        ctx.save();
+        ctx.scale(breathingScale, breathingScale);
+        drawSpeakingMouth(ctx, time, 1 - easedProgress);
+        ctx.restore();
+      } else if (state.emotionTransition.fromEmotion === 'speaking' && state.emotionTransition.toEmotion === 'happy') {
+        // Transition from speaking to happy: same as neutral→happy (eyes→crescent, smile in) + waveform mouth fades out
+        toDraw(ctx, time, state.breathingPhase, easedProgress, 'neutral');
+        const breathingScale = 1 + Math.sin(state.breathingPhase) * 0.03;
+        ctx.save();
+        ctx.scale(breathingScale, breathingScale);
+        drawSpeakingMouth(ctx, time, 1 - easedProgress);
+        ctx.restore();
       } else if (state.emotionTransition.fromEmotion === 'listening' && state.emotionTransition.toEmotion === 'neutral') {
         // Transition from listening to neutral - eyes get smaller and further apart, pulsing decreases
         // neutral expects: 0 = happy (for happy->neutral), but we need to handle listening->neutral
@@ -149,6 +199,17 @@ const AnimatedFace: React.FC<AnimatedFaceProps> = ({ emotion }) => {
         if (fromDraw) {
           fromDraw(ctx, time, state.breathingPhase, 1 - easedProgress, 'neutral');
         }
+      } else if (state.emotionTransition.fromEmotion === 'listening' && state.emotionTransition.toEmotion === 'speaking') {
+        // Transition from listening to speaking: same as listening→neutral (eyes shrink, move apart) + mouth fades in
+        const fromDraw = emotionDrawFunctions['listening'];
+        if (fromDraw) {
+          fromDraw(ctx, time, state.breathingPhase, 1 - easedProgress, 'neutral');
+        }
+        const breathingScale = 1 + Math.sin(state.breathingPhase) * 0.03;
+        ctx.save();
+        ctx.scale(breathingScale, breathingScale);
+        drawSpeakingMouth(ctx, time, easedProgress);
+        ctx.restore();
       } else if (state.emotionTransition.fromEmotion === 'happy' && state.emotionTransition.toEmotion === 'listening') {
         // Transition from happy to listening - first happy->neutral, then neutral->listening
         // listening expects: 0 = neutral, 1 = listening, but we're coming from happy

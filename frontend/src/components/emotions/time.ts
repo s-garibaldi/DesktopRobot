@@ -77,31 +77,32 @@ export const drawTime: EmotionDrawFunction = (ctx, time, breathingPhase, transit
 
     ctx.save();
 
-    // Centered, large neon glow time text
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
-    ctx.fillStyle = '#00FFFF';
-    ctx.shadowColor = '#00FFFF';
-    // Glow increases as time fades in
-    ctx.shadowBlur = lerp(8, 12, fadeProgress);
     ctx.globalAlpha = timeAlpha;
 
-    // Main time display - measure width to position AM/PM
-    ctx.font = 'normal 80px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace';
+    // Main time display – no glow; stroke for crisp definition
+    ctx.font = '600 80px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace';
     const timeMetrics = ctx.measureText(mainTime);
     const timeWidth = timeMetrics.width;
-    
-    // Center the time text
+
     ctx.textAlign = 'center';
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.5)';
+    ctx.lineWidth = 2;
+    ctx.lineJoin = 'round';
+    ctx.strokeText(mainTime, 0, 0);
+    ctx.fillStyle = '#00FFFF';
     ctx.fillText(mainTime, 0, 0);
 
-    // Small AM/PM indicator to the right of the time, aligned with bottom
-    ctx.font = 'normal 24px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace';
-    ctx.shadowBlur = lerp(4, 8, fadeProgress);
+    // Small AM/PM indicator – no glow, subtle stroke for definition
+    ctx.font = '600 24px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'bottom';
-    // Position at bottom of time text - use actualBoundingBoxDescent for precise alignment
     const timeBottom = (timeMetrics.actualBoundingBoxDescent || 40);
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.4)';
+    ctx.lineWidth = 1;
+    ctx.strokeText(ampm, timeWidth / 2 + 8, timeBottom);
+    ctx.fillStyle = '#00FFFF';
     ctx.fillText(ampm, timeWidth / 2 + 8, timeBottom);
 
     ctx.restore();

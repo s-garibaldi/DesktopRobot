@@ -165,22 +165,28 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
             if (audioState === 'stop') {
               setIsListening(false);
               lastActivityTimeRef.current = Date.now();
-              handleEmotionChange('neutral', `backend_audio_input:${log.payload.eventType}`, true);
+              // Thinking: only between input and output. Never override speaking — if backend is outputting, stay speaking.
+              if (!isSpeaking) {
+                handleEmotionChange('thinking', `backend_audio_input:${log.payload.eventType}`, true);
+              }
               return;
             }
             
-            // Check for response events (AI generating output)
+            // Response lifecycle (bridge_log). Use these for "speaking" — audio element play/pause
+            // only fires for the first output (greeting); WebRTC stream keeps it playing for later ones.
             const responseState = deriveResponseStateFromBackendLog(log.payload);
             if (responseState === 'start') {
-              setIsSpeaking(true);
               lastActivityTimeRef.current = Date.now();
-              handleEmotionChange('thinking', `backend_response:${log.payload.eventType || log.payload.eventName}`, true);
+              if (!isListening) {
+                setIsSpeaking(true);
+                handleEmotionChange('speaking', `backend_response:${log.payload.eventType || log.payload.eventName}`, true);
+              }
               return;
             }
             if (responseState === 'end') {
               setIsSpeaking(false);
               lastActivityTimeRef.current = Date.now();
-              // Return to neutral when response ends (listening will override if user is speaking)
+              // Backend done outputting → neutral (go-to idle emotion)
               handleEmotionChange('neutral', `backend_response_end:${log.payload.eventType || log.payload.eventName}`, true);
               return;
             }
@@ -201,14 +207,13 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
             case 'ai_speaking_start':
               setIsSpeaking(true);
               lastActivityTimeRef.current = Date.now();
-              // Trigger "thinking" while the AI is outputting a response (speaking)
-              handleEmotionChange('thinking', 'ai_speaking_start', true);
+              handleEmotionChange('speaking', 'ai_speaking_start', true);
               break;
               
             case 'ai_speaking_end':
               setIsSpeaking(false);
               lastActivityTimeRef.current = Date.now();
-              // Return to neutral when AI stops speaking
+              // Backend done outputting audio → neutral (go-to idle emotion)
               handleEmotionChange('neutral', 'ai_speaking_end', true);
               break;
               
@@ -225,7 +230,7 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
 
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
-  }, [onEmotionChange, currentEmotion, lastEmotionChange]);
+  }, [onEmotionChange, currentEmotion, lastEmotionChange, isListening, isSpeaking]);
 
   // Check service availability on mount and periodically
   useEffect(() => {
@@ -442,7 +447,8 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
             <h5>Emotion Integration:</h5>
             <ul>
               <li>🎤 <strong>Listening:</strong> While the backend detects audio input</li>
-              <li>💭 <strong>Thinking:</strong> While the AI is speaking a response</li>
+              <li>💭 <strong>Thinking:</strong> Only between your input and the AI’s answer (AI is thinking)</li>
+              <li>🗣️ <strong>Speaking:</strong> During the AI’s audio output</li>
               <li>😐 <strong>Neutral:</strong> When audio input/output is idle</li>
               <li>🕒 <strong>Time:</strong> Manual toggle to display the current time</li>
             </ul>

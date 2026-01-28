@@ -11,7 +11,7 @@ const EmotionControls: React.FC<EmotionControlsProps> = ({
   currentEmotion, 
   onEmotionChange 
 }) => {
-  const emotions: Emotion[] = ['neutral', 'happy', 'listening', 'time', 'thinking', 'excited', 'confused'];
+  const emotions: Emotion[] = ['neutral', 'happy', 'listening', 'time', 'thinking', 'speaking', 'confused'];
 
   const labelForEmotion = (emotion: Emotion) => {
     if (emotion === 'time') return 'Time';
