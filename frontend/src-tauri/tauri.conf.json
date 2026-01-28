@@ -43,7 +43,6 @@
         "icons/icon.icns",
         "icons/icon.ico"
       ],
-      "macOSPrivateFramework": true,
       "resources": [],
       "copyright": "",
       "category": "public.app-category.utilities",
@@ -64,9 +63,7 @@
         "exceptionDomain": "",
         "signingIdentity": null,
         "entitlements": null,
-        "info": {
-          "NSMicrophoneUsageDescription": "This app needs microphone access to enable voice chat with the AI musical companion."
-        }
+        "providerShortName": null
       }
     },
     "security": {
