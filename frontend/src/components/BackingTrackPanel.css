@@ -1,0 +1,168 @@
+.backing-track-panel {
+  margin-top: 1rem;
+  padding: 0.75rem;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.02);
+}
+
+.backing-track-panel-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+  font-weight: 600;
+}
+
+.backing-track-panel-header .icon {
+  font-size: 1.1rem;
+}
+
+.backing-track-panel-body {
+  font-size: 0.9rem;
+  color: #444;
+}
+
+.backing-track-label,
+.backing-track-voice-label {
+  display: block;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: #64748b;
+  margin-bottom: 0.25rem;
+}
+
+.backing-track-text-input-row {
+  margin-top: 0.75rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.5rem;
+}
+
+.backing-track-text-input {
+  flex: 1;
+  min-width: 160px;
+  padding: 0.5rem 0.6rem;
+  font-size: 0.9rem;
+  color: #000;
+  border: 1px solid rgba(0, 0, 0, 0.2);
+  border-radius: 6px;
+  background: #fff;
+}
+
+.backing-track-text-input:focus {
+  outline: none;
+  border-color: #2563eb;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.2);
+}
+
+.backing-track-text-input:disabled {
+  background: #f1f5f9;
+  cursor: not-allowed;
+}
+
+.backing-track-generate-button {
+  padding: 0.5rem 1rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #fff;
+  background: #059669;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.backing-track-generate-button:hover:not(:disabled) {
+  background: #047857;
+}
+
+.backing-track-generate-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.backing-track-command-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.backing-track-voice-label {
+  display: inline;
+  margin-bottom: 0;
+  margin-right: 0.25rem;
+}
+
+.backing-track-command-button {
+  padding: 0.5rem 1rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #fff;
+  background: #2563eb;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.backing-track-command-button:hover:not(:disabled) {
+  background: #1d4ed8;
+}
+
+.backing-track-command-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.backing-track-command-button.recording {
+  background: #dc2626;
+  animation: backing-track-pulse 1s ease-in-out infinite;
+}
+
+@keyframes backing-track-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.85; }
+}
+
+.backing-track-stop-button {
+  padding: 0.4rem 0.8rem;
+  font-size: 0.9rem;
+  color: #fff;
+  background: #64748b;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.backing-track-stop-button:hover:not(:disabled) {
+  background: #475569;
+}
+
+.backing-track-status {
+  margin-top: 0.5rem;
+  font-size: 0.85rem;
+  min-height: 1.2em;
+}
+
+.backing-track-status.listening {
+  color: #2563eb;
+}
+
+.backing-track-status.generating {
+  color: #ca8a04;
+}
+
+.backing-track-status.playing {
+  color: #16a34a;
+}
+
+.backing-track-status.error {
+  color: #dc2626;
+}
+
+.backing-track-hint {
+  margin-top: 0.35rem;
+  font-size: 0.8rem;
+  color: #64748b;
+}

@@ -3,6 +3,7 @@ import { Emotion } from '../App';
 import { useMicrophone } from '../hooks/useMicrophone';
 import { useVoiceCommandMicOnOff } from '../hooks/useVoiceCommandMicOnOff';
 import MicrophonePanel from './MicrophonePanel';
+import BackingTrackPanel from './BackingTrackPanel';
 import './RealtimeBridge.css';
 
 interface RealtimeBridgeProps {
@@ -39,9 +40,11 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
 
   // Keep frontend mic stream in a ref for future use (sending to backend).
   const frontendMicStreamRef = useRef<MediaStream | null>(null);
+  const micStatusRef = useRef(micStatus);
   useEffect(() => {
     frontendMicStreamRef.current = micStream ?? null;
   }, [micStream]);
+  micStatusRef.current = micStatus;
   
   // Use refs to track state inside the message handler to avoid infinite loops
   const isListeningRef = useRef(false);
@@ -402,11 +405,48 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
     }
   };
 
-  // Vocal commands "microphone off" / "microphone on" → tell backend to disable/enable its mic input
+  const lastKnownMicEnabledRef = useRef(true);
+  const savedMicBeforeBackingTrackRef = useRef(true);
+
+  const handleMicCommand = (payload: { type: 'set_backend_mic_enabled'; enabled: boolean }) => {
+    lastKnownMicEnabledRef.current = payload.enabled;
+    sendMessageToIframe(payload);
+  };
+
   useVoiceCommandMicOnOff(
     micStatus === 'granted' && isConnected && iframeLoaded,
-    (payload) => sendMessageToIframe(payload)
+    handleMicCommand
   );
+
+  const handleBackingTrackPlayingStart = () => {
+    savedMicBeforeBackingTrackRef.current = lastKnownMicEnabledRef.current;
+    sendMessageToIframe({ type: 'set_backend_mic_enabled', enabled: false });
+  };
+
+  const handleBackingTrackPlayingStop = () => {
+    sendMessageToIframe({
+      type: 'set_backend_mic_enabled',
+      enabled: savedMicBeforeBackingTrackRef.current,
+    });
+  };
+
+  // When user enables frontend mic, also enable backend mic (when connected)
+  const handleMicRequestAccess = () => {
+    micRequestAccess();
+    if (isConnected && iframeLoaded) {
+      lastKnownMicEnabledRef.current = true;
+      sendMessageToIframe({ type: 'set_backend_mic_enabled', enabled: true });
+    }
+  };
+
+  // When user disables frontend mic, also mute backend mic (when connected)
+  const handleMicStop = () => {
+    micStop();
+    if (isConnected && iframeLoaded) {
+      lastKnownMicEnabledRef.current = false;
+      sendMessageToIframe({ type: 'set_backend_mic_enabled', enabled: false });
+    }
+  };
 
   // Handle iframe load
   const handleIframeLoad = () => {
@@ -420,6 +460,10 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
         type: 'bridge_ready',
         emotionIntegration: true
       });
+      // Sync initial mic state: backend should match frontend (enabled only if frontend mic is granted)
+      const backendMicEnabled = micStatusRef.current === 'granted';
+      lastKnownMicEnabledRef.current = backendMicEnabled;
+      sendMessageToIframe({ type: 'set_backend_mic_enabled', enabled: backendMicEnabled });
     }, 1000);
   };
 
@@ -462,8 +506,14 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
         isSupported={micSupported}
         volumeLevel={micVolumeLevel}
         volumeDb={micVolumeDb}
-        onRequestAccess={micRequestAccess}
-        onStop={micStop}
+        onRequestAccess={handleMicRequestAccess}
+        onStop={handleMicStop}
+      />
+
+      <BackingTrackPanel
+        onPlayingStart={handleBackingTrackPlayingStart}
+        onPlayingStop={handleBackingTrackPlayingStop}
+        elevenLabsApiKey={import.meta.env?.VITE_ELEVENLABS_API_KEY ?? ''}
       />
 
       {micStatus === 'granted' && isConnected && (
