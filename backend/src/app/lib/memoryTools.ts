@@ -36,7 +36,7 @@ export const storeMemoryTool = tool({
       };
 
       // Determine agent type from context (will be set when tool is created)
-      const agentType = (input as any).agentType || 'generalAssistant';
+      const agentType = (input as any).agentType || 'musicalCompanion';
 
       const memoryId = await saveMemory({
         agent_type: agentType,
@@ -88,7 +88,7 @@ export const retrieveMemoriesTool = tool({
       };
 
       // Determine agent type from context
-      const agentType = (input as any).agentType || 'generalAssistant';
+      const agentType = (input as any).agentType || 'musicalCompanion';
 
       const memories = await getMemories({
         agentType,

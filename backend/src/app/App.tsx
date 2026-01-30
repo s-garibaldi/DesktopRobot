@@ -22,15 +22,11 @@ import { createModerationGuardrail } from "@/app/agentConfigs/guardrails";
 
 // Agent configs
 import { allAgentSets, defaultAgentSetKey } from "@/app/agentConfigs";
-import { simpleHandoffScenario } from "@/app/agentConfigs/simpleHandoff";
 import { musicalCompanionScenario } from "@/app/agentConfigs/musicalCompanion";
-import { generalAssistantScenario } from "@/app/agentConfigs/generalAssistant";
 
 // Map used by connect logic for scenarios defined via the SDK.
 const sdkScenarioMap: Record<string, RealtimeAgent[]> = {
-  simpleHandoff: simpleHandoffScenario,
   musicalCompanion: musicalCompanionScenario,
-  generalAssistant: generalAssistantScenario,
 };
 
 import useAudioDownload from "./hooks/useAudioDownload";
@@ -88,6 +84,66 @@ function App() {
     if (sdkAudioElement && !audioElementRef.current) {
       audioElementRef.current = sdkAudioElement;
     }
+  }, [sdkAudioElement]);
+
+  // Track speaking end timer for fallback mechanism
+  const speakingEndTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const isSpeakingRef = useRef(false);
+
+  // Send audio playback events to parent window (Tauri frontend) for emotion sync
+  useEffect(() => {
+    if (!sdkAudioElement) return;
+
+    const sendToParent = (type: string) => {
+      if (window.parent && window.parent !== window) {
+        window.parent.postMessage({ type }, '*');
+      }
+    };
+
+    const handlePlaying = () => {
+      console.log('[Audio] AI speaking started (audio playing)');
+      // Cancel any pending speaking end timer
+      if (speakingEndTimerRef.current) {
+        clearTimeout(speakingEndTimerRef.current);
+        speakingEndTimerRef.current = null;
+      }
+      isSpeakingRef.current = true;
+      sendToParent('ai_speaking_start');
+    };
+
+    const handlePause = () => {
+      console.log('[Audio] AI speaking ended (audio paused)');
+      isSpeakingRef.current = false;
+      sendToParent('ai_speaking_end');
+    };
+
+    const handleEnded = () => {
+      console.log('[Audio] AI speaking ended (audio ended)');
+      isSpeakingRef.current = false;
+      sendToParent('ai_speaking_end');
+    };
+
+    // Fallback: detect silence by monitoring timeupdate
+    // With WebRTC, we may not get pause/ended events
+    let lastTimeUpdate = 0;
+    const handleTimeUpdate = () => {
+      lastTimeUpdate = Date.now();
+    };
+
+    sdkAudioElement.addEventListener('playing', handlePlaying);
+    sdkAudioElement.addEventListener('pause', handlePause);
+    sdkAudioElement.addEventListener('ended', handleEnded);
+    sdkAudioElement.addEventListener('timeupdate', handleTimeUpdate);
+
+    return () => {
+      sdkAudioElement.removeEventListener('playing', handlePlaying);
+      sdkAudioElement.removeEventListener('pause', handlePause);
+      sdkAudioElement.removeEventListener('ended', handleEnded);
+      sdkAudioElement.removeEventListener('timeupdate', handleTimeUpdate);
+      if (speakingEndTimerRef.current) {
+        clearTimeout(speakingEndTimerRef.current);
+      }
+    };
   }, [sdkAudioElement]);
 
   const {
@@ -190,6 +246,34 @@ function App() {
       updateSession();
     }
   }, [isPTTActive]);
+
+  // Send PTT state to parent window (Tauri frontend) for emotion sync
+  useEffect(() => {
+    if (window.parent && window.parent !== window) {
+      window.parent.postMessage({
+        type: 'ptt_state',
+        isPTTActive,
+        isPTTUserSpeaking
+      }, '*');
+    }
+  }, [isPTTActive, isPTTUserSpeaking]);
+
+  // Clear audio buffer frequently when PTT is active but button is not pressed
+  // This prevents audio from accumulating while waiting for the button press
+  useEffect(() => {
+    if (sessionStatus !== "CONNECTED" || !isPTTActive) return;
+
+    const clearBufferInterval = setInterval(() => {
+      // Only clear if PTT is active but user is NOT currently speaking
+      if (isPTTActive && !isPTTUserSpeaking) {
+        // Use sendEvent directly (not sendClientEvent) to avoid logging
+        // These are high-frequency maintenance events that don't need to be logged
+        sendEvent({ type: 'input_audio_buffer.clear' });
+      }
+    }, 100); // Clear every 100ms when idle in PTT mode (fast enough to prevent any audio pickup)
+
+    return () => clearInterval(clearBufferInterval);
+  }, [sessionStatus, isPTTActive, isPTTUserSpeaking, sendEvent]);
 
   // Send automatic greeting when session connects
   useEffect(() => {

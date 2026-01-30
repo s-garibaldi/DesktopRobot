@@ -42,20 +42,77 @@ export function useRealtimeSession(callbacks: RealtimeSessionCallbacks = {}) {
   const { logServerEvent } = useEvent();
 
   const historyHandlers = useHandleSessionHistory().current;
+  
+  // Track if we've already sent a speaking signal for the current response
+  // This prevents flooding the bridge with delta events
+  const speakingSignalSentRef = useRef(false);
+  const speakingEndTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const lastAudioDeltaTimeRef = useRef<number>(0);
+
+  // Helper to send speaking end to parent window (fallback for WebRTC)
+  const sendSpeakingEndToParent = () => {
+    if (typeof window !== 'undefined' && window.parent && window.parent !== window) {
+      console.log('[Audio] Sending ai_speaking_end (response.done fallback)');
+      window.parent.postMessage({ type: 'ai_speaking_end' }, '*');
+    }
+  };
 
   function handleTransportEvent(event: any) {
     // Handle additional server events that aren't managed by the session
     switch (event.type) {
       case "conversation.item.input_audio_transcription.completed": {
         historyHandlers.handleTranscriptionCompleted(event);
+        logServerEvent(event); // Forward to bridge for emotion sync
         break;
       }
       case "response.audio_transcript.done": {
         historyHandlers.handleTranscriptionCompleted(event);
+        logServerEvent(event); // Forward to bridge for emotion sync
         break;
       }
       case "response.audio_transcript.delta": {
         historyHandlers.handleTranscriptionDelta(event);
+        // Track the time of the last audio delta for smart delay calculation
+        lastAudioDeltaTimeRef.current = Date.now();
+        // Only log the FIRST delta event to trigger speaking face (avoid flooding)
+        if (!speakingSignalSentRef.current) {
+          speakingSignalSentRef.current = true;
+          logServerEvent(event); // Triggers speaking face
+        }
+        // Cancel any pending speaking end timer (audio is still coming)
+        if (speakingEndTimerRef.current) {
+          clearTimeout(speakingEndTimerRef.current);
+          speakingEndTimerRef.current = null;
+        }
+        break;
+      }
+      case "response.done": {
+        // Reset the speaking signal flag when response completes
+        speakingSignalSentRef.current = false;
+        logServerEvent(event);
+        
+        // Calculate smart delay based on when last audio delta arrived
+        // If deltas were still arriving recently, we need more buffer time
+        const timeSinceLastDelta = Date.now() - lastAudioDeltaTimeRef.current;
+        // Base delay of 1.5s, plus extra time if deltas were recent
+        // Audio typically buffers 1-2 seconds ahead, so if last delta was <500ms ago,
+        // we need more time for the buffer to play out
+        const baseDelay = 1500;
+        const extraDelay = timeSinceLastDelta < 500 ? 1500 : 
+                          timeSinceLastDelta < 1000 ? 1000 : 500;
+        const totalDelay = baseDelay + extraDelay;
+        
+        console.log(`[Audio] response.done - last delta ${timeSinceLastDelta}ms ago, using ${totalDelay}ms delay`);
+        
+        // Set a fallback timer to end speaking face
+        // WebRTC streams may not fire audio element pause/ended events
+        if (speakingEndTimerRef.current) {
+          clearTimeout(speakingEndTimerRef.current);
+        }
+        speakingEndTimerRef.current = setTimeout(() => {
+          sendSpeakingEndToParent();
+          speakingEndTimerRef.current = null;
+        }, totalDelay);
         break;
       }
       default: {

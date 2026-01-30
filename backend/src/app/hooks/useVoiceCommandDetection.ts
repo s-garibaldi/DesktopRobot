@@ -4,6 +4,8 @@ import { useEffect, useRef } from "react";
 import { useTranscript } from "@/app/contexts/TranscriptContext";
 
 // Voice command patterns for agent switching
+// Note: Since musicalCompanion is the only agent, these commands are kept for consistency
+// but will always resolve to musicalCompanion
 const VOICE_COMMANDS = {
   music: {
     patterns: [
@@ -15,37 +17,6 @@ const VOICE_COMMANDS = {
       /go music/i,
     ],
     agentConfig: "musicalCompanion",
-  },
-  help: {
-    patterns: [
-      /go to help mode/i,
-      /switch to help mode/i,
-      /help mode/i,
-      /activate help/i,
-      /enable help/i,
-      /go help/i,
-      /general assistant/i,
-      /general mode/i,
-    ],
-    agentConfig: "generalAssistant",
-  },
-  general: {
-    patterns: [
-      /go to general mode/i,
-      /switch to general mode/i,
-      /general mode/i,
-      /activate general/i,
-    ],
-    agentConfig: "generalAssistant",
-  },
-  haiku: {
-    patterns: [
-      /go to haiku mode/i,
-      /switch to haiku mode/i,
-      /haiku mode/i,
-      /activate haiku/i,
-    ],
-    agentConfig: "simpleHandoff",
   },
 };
 

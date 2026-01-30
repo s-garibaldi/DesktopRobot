@@ -29,7 +29,7 @@ const AnimatedFace: React.FC<AnimatedFaceProps> = ({ emotion }) => {
       progress: 1, // 0 = fromEmotion, 1 = toEmotion
       fromEmotion: emotion,
       toEmotion: emotion,
-      duration: 0.8, // Transition duration in seconds
+      duration: 0.4, // Transition duration in seconds (faster by 50%)
       elapsed: 0
     }
   });
@@ -50,14 +50,14 @@ const AnimatedFace: React.FC<AnimatedFaceProps> = ({ emotion }) => {
       state.emotionTransition.toEmotion = emotion;
       state.emotionTransition.progress = 0;
       state.emotionTransition.elapsed = 0;
-      // Use longer duration for neutral->time transition (1.2s for zoom + fade)
+      // Use longer duration for neutral->time transition (0.6s for zoom + fade, 50% faster)
       if (prevEmotionRef.current === 'neutral' && emotion === 'time') {
-        state.emotionTransition.duration = 1.2;
+        state.emotionTransition.duration = 0.6;
       } else if (prevEmotionRef.current === 'time' && emotion === 'listening') {
-        // Time→listening: fast time fade, neutral zoom in, then neutral→listening (~1.8s)
-        state.emotionTransition.duration = 1.8;
+        // Time→listening: fast time fade, neutral zoom in, then neutral→listening (~0.9s, 50% faster)
+        state.emotionTransition.duration = 0.9;
       } else {
-        state.emotionTransition.duration = 0.8; // Default duration
+        state.emotionTransition.duration = 0.4; // Default duration (50% faster)
       }
       prevEmotionRef.current = emotion;
     }

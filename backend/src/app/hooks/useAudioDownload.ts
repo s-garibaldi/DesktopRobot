@@ -6,6 +6,32 @@ function useAudioDownload() {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   // Ref to collect all recorded Blob chunks.
   const recordedChunksRef = useRef<Blob[]>([]);
+  // Ref to store the actual MIME type being used
+  const actualMimeTypeRef = useRef<string>('audio/webm');
+
+  /**
+   * Gets the best supported MIME type for MediaRecorder
+   */
+  const getSupportedMimeType = (): string => {
+    const types = [
+      'audio/webm;codecs=opus',
+      'audio/webm',
+      'audio/ogg;codecs=opus',
+      'audio/mp4',
+      'audio/mpeg',
+      ''  // Empty string means use browser default
+    ];
+
+    for (const type of types) {
+      if (type === '' || MediaRecorder.isTypeSupported(type)) {
+        console.log(`[MediaRecorder] Using MIME type: ${type || 'browser default'}`);
+        return type;
+      }
+    }
+
+    console.warn('[MediaRecorder] No supported MIME type found, using browser default');
+    return '';
+  };
 
   /**
    * Starts recording by combining the provided remote stream with
@@ -42,7 +68,11 @@ function useAudioDownload() {
       console.error("Error connecting microphone stream to the audio context:", err);
     }
 
-    const options = { mimeType: "audio/webm" };
+    // Get supported MIME type
+    const mimeType = getSupportedMimeType();
+    actualMimeTypeRef.current = mimeType || 'audio/webm';
+    
+    const options = mimeType ? { mimeType } : {};
     try {
       const mediaRecorder = new MediaRecorder(destination.stream, options);
       mediaRecorder.ondataavailable = (event: BlobEvent) => {
@@ -88,8 +118,8 @@ function useAudioDownload() {
       return;
     }
     
-    // Combine the recorded chunks into a single WebM blob.
-    const webmBlob = new Blob(recordedChunksRef.current, { type: "audio/webm" });
+    // Combine the recorded chunks into a single blob using the actual MIME type that was used
+    const webmBlob = new Blob(recordedChunksRef.current, { type: actualMimeTypeRef.current });
 
     try {
       // Convert the WebM blob into a WAV blob.

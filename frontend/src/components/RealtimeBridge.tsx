@@ -14,13 +14,23 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
   const [isConnected, setIsConnected] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const [isCallingTool, setIsCallingTool] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [realtimeUrl, setRealtimeUrl] = useState('http://localhost:3000');
   const [iframeLoaded, setIframeLoaded] = useState(false);
   const [lastEmotionChange, setLastEmotionChange] = useState<number>(0);
-  const [agentConfig, setAgentConfig] = useState('simpleHandoff'); // Keep simpleHandoff as default
+  const [agentConfig] = useState('musicalCompanion'); // Musical Companion as the only agent
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const lastActivityTimeRef = useRef<number>(Date.now());
+  
+  // Use refs to track state inside the message handler to avoid infinite loops
+  const isListeningRef = useRef(false);
+  const isSpeakingRef = useRef(false);
+  const isCallingToolRef = useRef(false);
+  
+  // Track PTT state from backend - used to determine when to show listening face
+  const isPTTActiveRef = useRef(false);
+  const isPTTUserSpeakingRef = useRef(false);
 
   // Check if realtime service is available
   const checkRealtimeService = async () => {
@@ -63,7 +73,7 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
     }
     
     // Debounce emotion changes to prevent rapid switching
-    if (force || timeSinceLastChange > 800) { // 800ms debounce for more responsive input emotions
+    if (force || timeSinceLastChange > 400) { // 400ms debounce to match faster transitions
       console.log(`Emotion change: ${currentEmotion} -> ${emotion} (from ${source})`);
       onEmotionChange(emotion);
       setLastEmotionChange(now);
@@ -103,17 +113,25 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
     'input_audio_buffer.commit',
   ]);
 
-  const RESPONSE_START_TYPES = new Set([
-    // Response creation events - AI is starting to generate output
-    'response.create',
+  const RESPONSE_AUDIO_START_TYPES = new Set([
+    // AI is actually outputting audio (speaking)
     'response.audio_transcript.delta',
-    'response.audio_transcript.done',
+    'response.audio.delta',
   ]);
 
-  const RESPONSE_END_TYPES = new Set([
-    // Response completion events
-    'response.done',
-    'response.audio_transcript.done',
+  // Note: We intentionally don't detect response END from bridge_log events
+  // because 'response.done' fires when generation completes, but audio may still be playing.
+  // Speaking END is handled by 'ai_speaking_end' from actual audio element pause/ended events.
+
+  const TOOL_CALL_TYPES = new Set([
+    // Tool/function call events - AI is thinking and calling APIs
+    'agent_tool_start',
+    'response.function_call_arguments.delta',
+    'response.function_call_arguments.done',
+  ]);
+
+  const TOOL_END_TYPES = new Set([
+    'agent_tool_end',
   ]);
 
   const deriveAudioInputStateFromBackendLog = (log: BackendBridgeLog['payload']): 'start' | 'stop' | null => {
@@ -124,18 +142,38 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
     return null;
   };
 
-  const deriveResponseStateFromBackendLog = (log: BackendBridgeLog['payload']): 'start' | 'end' | null => {
+  const deriveToolCallStateFromBackendLog = (log: BackendBridgeLog['payload']): 'start' | 'end' | null => {
     const eventType = log.eventType;
     const eventName = (log.eventName || '').toLowerCase();
     
-    // Check eventType first
-    if (eventType && RESPONSE_START_TYPES.has(eventType)) return 'start';
-    if (eventType && RESPONSE_END_TYPES.has(eventType)) return 'end';
+    // Check for tool call start events
+    if (eventType && TOOL_CALL_TYPES.has(eventType)) return 'start';
+    if (eventType && TOOL_END_TYPES.has(eventType)) return 'end';
     
-    // Fallback: check eventName for response-related patterns
-    if (eventName.includes('response.create') || eventName.includes('response.audio_transcript')) return 'start';
-    if (eventName.includes('response.done')) return 'end';
+    // Fallback: check eventName for tool/function call patterns
+    if (eventName.includes('agent_tool_start') || 
+        eventName.includes('function call:') ||
+        eventName.includes('function_call_arguments')) return 'start';
+    if (eventName.includes('agent_tool_end') || 
+        eventName.includes('function call result:')) return 'end';
     
+    return null;
+  };
+
+  const deriveResponseAudioStateFromBackendLog = (log: BackendBridgeLog['payload']): 'start' | null => {
+    const eventType = log.eventType;
+    const eventName = (log.eventName || '').toLowerCase();
+    
+    // Check for actual audio output events (AI speaking)
+    // Note: We only detect START here. END is handled by 'ai_speaking_end' from audio element
+    if (eventType && RESPONSE_AUDIO_START_TYPES.has(eventType)) return 'start';
+    
+    // Fallback: check eventName for audio output patterns
+    if (eventName.includes('response.audio_transcript.delta') || 
+        eventName.includes('response.audio.delta')) return 'start';
+    
+    // We intentionally don't return 'end' for response.done because 
+    // audio may still be playing. Speaking ends via ai_speaking_end event.
     return null;
   };
 
@@ -157,39 +195,85 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
             // Check for audio input events (user speaking)
             const audioState = deriveAudioInputStateFromBackendLog(log.payload);
             if (audioState === 'start') {
-              setIsListening(true);
-              lastActivityTimeRef.current = Date.now();
-              handleEmotionChange('listening', `backend_audio_input:${log.payload.eventType}`, true);
+              // Only show listening face if:
+              // 1. AI is NOT currently speaking (speaking takes priority)
+              // 2. PTT mode is OFF (VAD mode), OR PTT is ON AND button is pressed
+              const pttAllowsListening = !isPTTActiveRef.current || isPTTUserSpeakingRef.current;
+              const shouldShowListening = pttAllowsListening && !isSpeakingRef.current;
+              
+              if (shouldShowListening) {
+                isListeningRef.current = true;
+                setIsListening(true);
+                lastActivityTimeRef.current = Date.now();
+                handleEmotionChange('listening', `backend_audio_input:${log.payload.eventType}`, true);
+              }
               return;
             }
             if (audioState === 'stop') {
-              setIsListening(false);
-              lastActivityTimeRef.current = Date.now();
-              // Thinking: only between input and output. Never override speaking — if backend is outputting, stay speaking.
-              if (!isSpeaking) {
-                handleEmotionChange('thinking', `backend_audio_input:${log.payload.eventType}`, true);
+              // Only process stop if we were actually showing listening
+              if (isListeningRef.current) {
+                isListeningRef.current = false;
+                setIsListening(false);
+                lastActivityTimeRef.current = Date.now();
+                // When user stops speaking, go to neutral and wait for AI to respond
+                // Don't show thinking unless AI is actually calling a tool
+                if (!isSpeakingRef.current && !isCallingToolRef.current) {
+                  handleEmotionChange('neutral', `backend_audio_input_stop:${log.payload.eventType}`, true);
+                }
               }
               return;
             }
             
-            // Response lifecycle (bridge_log). Use these for "speaking" — audio element play/pause
-            // only fires for the first output (greeting); WebRTC stream keeps it playing for later ones.
-            const responseState = deriveResponseStateFromBackendLog(log.payload);
-            if (responseState === 'start') {
+            // Check for tool/function call events (AI is thinking and calling APIs)
+            const toolState = deriveToolCallStateFromBackendLog(log.payload);
+            if (toolState === 'start') {
               lastActivityTimeRef.current = Date.now();
-              if (!isListening) {
-                setIsSpeaking(true);
-                handleEmotionChange('speaking', `backend_response:${log.payload.eventType || log.payload.eventName}`, true);
+              isCallingToolRef.current = true;
+              setIsCallingTool(true);
+              // Only show thinking if not already speaking or listening
+              if (!isListeningRef.current && !isSpeakingRef.current) {
+                handleEmotionChange('thinking', `backend_tool_call:${log.payload.eventType || log.payload.eventName}`, true);
               }
               return;
             }
-            if (responseState === 'end') {
-              setIsSpeaking(false);
+            if (toolState === 'end') {
+              isCallingToolRef.current = false;
+              setIsCallingTool(false);
               lastActivityTimeRef.current = Date.now();
-              // Backend done outputting → neutral (go-to idle emotion)
-              handleEmotionChange('neutral', `backend_response_end:${log.payload.eventType || log.payload.eventName}`, true);
+              // After tool call ends, go to neutral unless AI starts speaking
+              if (!isSpeakingRef.current && !isListeningRef.current) {
+                handleEmotionChange('neutral', `backend_tool_end:${log.payload.eventType || log.payload.eventName}`, true);
+              }
               return;
             }
+            
+            // Check for AI audio output events (AI speaking)
+            const responseAudioState = deriveResponseAudioStateFromBackendLog(log.payload);
+            if (responseAudioState === 'start') {
+              lastActivityTimeRef.current = Date.now();
+              // AI is outputting audio - show speaking face
+              // Speaking takes priority over everything except explicit user interruption
+              
+              // If we were thinking (calling tools), transition to speaking now
+              if (isCallingToolRef.current) {
+                isCallingToolRef.current = false;
+                setIsCallingTool(false);
+              }
+              
+              // If we were in listening state, clear it (AI speaking takes priority)
+              if (isListeningRef.current) {
+                isListeningRef.current = false;
+                setIsListening(false);
+              }
+              
+              // Show speaking face
+              isSpeakingRef.current = true;
+              setIsSpeaking(true);
+              handleEmotionChange('speaking', `backend_response_audio:${log.payload.eventType || log.payload.eventName}`, true);
+              return;
+            }
+            // Note: Speaking END is handled by 'ai_speaking_end' from audio element,
+            // not from bridge_log events. This ensures we wait for actual audio playback to finish.
             
             return;
           }
@@ -205,21 +289,32 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
               break;
               
             case 'ai_speaking_start':
+              isSpeakingRef.current = true;
               setIsSpeaking(true);
               lastActivityTimeRef.current = Date.now();
               handleEmotionChange('speaking', 'ai_speaking_start', true);
               break;
               
             case 'ai_speaking_end':
+              isSpeakingRef.current = false;
               setIsSpeaking(false);
               lastActivityTimeRef.current = Date.now();
-              // Backend done outputting audio → neutral (go-to idle emotion)
-              handleEmotionChange('neutral', 'ai_speaking_end', true);
+              // Audio playback finished → neutral (go-to idle emotion)
+              if (!isListeningRef.current && !isCallingToolRef.current) {
+                handleEmotionChange('neutral', 'ai_speaking_end', true);
+              }
               break;
               
             case 'error':
               setError(data.message);
               handleEmotionChange('confused', 'error');
+              break;
+              
+            case 'ptt_state':
+              // Update PTT state refs from backend
+              isPTTActiveRef.current = data.isPTTActive;
+              isPTTUserSpeakingRef.current = data.isPTTUserSpeaking;
+              console.log(`PTT state updated: active=${data.isPTTActive}, speaking=${data.isPTTUserSpeaking}`);
               break;
           }
         } catch (error) {
@@ -230,7 +325,9 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
 
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
-  }, [onEmotionChange, currentEmotion, lastEmotionChange, isListening, isSpeaking]);
+  }, [onEmotionChange, currentEmotion, lastEmotionChange]);
+  // Note: We use refs (isListeningRef, isSpeakingRef, isCallingToolRef) instead of state
+  // variables in the dependency array to avoid infinite re-render loops
 
   // Check service availability on mount and periodically
   useEffect(() => {
@@ -253,7 +350,7 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
       // 2. We're not already showing time
       // 3. We're not currently transitioning (check by ensuring enough time has passed since last emotion change)
       const timeSinceLastEmotionChange = now - lastEmotionChange;
-      const isTransitioning = timeSinceLastEmotionChange < 1000; // Transition duration is ~800ms, add buffer
+      const isTransitioning = timeSinceLastEmotionChange < 500; // Transition duration is ~400ms, add buffer
 
       // Idle → time trigger commented out for now
       // if (timeSinceLastActivity >= IDLE_TIMEOUT_MS && currentEmotion !== 'time' && !isTransitioning) {
@@ -338,6 +435,7 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
           {isConnected ? '🟢 Realtime Service Connected' : '🔴 Realtime Service Disconnected'}
         </div>
         {isListening && <div className="status-indicator listening">🎤 Listening...</div>}
+        {isCallingTool && <div className="status-indicator thinking">💭 AI Calling Tools...</div>}
         {isSpeaking && <div className="status-indicator speaking">🔊 AI Speaking...</div>}
         {iframeLoaded && <div className="status-indicator loaded">📱 Interface Loaded</div>}
       </div>
@@ -370,31 +468,8 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
         </div>
         
         <div className="agent-config-selector">
-          <label>
-            Agent Configuration:
-            <select 
-              value={agentConfig} 
-              onChange={(e) => setAgentConfig(e.target.value)}
-            >
-              <option value="generalAssistant">🤖 General Assistant</option>
-              <option value="simpleHandoff">🎯 General Chat & Haikus</option>
-              <option value="musicalCompanion">🎵 Musical Companion</option>
-              <option value="customerServiceRetail">🏔️ Snowy Peak Boards</option>
-            </select>
-          </label>
           <div className="agent-description">
-            {agentConfig === 'generalAssistant' && (
-              <span>🤖 General-purpose assistant for a wide variety of tasks and conversations</span>
-            )}
-            {agentConfig === 'simpleHandoff' && (
-              <span>🎯 General-purpose AI that can chat about anything and write haikus</span>
-            )}
-            {agentConfig === 'musicalCompanion' && (
-              <span>🎵 Musical AI companion for guitar chords, songwriting, and music theory!</span>
-            )}
-            {agentConfig === 'customerServiceRetail' && (
-              <span>🏔️ Snowy Peak Boards snowboard shop assistant</span>
-            )}
+            <span>🎵 <strong>Musical Companion:</strong> AI companion for guitar chords, songwriting, and music theory!</span>
           </div>
         </div>
       </div>
@@ -446,22 +521,14 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
           <div className="troubleshooting">
             <h5>Emotion Integration:</h5>
             <ul>
-              <li>🎤 <strong>Listening:</strong> While the backend detects audio input</li>
-              <li>💭 <strong>Thinking:</strong> Only between your input and the AI’s answer (AI is thinking)</li>
-              <li>🗣️ <strong>Speaking:</strong> During the AI’s audio output</li>
-              <li>😐 <strong>Neutral:</strong> When audio input/output is idle</li>
+              <li>🎤 <strong>Listening:</strong> While the backend detects audio input from you</li>
+              <li>💭 <strong>Thinking:</strong> Only when the AI is calling functions or APIs (web search, memory, etc.)</li>
+              <li>🗣️ <strong>Speaking:</strong> During the entire duration of the AI's audio output/response</li>
+              <li>😐 <strong>Neutral:</strong> Default state when idle or between interactions</li>
               <li>🕒 <strong>Time:</strong> Manual toggle to display the current time</li>
             </ul>
             
-            <h5>Available Agent Configurations:</h5>
-            <ul>
-              <li><strong>🤖 General Assistant:</strong> Versatile assistant for a wide variety of tasks, questions, and conversations</li>
-              <li><strong>🎯 General Chat & Haikus:</strong> Can discuss any topic and write haikus - perfect for general conversation and creativity!</li>
-              <li><strong>🎵 Musical Companion:</strong> Guitar chord recognition, songwriting suggestions, and music theory help!</li>
-              <li><strong>🏔️ Snowy Peak Boards:</strong> Specialized for snowboard shop assistance (limited scope)</li>
-            </ul>
-            
-            <h5>Musical Companion Examples:</h5>
+            <h5>Musical Companion Features:</h5>
             <ul>
               <li><strong>Chord Recognition:</strong> "What's the fingering for C major?" or "Show me Am chord"</li>
               <li><strong>Songwriting:</strong> "I want to write a happy pop song" or "Help me with a sad folk song"</li>
