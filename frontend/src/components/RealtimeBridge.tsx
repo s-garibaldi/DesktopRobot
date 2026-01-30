@@ -215,11 +215,11 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
                 isListeningRef.current = false;
                 setIsListening(false);
                 lastActivityTimeRef.current = Date.now();
-                // When user stops speaking, go to neutral and wait for AI to respond
-                // Don't show thinking unless AI is actually calling a tool
-                if (!isSpeakingRef.current && !isCallingToolRef.current) {
-                  handleEmotionChange('neutral', `backend_audio_input_stop:${log.payload.eventType}`, true);
-                }
+                // DON'T transition to neutral here - keep listening face visible
+                // The AI will respond with thinking or speaking, which will naturally
+                // transition the face. This prevents the brief neutral flash between
+                // listening and thinking/speaking.
+                // Neutral will be triggered by ai_speaking_end when AI finishes.
               }
               return;
             }
@@ -230,8 +230,15 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
               lastActivityTimeRef.current = Date.now();
               isCallingToolRef.current = true;
               setIsCallingTool(true);
-              // Only show thinking if not already speaking or listening
-              if (!isListeningRef.current && !isSpeakingRef.current) {
+              
+              // Clear listening state if active (AI is now processing)
+              if (isListeningRef.current) {
+                isListeningRef.current = false;
+                setIsListening(false);
+              }
+              
+              // Show thinking face (unless AI is already speaking)
+              if (!isSpeakingRef.current) {
                 handleEmotionChange('thinking', `backend_tool_call:${log.payload.eventType || log.payload.eventName}`, true);
               }
               return;
