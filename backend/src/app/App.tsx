@@ -176,6 +176,8 @@ function App() {
       return stored ? stored === 'true' : true;
     },
   );
+  // Voice command from Tauri frontend: "microphone off" / "microphone on" to disable/enable backend mic input
+  const [backendMicEnabledByVoice, setBackendMicEnabledByVoice] = useState<boolean>(true);
 
   // Initialize the recording hook.
   const { startRecording, stopRecording, downloadRecording } =
@@ -246,6 +248,17 @@ function App() {
       updateSession();
     }
   }, [isPTTActive]);
+
+  // Listen for voice commands from Tauri frontend: "microphone off" / "microphone on"
+  useEffect(() => {
+    const handleParentMessage = (event: MessageEvent) => {
+      const data = event.data;
+      if (data?.type !== 'set_backend_mic_enabled' || typeof data.enabled !== 'boolean') return;
+      setBackendMicEnabledByVoice(data.enabled);
+    };
+    window.addEventListener('message', handleParentMessage);
+    return () => window.removeEventListener('message', handleParentMessage);
+  }, []);
 
   // Send PTT state to parent window (Tauri frontend) for emotion sync
   useEffect(() => {
@@ -552,25 +565,27 @@ function App() {
     }
 
     // Toggle server-side audio stream mute so bandwidth is saved when the
-    // user disables playback. 
+    // user disables playback or when voice command says "microphone off".
+    const micShouldBeMuted = !isAudioPlaybackEnabled || !backendMicEnabledByVoice;
     try {
-      mute(!isAudioPlaybackEnabled);
+      mute(micShouldBeMuted);
     } catch (err) {
       console.warn('Failed to toggle SDK mute', err);
     }
-  }, [isAudioPlaybackEnabled]);
+  }, [isAudioPlaybackEnabled, backendMicEnabledByVoice]);
 
   // Ensure mute state is propagated to transport right after we connect or
   // whenever the SDK client reference becomes available.
   useEffect(() => {
     if (sessionStatus === 'CONNECTED') {
+      const micShouldBeMuted = !isAudioPlaybackEnabled || !backendMicEnabledByVoice;
       try {
-        mute(!isAudioPlaybackEnabled);
+        mute(micShouldBeMuted);
       } catch (err) {
         console.warn('mute sync after connect failed', err);
       }
     }
-  }, [sessionStatus, isAudioPlaybackEnabled]);
+  }, [sessionStatus, isAudioPlaybackEnabled, backendMicEnabledByVoice]);
 
   useEffect(() => {
     if (sessionStatus === "CONNECTED" && audioElementRef.current?.srcObject) {

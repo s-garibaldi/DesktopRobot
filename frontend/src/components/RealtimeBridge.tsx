@@ -1,5 +1,8 @@
 import { useState, useRef, useEffect } from 'react';
 import { Emotion } from '../App';
+import { useMicrophone } from '../hooks/useMicrophone';
+import { useVoiceCommandMicOnOff } from '../hooks/useVoiceCommandMicOnOff';
+import MicrophonePanel from './MicrophonePanel';
 import './RealtimeBridge.css';
 
 interface RealtimeBridgeProps {
@@ -22,6 +25,23 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
   const [agentConfig] = useState('musicalCompanion'); // Musical Companion as the only agent
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const lastActivityTimeRef = useRef<number>(Date.now());
+
+  const {
+    stream: micStream,
+    status: micStatus,
+    error: micError,
+    isSupported: micSupported,
+    volumeLevel: micVolumeLevel,
+    volumeDb: micVolumeDb,
+    requestAccess: micRequestAccess,
+    stop: micStop,
+  } = useMicrophone();
+
+  // Keep frontend mic stream in a ref for future use (sending to backend).
+  const frontendMicStreamRef = useRef<MediaStream | null>(null);
+  useEffect(() => {
+    frontendMicStreamRef.current = micStream ?? null;
+  }, [micStream]);
   
   // Use refs to track state inside the message handler to avoid infinite loops
   const isListeningRef = useRef(false);
@@ -344,27 +364,21 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
   }, [realtimeUrl]);
 
   // Idle timeout: switch to "time" after 10 seconds of no input/output activity
+  const IDLE_TIMEOUT_MS = 10000;
   useEffect(() => {
     if (!isConnected) return;
 
     const checkIdleTimeout = () => {
       const now = Date.now();
+      // Idle timeout: 10s since last activity; avoid during transitions (~500ms after emotion change)
       const timeSinceLastActivity = now - lastActivityTimeRef.current;
-      const IDLE_TIMEOUT_MS = 10000; // 10 seconds
+      const isTransitioning = (now - lastEmotionChange) < 500;
 
-      // Only trigger if:
-      // 1. 10 seconds have passed since last activity
-      // 2. We're not already showing time
-      // 3. We're not currently transitioning (check by ensuring enough time has passed since last emotion change)
-      const timeSinceLastEmotionChange = now - lastEmotionChange;
-      const isTransitioning = timeSinceLastEmotionChange < 500; // Transition duration is ~400ms, add buffer
-
-      // Idle → time trigger commented out for now
-      // if (timeSinceLastActivity >= IDLE_TIMEOUT_MS && currentEmotion !== 'time' && !isTransitioning) {
-      //   console.log('Idle timeout reached, switching to time display');
-      //   setLastEmotionChange(now);
-      //   onEmotionChange('time');
-      // }
+      if (timeSinceLastActivity >= IDLE_TIMEOUT_MS && currentEmotion !== 'time' && !isTransitioning) {
+        console.log('Idle timeout reached, switching to time display');
+        setLastEmotionChange(now);
+        handleEmotionChange('time', 'idle_timeout', true);
+      }
     };
 
     // Check every second
@@ -373,13 +387,26 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
     return () => clearInterval(interval);
   }, [isConnected, currentEmotion, onEmotionChange, lastEmotionChange]);
 
-  // Send message to iframe
+  // Send message to iframe (target origin for postMessage)
+  const iframeOrigin = (() => {
+    try {
+      return new URL(realtimeUrl).origin;
+    } catch {
+      return '*';
+    }
+  })();
   const sendMessageToIframe = (message: any) => {
     if (iframeRef.current?.contentWindow) {
       console.log('Sending message to iframe:', message);
-      iframeRef.current.contentWindow.postMessage(message, 'http://localhost:3000');
+      iframeRef.current.contentWindow.postMessage(message, iframeOrigin);
     }
   };
+
+  // Vocal commands "microphone off" / "microphone on" → tell backend to disable/enable its mic input
+  useVoiceCommandMicOnOff(
+    micStatus === 'granted' && isConnected && iframeLoaded,
+    (payload) => sendMessageToIframe(payload)
+  );
 
   // Handle iframe load
   const handleIframeLoad = () => {
@@ -395,35 +422,6 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
       });
     }, 1000);
   };
-
-  // Request microphone permission proactively
-  useEffect(() => {
-    // Request microphone permission as soon as component mounts
-    const requestMicrophonePermission = async () => {
-      try {
-        // Check if getUserMedia is available
-        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-          console.warn('getUserMedia is not supported in this browser');
-          return;
-        }
-
-        // Request microphone permission
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        console.log('Microphone permission granted');
-        // Stop the stream immediately - we just needed permission
-        stream.getTracks().forEach(track => track.stop());
-        setError(null); // Clear any previous errors
-      } catch (error: any) {
-        console.error('Microphone permission error:', error);
-        const errorMessage = error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError'
-          ? 'Microphone permission was denied. Please allow microphone access in your system settings and refresh the app.'
-          : 'Failed to access microphone. Please check your system settings.';
-        setError(errorMessage);
-      }
-    };
-
-    requestMicrophonePermission();
-  }, []); // Run once on mount
 
   // Build the iframe URL with the selected agent configuration
   const iframeSrc = `${realtimeUrl}/?agentConfig=${agentConfig}`;
@@ -456,6 +454,22 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
             Retry Connection
           </button>
         </div>
+      )}
+
+      <MicrophonePanel
+        status={micStatus}
+        error={micError}
+        isSupported={micSupported}
+        volumeLevel={micVolumeLevel}
+        volumeDb={micVolumeDb}
+        onRequestAccess={micRequestAccess}
+        onStop={micStop}
+      />
+
+      {micStatus === 'granted' && isConnected && (
+        <p className="voice-command-hint">
+          Say <strong>&quot;microphone off&quot;</strong> or <strong>&quot;microphone on&quot;</strong> to disable or enable the backend mic.
+        </p>
       )}
 
       <div className="bridge-controls">

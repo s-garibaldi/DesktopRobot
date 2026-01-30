@@ -8,25 +8,21 @@ export const drawThinking: EmotionDrawFunction = (ctx, time, breathingPhase, tra
   // Multi-layered glow pulsing
   // For listening->thinking: interpolate from listening (dramatic) to neutral/thinking (normal)
   const isListeningTransition = fromEmotion === 'listening' && transitionProgress < 1;
-  const isNeutralTransition = fromEmotion === 'neutral' && transitionProgress < 1;
-  
+
   const listeningPrimaryGlow = 0.9 + Math.sin(time * 1.5) * 0.1;
-  const neutralPrimaryGlow = 0.85 + Math.sin(time * 1.2) * 0.15;
-  const thinkingPrimaryGlow = 0.85 + Math.sin(time * 1.2) * 0.15; // Thinking uses same as neutral
+  const thinkingPrimaryGlow = 0.85 + Math.sin(time * 1.2) * 0.15;
   const primaryGlow = isListeningTransition
     ? lerp(listeningPrimaryGlow, thinkingPrimaryGlow, transitionProgress)
     : thinkingPrimaryGlow;
   
   const listeningSecondaryGlow = 0.95 + Math.sin(time * 2.5) * 0.15;
-  const neutralSecondaryGlow = 0.9 + Math.sin(time * 2.1) * 0.1;
-  const thinkingSecondaryGlow = 0.9 + Math.sin(time * 2.1) * 0.1; // Thinking uses same as neutral
+  const thinkingSecondaryGlow = 0.9 + Math.sin(time * 2.1) * 0.1;
   const secondaryGlow = isListeningTransition
     ? lerp(listeningSecondaryGlow, thinkingSecondaryGlow, transitionProgress)
     : thinkingSecondaryGlow;
   
   const listeningTertiaryGlow = 0.98 + Math.sin(time * 4.0) * 0.12;
-  const neutralTertiaryGlow = 0.95 + Math.sin(time * 3.3) * 0.05;
-  const thinkingTertiaryGlow = 0.95 + Math.sin(time * 3.3) * 0.05; // Thinking uses same as neutral
+  const thinkingTertiaryGlow = 0.95 + Math.sin(time * 3.3) * 0.05;
   const tertiaryGlow = isListeningTransition
     ? lerp(listeningTertiaryGlow, thinkingTertiaryGlow, transitionProgress)
     : thinkingTertiaryGlow;
@@ -42,15 +38,13 @@ export const drawThinking: EmotionDrawFunction = (ctx, time, breathingPhase, tra
   // Draw the rounded rectangular head outline
   // Interpolate from listening (dramatic) to neutral/thinking (normal)
   const listeningHeadShadowBlur = 40 + Math.sin(time * 2.0) * 20;
-  const neutralHeadShadowBlur = 30 + Math.sin(time * 1.5) * 10;
-  const thinkingHeadShadowBlur = 30 + Math.sin(time * 1.5) * 10; // Thinking uses same as neutral
+  const thinkingHeadShadowBlur = 30 + Math.sin(time * 1.5) * 10;
   const headShadowBlur = isListeningTransition
     ? lerp(listeningHeadShadowBlur, thinkingHeadShadowBlur, transitionProgress)
     : thinkingHeadShadowBlur;
   
   const listeningHeadLineWidth = 7;
-  const neutralHeadLineWidth = 6;
-  const thinkingHeadLineWidth = 6; // Thinking uses same as neutral
+  const thinkingHeadLineWidth = 6;
   const headLineWidth = isListeningTransition
     ? lerp(listeningHeadLineWidth, thinkingHeadLineWidth, transitionProgress)
     : thinkingHeadLineWidth;
@@ -67,8 +61,7 @@ export const drawThinking: EmotionDrawFunction = (ctx, time, breathingPhase, tra
   
   // Eye spacing: listening (40) -> neutral/thinking (50)
   const listeningEyeSpacing = 40;
-  const neutralEyeSpacing = 50;
-  const thinkingEyeSpacing = 50; // Thinking uses same as neutral
+  const thinkingEyeSpacing = 50;
   const eyeSpacing = isListeningTransition
     ? lerp(listeningEyeSpacing, thinkingEyeSpacing, transitionProgress)
     : thinkingEyeSpacing;
@@ -79,16 +72,15 @@ export const drawThinking: EmotionDrawFunction = (ctx, time, breathingPhase, tra
   
   // Eye radius: listening (30) -> neutral/thinking (25)
   const listeningEyeRadius = 30;
-  const neutralEyeRadius = 25;
-  const thinkingEyeRadius = 25; // Thinking uses same as neutral
-  
-  // Calculate eye properties once for both eyes (for listening transition)
-  let eyeRadius: number;
-  let eyeLineWidth: number;
-  let eyeShadowBlur: number;
-  let pupilRadius: number;
-  let highlightSize: number;
-  
+  const thinkingEyeRadius = 25;
+
+  // Defaults for normal thinking; overwritten in isListeningTransition or happy branches
+  let eyeRadius = 25;
+  let eyeLineWidth = 5;
+  let eyeShadowBlur = 30 + Math.sin(time * 1.8) * 8;
+  let pupilRadius = 15;
+  let highlightSize = 4;
+
   if (isListeningTransition) {
     eyeRadius = lerp(listeningEyeRadius, thinkingEyeRadius, transitionProgress);
     eyeLineWidth = lerp(6, 5, transitionProgress);
@@ -106,16 +98,14 @@ export const drawThinking: EmotionDrawFunction = (ctx, time, breathingPhase, tra
   // If transitioning from happy, morph eyes from crescent to full circle
   if (fromEmotion === 'happy') {
     // Interpolate eye properties (reverse of happy)
-    const eyeLineWidth = lerp(7, 5, transitionProgress);
+    const happyEyeLineWidth = lerp(7, 5, transitionProgress);
     const eyeVerticalOffset = lerp(5, 0, transitionProgress);
-    const eyeRadius = lerp(30, 25, transitionProgress);
-    
-    const happyEyeShadowBlur = 30 + Math.sin(time * 1) * 8;
-    const neutralEyeShadowBlur = 30 + Math.sin(time * 1.8) * 8;
-    const eyeShadowBlur = 30 + Math.sin(time * lerp(1, 1.8, transitionProgress)) * 8;
+    const happyEyeRadius = lerp(30, 25, transitionProgress);
+    const happyEyeShadowBlur = 30 + Math.sin(time * lerp(1, 1.8, transitionProgress)) * 8;
+    ctx.shadowBlur = happyEyeShadowBlur;
     ctx.shadowColor = '#00FFFF';
     ctx.strokeStyle = '#00FFFF';
-    ctx.lineWidth = eyeLineWidth;
+    ctx.lineWidth = happyEyeLineWidth;
     ctx.globalAlpha = secondaryGlow;
     ctx.lineCap = 'round';
     
@@ -128,7 +118,7 @@ export const drawThinking: EmotionDrawFunction = (ctx, time, breathingPhase, tra
     const endAngle = lerp(crescentEnd, bottomAngle + Math.PI * 2, transitionProgress);
     
     ctx.beginPath();
-    ctx.arc(0, eyeVerticalOffset, eyeRadius, startAngle, endAngle, false);
+    ctx.arc(0, eyeVerticalOffset, happyEyeRadius, startAngle, endAngle, false);
     ctx.stroke();
     
     // Pupils fade in as we transition from happy

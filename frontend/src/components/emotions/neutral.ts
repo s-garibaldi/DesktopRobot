@@ -1,7 +1,7 @@
 import { EmotionDrawFunction, lerp } from './types';
 
 // NEUTRAL emotion - standard neon face with full circle eyes
-export const drawNeutral: EmotionDrawFunction = (ctx, time, breathingPhase, transitionProgress = 1, fromEmotion) => {
+export const drawNeutral: EmotionDrawFunction = (ctx, time, breathingPhase, transitionProgress = 1, _fromEmotion) => {
   // Enhanced breathing animation
   const breathingScale = 1 + Math.sin(breathingPhase) * 0.03;
   
