@@ -1,9 +1,11 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { Emotion } from '../App';
 import { useMicrophone } from '../hooks/useMicrophone';
 import { useVoiceCommandMicOnOff } from '../hooks/useVoiceCommandMicOnOff';
+import { setMetronomeBpm } from '../metronomeStore';
 import MicrophonePanel from './MicrophonePanel';
-import BackingTrackPanel from './BackingTrackPanel';
+import BackingTrackPanel, { type BackingTrackHandlers } from './BackingTrackPanel';
+import MetronomePanel from './MetronomePanel';
 import './RealtimeBridge.css';
 
 interface RealtimeBridgeProps {
@@ -45,6 +47,15 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
     frontendMicStreamRef.current = micStream ?? null;
   }, [micStream]);
   micStatusRef.current = micStatus;
+
+  // Auto-enable frontend microphone when the app starts (e.g. Tauri app launch).
+  useEffect(() => {
+    if (micSupported && micStatus === 'idle') {
+      micRequestAccess();
+    }
+  // Run once on mount; micSupported and micStatus are stable for initial request.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   
   // Use refs to track state inside the message handler to avoid infinite loops
   const isListeningRef = useRef(false);
@@ -337,7 +348,7 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
               
             case 'error':
               setError(data.message);
-              handleEmotionChange('confused', 'error');
+              handleEmotionChange('metronome', 'error');
               break;
               
             case 'ptt_state':
@@ -377,7 +388,7 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
       const timeSinceLastActivity = now - lastActivityTimeRef.current;
       const isTransitioning = (now - lastEmotionChange) < 500;
 
-      if (timeSinceLastActivity >= IDLE_TIMEOUT_MS && currentEmotion !== 'time' && !isTransitioning) {
+      if (timeSinceLastActivity >= IDLE_TIMEOUT_MS && currentEmotion !== 'time' && currentEmotion !== 'metronome' && !isTransitioning) {
         console.log('Idle timeout reached, switching to time display');
         setLastEmotionChange(now);
         handleEmotionChange('time', 'idle_timeout', true);
@@ -413,9 +424,54 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
     sendMessageToIframe(payload);
   };
 
+  const handleMetronomeCommand = (action: 'start' | 'stop' | 'setBpm', bpm?: number) => {
+    if (action === 'stop') {
+      onEmotionChange('neutral');
+      return;
+    }
+    if (bpm !== undefined) {
+      setMetronomeBpm(bpm);
+      if (action === 'start') {
+        onEmotionChange('metronome');
+      }
+      // 'setBpm' only updates store; face already on metronome will use new BPM
+    }
+  };
+
+  const backingTrackHandlersRef = useRef<BackingTrackHandlers | null>(null);
+  const handleBackingTrackHandlersReady = useCallback((handlers: BackingTrackHandlers) => {
+    backingTrackHandlersRef.current = handlers;
+  }, []);
+  const handleBackingTrackCommand = useCallback(
+    (action: 'describe' | 'pause' | 'play' | 'save' | 'stop', description?: string) => {
+      const h = backingTrackHandlersRef.current;
+      if (!h) return;
+      switch (action) {
+        case 'describe':
+          void h.runCommand(description ?? '');
+          break;
+        case 'pause':
+          h.pause();
+          break;
+        case 'play':
+          h.resume();
+          break;
+        case 'save':
+          h.save();
+          break;
+        case 'stop':
+          h.stop();
+          break;
+      }
+    },
+    []
+  );
+
   useVoiceCommandMicOnOff(
     micStatus === 'granted' && isConnected && iframeLoaded,
-    handleMicCommand
+    handleMicCommand,
+    handleMetronomeCommand,
+    handleBackingTrackCommand
   );
 
   const handleBackingTrackPlayingStart = () => {
@@ -514,11 +570,20 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
         onPlayingStart={handleBackingTrackPlayingStart}
         onPlayingStop={handleBackingTrackPlayingStop}
         elevenLabsApiKey={import.meta.env?.VITE_ELEVENLABS_API_KEY ?? ''}
+        onHandlersReady={handleBackingTrackHandlersReady}
+      />
+
+      <MetronomePanel
+        currentEmotion={currentEmotion}
+        onEmotionChange={onEmotionChange}
       />
 
       {micStatus === 'granted' && isConnected && (
         <p className="voice-command-hint">
-          Say <strong>&quot;microphone off&quot;</strong> or <strong>&quot;microphone on&quot;</strong> to disable or enable the backend mic.
+          Voice: <strong>&quot;microphone off&quot;</strong> / <strong>&quot;microphone on&quot;</strong>;
+          <strong> &quot;metronome&quot;</strong> + number; <strong>&quot;stop&quot;</strong> (metronome + backing);
+          <strong> &quot;backing track&quot;</strong> + description (e.g. &quot;backing track jazz in C 120 bpm&quot;);
+          <strong> &quot;pause&quot;</strong> / <strong>&quot;play&quot;</strong> / <strong>&quot;save&quot;</strong> for backing track.
         </p>
       )}
 
@@ -597,6 +662,7 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
               <li>🗣️ <strong>Speaking:</strong> During the entire duration of the AI's audio output/response</li>
               <li>😐 <strong>Neutral:</strong> Default state when idle or between interactions</li>
               <li>🕒 <strong>Time:</strong> Manual toggle to display the current time</li>
+              <li>⏱ <strong>Metronome:</strong> Blinking blue screen at BPM (set via Metronome panel)</li>
             </ul>
             
             <h5>Musical Companion Features:</h5>

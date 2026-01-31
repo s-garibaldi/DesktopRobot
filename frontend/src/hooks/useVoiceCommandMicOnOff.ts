@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { parseMetronomeBpm } from '../parseMetronomeCommand';
 
 declare global {
   interface Window {
@@ -27,9 +28,14 @@ interface SpeechRecognitionErrorEvent extends Event {
   error: string;
 }
 
+export type MetronomeVoiceAction = 'start' | 'stop' | 'setBpm';
+
+export type BackingTrackVoiceAction = 'describe' | 'pause' | 'play' | 'save' | 'stop';
+
 const COOLDOWN_MS = 2500;
 const PHRASE_OFF = 'microphone off';
 const PHRASE_ON = 'microphone on';
+const PHRASE_BACKING_TRACK = 'backing track';
 
 function normalize(s: string): string {
   return s.toLowerCase().trim().replace(/\s+/g, ' ');
@@ -40,18 +46,58 @@ function transcriptContainsPhrase(transcript: string, phrase: string): boolean {
   return t.includes(phrase) || t === phrase;
 }
 
+function isStopCommand(transcript: string): boolean {
+  const t = normalize(transcript);
+  return t === 'stop' || t.startsWith('stop ');
+}
+
+function isPauseCommand(transcript: string): boolean {
+  const t = normalize(transcript);
+  return t === 'pause' || t.startsWith('pause ');
+}
+
+function isPlayCommand(transcript: string): boolean {
+  const t = normalize(transcript);
+  return t === 'play' || t.startsWith('play ');
+}
+
+function isSaveCommand(transcript: string): boolean {
+  const t = normalize(transcript);
+  return t === 'save' || t.startsWith('save ');
+}
+
+/** Extract description after "backing track" for ElevenLabs. */
+function extractBackingTrackDescription(transcript: string): string | null {
+  const t = transcript.trim();
+  const lower = t.toLowerCase();
+  const idx = lower.indexOf(PHRASE_BACKING_TRACK);
+  if (idx === -1) return null;
+  const after = t.slice(idx + PHRASE_BACKING_TRACK.length).trim();
+  return after || ''; // allow "backing track" alone (use defaults)
+}
+
 /**
- * Listens for vocal commands "microphone off" and "microphone on" via Web Speech API,
- * and calls onCommand with { enabled: boolean }.
+ * Listens for vocal commands via Web Speech API:
+ * - "microphone off" / "microphone on" → onCommand
+ * - "metronome" + number or a number (40–240) → onMetronomeCommand('start' | 'setBpm', bpm)
+ * - "stop" → onMetronomeCommand('stop') and onBackingTrackCommand('stop')
+ * - "backing track" + description → onBackingTrackCommand('describe', description)
+ * - "pause" / "play" / "save" / "stop" → onBackingTrackCommand
  */
 export function useVoiceCommandMicOnOff(
   enabled: boolean,
-  onCommand: (payload: { type: 'set_backend_mic_enabled'; enabled: boolean }) => void
+  onCommand: (payload: { type: 'set_backend_mic_enabled'; enabled: boolean }) => void,
+  onMetronomeCommand?: (action: MetronomeVoiceAction, bpm?: number) => void,
+  onBackingTrackCommand?: (action: BackingTrackVoiceAction, description?: string) => void
 ) {
   const onCommandRef = useRef(onCommand);
+  const onMetronomeCommandRef = useRef(onMetronomeCommand);
+  const onBackingTrackCommandRef = useRef(onBackingTrackCommand);
   const lastCommandTimeRef = useRef(0);
   const enabledRef = useRef(enabled);
   onCommandRef.current = onCommand;
+  onMetronomeCommandRef.current = onMetronomeCommand;
+  onBackingTrackCommandRef.current = onBackingTrackCommand;
   enabledRef.current = enabled;
 
   useEffect(() => {
@@ -91,6 +137,55 @@ export function useVoiceCommandMicOnOff(
           onCommandRef.current({ type: 'set_backend_mic_enabled', enabled: true });
           console.log('Voice command: microphone on');
           return;
+        }
+        if (onBackingTrackCommandRef.current) {
+          const backingDesc = extractBackingTrackDescription(transcript);
+          if (backingDesc !== null) {
+            lastCommandTimeRef.current = now;
+            onBackingTrackCommandRef.current('describe', backingDesc);
+            console.log('Voice command: backing track', backingDesc || '(defaults)');
+            return;
+          }
+          if (isStopCommand(transcript)) {
+            lastCommandTimeRef.current = now;
+            onBackingTrackCommandRef.current('stop');
+            if (onMetronomeCommandRef.current) onMetronomeCommandRef.current('stop');
+            console.log('Voice command: stop (backing + metronome)');
+            return;
+          }
+          if (isPauseCommand(transcript)) {
+            lastCommandTimeRef.current = now;
+            onBackingTrackCommandRef.current('pause');
+            console.log('Voice command: backing track pause');
+            return;
+          }
+          if (isPlayCommand(transcript)) {
+            lastCommandTimeRef.current = now;
+            onBackingTrackCommandRef.current('play');
+            console.log('Voice command: backing track play');
+            return;
+          }
+          if (isSaveCommand(transcript)) {
+            lastCommandTimeRef.current = now;
+            onBackingTrackCommandRef.current('save');
+            console.log('Voice command: backing track save');
+            return;
+          }
+        } else if (onMetronomeCommandRef.current && isStopCommand(transcript)) {
+          lastCommandTimeRef.current = now;
+          onMetronomeCommandRef.current('stop');
+          console.log('Voice command: metronome stop');
+          return;
+        }
+        if (onMetronomeCommandRef.current) {
+          const bpm = parseMetronomeBpm(transcript);
+          if (bpm !== null) {
+            lastCommandTimeRef.current = now;
+            const hasMetronomeWord = transcriptContainsPhrase(transcript, 'metronome');
+            onMetronomeCommandRef.current(hasMetronomeWord ? 'start' : 'setBpm', bpm);
+            console.log('Voice command: metronome', hasMetronomeWord ? 'start' : 'setBpm', bpm);
+            return;
+          }
         }
       }
     };

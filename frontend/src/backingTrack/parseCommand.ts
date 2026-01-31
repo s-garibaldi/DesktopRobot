@@ -14,7 +14,7 @@ const CHORD_PATTERN = /^[A-Ga-g](#|b)?(m|maj|min|dim|aug|sus|add|m7|7|M7|maj7|mi
 const STYLE_KEYWORDS = new Set([
   'lofi', 'lo-fi', 'jazz', 'acoustic', 'rock', 'pop', 'blues', 'folk',
   'ambient', 'chill', 'electronic', 'piano', 'guitar', 'minimal', 'cinematic',
-  'rumba',
+  'rumba', 'bossa', 'bossanova',
 ]);
 
 function isChordLike(token: string): boolean {
@@ -89,7 +89,12 @@ export function parseBackingTrackCommand(text: string): BackingTrackSpec {
       }
     }
 
-    // Style: known keyword
+    // Style: known keyword (including "bossa nova" as two tokens)
+    if (token === 'bossa' && next[0] === 'nova') {
+      spec.style = 'bossa nova';
+      i += 2;
+      continue;
+    }
     if (STYLE_KEYWORDS.has(token)) {
       spec.style = token;
       i += 1;

@@ -1,40 +1,38 @@
 /**
- * Plays backing track audio with seamless loop and short crossfade.
- * Uses Web Audio API for precise crossfade timing.
+ * Plays backing track audio with seamless looping.
+ * Uses Web Audio API's native loop (sample-accurate, gapless).
+ * Supports pause and resume.
  */
 
 import { useCallback, useRef, useState } from 'react';
 
-const CROSSFADE_MS = 800;
-
 export interface UseBackingTrackPlaybackResult {
   isPlaying: boolean;
+  isPaused: boolean;
   error: string | null;
   play: (audioArrayBuffer: ArrayBuffer) => Promise<void>;
   stop: () => void;
+  pause: () => void;
+  resume: () => void;
 }
 
 export function useBackingTrackPlayback(): UseBackingTrackPlaybackResult {
   const [isPlaying, setIsPlaying] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const audioContextRef = useRef<AudioContext | null>(null);
-  const currentGainRef = useRef<GainNode | null>(null);
+  const bufferRef = useRef<AudioBuffer | null>(null);
+  const pausedAtRef = useRef<number | null>(null);
   const currentSourceRef = useRef<AudioBufferSourceNode | null>(null);
-  const loopTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const currentSourceStartTimeRef = useRef<number>(0);
   const isStoppedRef = useRef(false);
 
   const stop = useCallback(() => {
     isStoppedRef.current = true;
-    const t = loopTimeoutRef.current;
-    if (t) {
-      clearTimeout(t);
-      loopTimeoutRef.current = null;
-    }
     try {
       currentSourceRef.current?.stop();
       currentSourceRef.current = null;
-      currentGainRef.current = null;
       const ctx = audioContextRef.current;
       if (ctx && ctx.state !== 'closed') {
         ctx.close();
@@ -43,85 +41,90 @@ export function useBackingTrackPlayback(): UseBackingTrackPlaybackResult {
     } catch {
       // ignore
     }
+    bufferRef.current = null;
+    pausedAtRef.current = null;
     setIsPlaying(false);
+    setIsPaused(false);
     setError(null);
   }, []);
 
-  const play = useCallback(async (audioArrayBuffer: ArrayBuffer) => {
-    stop();
-    setError(null);
-    isStoppedRef.current = false;
+  const pause = useCallback(() => {
+    const ctx = audioContextRef.current;
+    const buffer = bufferRef.current;
+    if (!ctx || !buffer || isStoppedRef.current) return;
+
+    const pos = Math.min(
+      buffer.duration - 0.001,
+      Math.max(0, ctx.currentTime - currentSourceStartTimeRef.current)
+    );
 
     try {
-      const ctx = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
-      audioContextRef.current = ctx;
-      if (ctx.state === 'suspended') {
-        await ctx.resume();
-      }
+      currentSourceRef.current?.stop();
+      currentSourceRef.current = null;
+    } catch {
+      // already stopped
+    }
 
-      const buffer = await ctx.decodeAudioData(audioArrayBuffer.slice(0));
-      const durationSec = buffer.duration;
-      const crossfadeSec = CROSSFADE_MS / 1000;
-      const startNextInSec = Math.max(0, durationSec - crossfadeSec);
+    pausedAtRef.current = pos;
+    setIsPlaying(false);
+    setIsPaused(true);
+  }, []);
 
-      const startNextLoop = () => {
-        if (isStoppedRef.current || !audioContextRef.current) return;
+  const startPlayback = useCallback(
+    (ctx: AudioContext, buffer: AudioBuffer, offset = 0) => {
+      const source = ctx.createBufferSource();
+      source.buffer = buffer;
+      source.loop = true;
+      source.connect(ctx.destination);
+      source.start(ctx.currentTime, offset);
+      currentSourceRef.current = source;
+      currentSourceStartTimeRef.current = ctx.currentTime;
+    },
+    []
+  );
 
-        const startTime = ctx.currentTime;
-        const prevSource = currentSourceRef.current;
-        const prevGain = currentGainRef.current;
+  const resume = useCallback(() => {
+    const ctx = audioContextRef.current;
+    const buffer = bufferRef.current;
+    const pausedAt = pausedAtRef.current;
+    if (!ctx || !buffer || pausedAt == null) return;
 
-        const newSource = ctx.createBufferSource();
-        newSource.buffer = buffer;
-        const newGain = ctx.createGain();
-        newGain.gain.setValueAtTime(0, startTime);
-        newGain.gain.linearRampToValueAtTime(1, startTime + crossfadeSec);
-        newSource.connect(newGain);
-        newGain.connect(ctx.destination);
+    isStoppedRef.current = false;
+    startPlayback(ctx, buffer, pausedAt);
+    pausedAtRef.current = null;
+    setIsPlaying(true);
+    setIsPaused(false);
+  }, [startPlayback]);
 
-        newSource.start(startTime);
-        currentSourceRef.current = newSource;
-        currentGainRef.current = newGain;
+  const play = useCallback(
+    async (audioArrayBuffer: ArrayBuffer) => {
+      stop();
+      setError(null);
+      isStoppedRef.current = false;
 
-        if (prevSource && prevGain) {
-          prevGain.gain.setValueAtTime(1, startTime);
-          prevGain.gain.linearRampToValueAtTime(0, startTime + crossfadeSec);
-          try {
-            prevSource.stop(startTime + crossfadeSec);
-          } catch {
-            // already stopped
-          }
+      try {
+        const ctx = new (window.AudioContext ||
+          (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
+        audioContextRef.current = ctx;
+        if (ctx.state === 'suspended') {
+          await ctx.resume();
         }
 
-        loopTimeoutRef.current = setTimeout(() => {
-          loopTimeoutRef.current = null;
-          startNextLoop();
-        }, startNextInSec * 1000);
-      };
+        const buffer = await ctx.decodeAudioData(audioArrayBuffer.slice(0));
+        bufferRef.current = buffer;
 
-      const firstGain = ctx.createGain();
-      firstGain.gain.setValueAtTime(1, ctx.currentTime);
-      firstGain.connect(ctx.destination);
-      const firstSource = ctx.createBufferSource();
-      firstSource.buffer = buffer;
-      firstSource.connect(firstGain);
-      firstSource.start(ctx.currentTime);
-      currentSourceRef.current = firstSource;
-      currentGainRef.current = firstGain;
+        startPlayback(ctx, buffer);
+        setIsPlaying(true);
+        setIsPaused(false);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        setError(message);
+        setIsPlaying(false);
+        stop();
+      }
+    },
+    [stop, startPlayback]
+  );
 
-      loopTimeoutRef.current = setTimeout(() => {
-        loopTimeoutRef.current = null;
-        startNextLoop();
-      }, startNextInSec * 1000);
-
-      setIsPlaying(true);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      setError(message);
-      setIsPlaying(false);
-      stop();
-    }
-  }, [stop]);
-
-  return { isPlaying, error, play, stop };
+  return { isPlaying, isPaused, error, play, stop, pause, resume };
 }

@@ -30,7 +30,7 @@ The emotion system allows the robot face to react to user input and conversation
 │  │       * "happy", "great" → 'happy'               │ │
 │  │       * "sad", "problem" → 'sad'                 │ │
 │  │       * "think", "hmm" → 'thinking'              │ │
-│  │       * "confused", "what" → 'confused'          │ │
+│  │       * "metronome", BPM → 'metronome'           │ │
 │  │       * "wow", "surprised" → 'surprised'         │ │
 │  │                                                   │ │
 │  │  3. Sends postMessage to parent:                 │ │
@@ -223,7 +223,7 @@ The emotion can change from multiple sources:
 ### 3. **Conversation State**
 - `speech_stopped` → 'neutral'
 - `ai_speaking_end` → 'neutral'
-- `error` → 'confused'
+- `error` → 'metronome'
 
 ## Emotion Detection Patterns
 
@@ -235,7 +235,7 @@ The emotion can change from multiple sources:
 | **sad** | "sad", "sorry", "trouble", "problem", "help", "worried", "struggling" |
 | **excited** | "excited", "thrilled", "awesome", "wow", "amazing", "incredible" |
 | **thinking** | "let me think", "hmm", "maybe", "considering", "wondering" |
-| **confused** | "confused", "what", "how", "don't understand", "explain" |
+| **metronome** | Blinking blue screen at configurable BPM (set via MetronomePanel) |
 | **surprised** | "surprised", "wow", "really", "no way", "unbelievable" |
 | **neutral** | Default state, when speech stops |
 

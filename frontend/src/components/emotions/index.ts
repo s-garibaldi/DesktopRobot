@@ -5,7 +5,7 @@ import { drawThinking } from './thinking';
 import { drawListening } from './listening';
 import { drawTime } from './time';
 import { drawSpeaking } from './speaking';
-import { drawConfused } from './confused';
+import { drawMetronome } from './metronome';
 import { Emotion } from '../../App';
 import { EmotionDrawFunction } from './types';
 
@@ -17,9 +17,9 @@ export const emotionDrawFunctions: Record<Emotion, EmotionDrawFunction> = {
   listening: drawListening,
   time: drawTime,
   speaking: drawSpeaking,
-  confused: drawConfused,
+  metronome: drawMetronome,
 };
 
 // Export individual functions for direct use if needed
-export { drawNeutral, drawHappy, drawThinking, drawListening, drawTime, drawSpeaking, drawConfused };
+export { drawNeutral, drawHappy, drawThinking, drawListening, drawTime, drawSpeaking, drawMetronome };
 export { easeInOut } from './types';

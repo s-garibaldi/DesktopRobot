@@ -4,7 +4,7 @@ import EmotionControls from './components/EmotionControls';
 import RealtimeBridge from './components/RealtimeBridge';
 import './App.css';
 
-export type Emotion = 'neutral' | 'happy' | 'listening' | 'time' | 'thinking' | 'speaking' | 'confused';
+export type Emotion = 'neutral' | 'happy' | 'listening' | 'time' | 'thinking' | 'speaking' | 'metronome';
 
 function App() {
   const [currentEmotion, setCurrentEmotion] = useState<Emotion>('neutral');

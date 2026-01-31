@@ -1,0 +1,7 @@
+# On macOS, sign the dev binary with microphone entitlements before running
+# so that `cargo run` / dev mode can request mic access.
+[target.aarch64-apple-darwin]
+runner = "../scripts/codesign-and-run.sh"
+
+[target.x86_64-apple-darwin]
+runner = "../scripts/codesign-and-run.sh"

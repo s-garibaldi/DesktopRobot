@@ -256,6 +256,32 @@ const AnimatedFace: React.FC<AnimatedFaceProps> = ({ emotion }) => {
           const listenProgress = (p - NEUTRAL_ZOOM_END) / (1 - NEUTRAL_ZOOM_END);
           if (listenDraw) listenDraw(ctx, time, state.breathingPhase, listenProgress, 'neutral');
         }
+      } else if (state.emotionTransition.fromEmotion === 'metronome') {
+        // Transition from metronome: crossfade blue screen out, target emotion in
+        const metronomeDraw = emotionDrawFunctions['metronome'];
+        if (metronomeDraw) {
+          ctx.save();
+          ctx.globalAlpha = 1 - easedProgress;
+          metronomeDraw(ctx, time, state.breathingPhase, 1, 'metronome');
+          ctx.restore();
+        }
+        ctx.save();
+        ctx.globalAlpha = easedProgress;
+        toDraw(ctx, time, state.breathingPhase, 1, 'metronome');
+        ctx.restore();
+      } else if (state.emotionTransition.toEmotion === 'metronome') {
+        // Transition to metronome: crossfade from-emotion out, metronome in
+        const fromDraw = emotionDrawFunctions[state.emotionTransition.fromEmotion];
+        if (fromDraw) {
+          ctx.save();
+          ctx.globalAlpha = 1 - easedProgress;
+          fromDraw(ctx, time, state.breathingPhase, 1, state.emotionTransition.fromEmotion);
+          ctx.restore();
+        }
+        ctx.save();
+        ctx.globalAlpha = easedProgress;
+        toDraw(ctx, time, state.breathingPhase, easedProgress, state.emotionTransition.fromEmotion);
+        ctx.restore();
       } else {
         // For other transitions, draw target emotion
         toDraw(ctx, time, state.breathingPhase, easedProgress, state.emotionTransition.fromEmotion);

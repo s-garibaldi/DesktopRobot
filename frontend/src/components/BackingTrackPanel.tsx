@@ -8,6 +8,10 @@ import {
   parseBackingTrackCommand,
   generateBackingTrack,
   useBackingTrackPlayback,
+  saveLoop,
+  loadLoop,
+  listSavedLoops,
+  type SavedLoopMeta,
 } from '../backingTrack';
 import './BackingTrackPanel.css';
 
@@ -27,7 +31,15 @@ interface SpeechRecognitionEvent extends Event {
   results: SpeechRecognitionResultList;
 }
 
-export type BackingTrackStatus = 'idle' | 'listening' | 'generating' | 'playing' | 'error';
+export type BackingTrackStatus = 'idle' | 'listening' | 'generating' | 'playing' | 'paused' | 'error';
+
+export interface BackingTrackHandlers {
+  runCommand: (text: string) => Promise<void>;
+  stop: () => void;
+  pause: () => void;
+  resume: () => void;
+  save: () => void;
+}
 
 interface BackingTrackPanelProps {
   /** Called when playback starts: parent should set AI mic to disabled. */
@@ -36,20 +48,41 @@ interface BackingTrackPanelProps {
   onPlayingStop: () => void;
   /** API key for ElevenLabs (e.g. from VITE_ELEVENLABS_API_KEY). Empty = show config hint. */
   elevenLabsApiKey: string;
+  /** Optional: called with handlers so parent can trigger actions (e.g. voice commands). */
+  onHandlersReady?: (handlers: BackingTrackHandlers) => void;
 }
 
 export default function BackingTrackPanel({
   onPlayingStart,
   onPlayingStop,
   elevenLabsApiKey,
+  onHandlersReady,
 }: BackingTrackPanelProps) {
   const [status, setStatus] = useState<BackingTrackStatus>('idle');
   const [transcript, setTranscript] = useState('');
   const [textInput, setTextInput] = useState('');
   const [statusMessage, setStatusMessage] = useState('');
+  const [savedLoops, setSavedLoops] = useState<SavedLoopMeta[]>([]);
+  const [selectedSavedId, setSelectedSavedId] = useState('');
+  const [hasTrackToSave, setHasTrackToSave] = useState(false);
   const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
+  const currentBufferRef = useRef<ArrayBuffer | null>(null);
+  const currentSpecRef = useRef<{ chords?: string[]; bpm?: number; style?: string } | null>(null);
 
-  const { error: playbackError, play, stop } = useBackingTrackPlayback();
+  const { error: playbackError, isPaused, play, stop, pause, resume } = useBackingTrackPlayback();
+
+  const refreshSavedLoops = useCallback(async () => {
+    try {
+      const list = await listSavedLoops();
+      setSavedLoops(list);
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshSavedLoops();
+  }, [refreshSavedLoops]);
 
   const runCommand = useCallback(
     async (text: string) => {
@@ -63,10 +96,13 @@ export default function BackingTrackPanel({
       setStatusMessage(`Generating: ${spec.chords?.join(' ') || 'chords'} ${spec.bpm} bpm ${spec.style}…`);
       try {
         const audioBuffer = await generateBackingTrack(spec, elevenLabsApiKey.trim());
+        currentBufferRef.current = audioBuffer;
+        currentSpecRef.current = spec;
+        setHasTrackToSave(true);
         onPlayingStart();
         await play(audioBuffer);
         setStatus('playing');
-        setStatusMessage('Playing (looped). Click Stop to stop.');
+        setStatusMessage('Playing (looped). Pause or Stop.');
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         setStatus('error');
@@ -132,7 +168,68 @@ export default function BackingTrackPanel({
     setStatus('idle');
     setStatusMessage('');
     onPlayingStop();
+    // Keep currentBufferRef/currentSpecRef so user can still save after stopping
   }, [stop, onPlayingStop]);
+
+  const handleSave = useCallback(async () => {
+    const buffer = currentBufferRef.current;
+    if (!buffer) {
+      setStatusMessage('No track to save. Generate or load one first.');
+      return;
+    }
+    try {
+      await saveLoop(buffer, {
+        spec: currentSpecRef.current ?? undefined,
+      });
+      await refreshSavedLoops();
+      setStatusMessage('Saved to library.');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setStatusMessage(`Save failed: ${msg}`);
+    }
+  }, [refreshSavedLoops]);
+
+  const handleLoadSaved = useCallback(
+    async (id: string) => {
+      if (!id) return;
+      try {
+        const saved = await loadLoop(id);
+        if (!saved?.audio) {
+          setStatusMessage('Could not load saved loop.');
+          return;
+        }
+        currentBufferRef.current = saved.audio;
+        currentSpecRef.current = saved.spec ?? null;
+        setHasTrackToSave(true);
+        onPlayingStart();
+        await play(saved.audio);
+        setStatus('playing');
+        setStatusMessage(`Playing: ${saved.name}`);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        setStatusMessage(`Load failed: ${msg}`);
+      }
+    },
+    [play, onPlayingStart]
+  );
+
+  const handlePlaySelectedSaved = useCallback(() => {
+    if (selectedSavedId) handleLoadSaved(selectedSavedId);
+  }, [selectedSavedId, handleLoadSaved]);
+
+  const handlePause = useCallback(() => {
+    pause();
+    setStatus('paused');
+    setStatusMessage('Paused. Click Play to resume.');
+    onPlayingStop();
+  }, [pause, onPlayingStop]);
+
+  const handleResume = useCallback(() => {
+    resume();
+    setStatus('playing');
+    setStatusMessage('Playing (looped). Pause or Stop.');
+    onPlayingStart();
+  }, [resume, onPlayingStart]);
 
   useEffect(() => {
     if (playbackError) {
@@ -140,6 +237,16 @@ export default function BackingTrackPanel({
       setStatusMessage(playbackError);
     }
   }, [playbackError]);
+
+  useEffect(() => {
+    onHandlersReady?.({
+      runCommand,
+      stop: handleStop,
+      pause: handlePause,
+      resume: handleResume,
+      save: handleSave,
+    });
+  }, [onHandlersReady, runCommand, handleStop, handlePause, handleResume, handleSave]);
 
   const handleCommandClick = useCallback(() => {
     if (status === 'listening') {
@@ -153,15 +260,21 @@ export default function BackingTrackPanel({
       handleStop();
       return;
     }
+    if (status === 'paused') {
+      handleResume();
+      return;
+    }
     startListening();
-  }, [status, transcript, startListening, runCommand, handleStop]);
+  }, [status, transcript, startListening, runCommand, handleStop, handleResume]);
 
   const buttonLabel =
     status === 'listening'
       ? 'Processing…'
       : status === 'playing'
         ? 'Stop'
-        : 'Command';
+        : status === 'paused'
+          ? 'Resume'
+          : 'Command';
 
   return (
     <div className="backing-track-panel">
@@ -171,7 +284,7 @@ export default function BackingTrackPanel({
       </div>
       <div className="backing-track-panel-body">
         <p className="backing-track-hint">
-          Output is one measure (4 beats), full backing (chords, bass, pads, percussion). No solos. Loops until Stop. No mic sent to AI.
+          Full backing (4 chord min, bass, pads, percussion). No solos. Seamless loop, 2–8 bars from BPM. Loops until Stop. No mic sent to AI.
         </p>
 
         <div className="backing-track-text-input-row">
@@ -212,16 +325,65 @@ export default function BackingTrackPanel({
           >
             {buttonLabel}
           </button>
-          {status === 'playing' && (
+          {(status === 'playing' || status === 'paused') && (
+            <>
+              <button
+                type="button"
+                className="backing-track-pause-button"
+                onClick={status === 'playing' ? handlePause : handleResume}
+              >
+                {status === 'playing' ? 'Pause' : 'Play'}
+              </button>
+              <button
+                type="button"
+                className="backing-track-stop-button"
+                onClick={handleStop}
+              >
+                Stop
+              </button>
+            </>
+          )}
+          {hasTrackToSave && (
             <button
               type="button"
-              className="backing-track-stop-button"
-              onClick={handleStop}
+              className="backing-track-save-button"
+              onClick={handleSave}
             >
-              Stop
+              Save
             </button>
           )}
         </div>
+
+        {savedLoops.length > 0 && (
+          <div className="backing-track-saved-section">
+            <label htmlFor="backing-track-saved" className="backing-track-label">
+              Saved loops
+            </label>
+            <div className="backing-track-saved-row">
+              <select
+                id="backing-track-saved"
+                className="backing-track-saved-select"
+                value={selectedSavedId}
+                onChange={(e) => setSelectedSavedId(e.target.value)}
+              >
+                <option value="">— Select a loop —</option>
+                {savedLoops.map((loop) => (
+                  <option key={loop.id} value={loop.id}>
+                    {loop.name}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                className="backing-track-play-saved-button"
+                onClick={handlePlaySelectedSaved}
+                disabled={!selectedSavedId || status === 'generating'}
+              >
+                Play
+              </button>
+            </div>
+          </div>
+        )}
         {transcript && status === 'listening' && (
           <p className="backing-track-status listening">Heard: {transcript}</p>
         )}

@@ -125,6 +125,20 @@
   50% { opacity: 0.85; }
 }
 
+.backing-track-pause-button {
+  padding: 0.4rem 0.8rem;
+  font-size: 0.9rem;
+  color: #fff;
+  background: #ca8a04;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.backing-track-pause-button:hover:not(:disabled) {
+  background: #a16207;
+}
+
 .backing-track-stop-button {
   padding: 0.4rem 0.8rem;
   font-size: 0.9rem;
@@ -137,6 +151,69 @@
 
 .backing-track-stop-button:hover:not(:disabled) {
   background: #475569;
+}
+
+.backing-track-save-button {
+  padding: 0.4rem 0.8rem;
+  font-size: 0.9rem;
+  color: #fff;
+  background: #059669;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.backing-track-save-button:hover:not(:disabled) {
+  background: #047857;
+}
+
+.backing-track-saved-section {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.backing-track-saved-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.backing-track-saved-select {
+  flex: 1;
+  min-width: 0;
+  padding: 0.5rem 0.6rem;
+  font-size: 0.9rem;
+  color: #000;
+  border: 1px solid rgba(0, 0, 0, 0.2);
+  border-radius: 6px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.backing-track-saved-select:focus {
+  outline: none;
+  border-color: #2563eb;
+}
+
+.backing-track-play-saved-button {
+  padding: 0.5rem 1rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #fff;
+  background: #2563eb;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.backing-track-play-saved-button:hover:not(:disabled) {
+  background: #1d4ed8;
+}
+
+.backing-track-play-saved-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .backing-track-status {
