@@ -11,11 +11,14 @@ import './MetronomePanel.css';
 interface MetronomePanelProps {
   currentEmotion: Emotion;
   onEmotionChange: (emotion: Emotion) => void;
+  /** When starting the metronome (Set or Show), parent can show thinking then metronome. If not provided, goes straight to metronome. */
+  onStartMetronome?: () => void;
 }
 
 export default function MetronomePanel({
   currentEmotion,
   onEmotionChange,
+  onStartMetronome,
 }: MetronomePanelProps) {
   const [textInput, setTextInput] = useState('');
   const [statusMessage, setStatusMessage] = useState('');
@@ -32,10 +35,10 @@ export default function MetronomePanel({
       setCurrentBpm(bpm);
       setStatusMessage(`Metronome set to ${bpm} BPM.`);
       if (switchToMetronome) {
-        onEmotionChange('metronome');
+        onStartMetronome ? onStartMetronome() : onEmotionChange('metronome');
       }
     },
-    [onEmotionChange]
+    [onEmotionChange, onStartMetronome]
   );
 
   const handleSubmit = useCallback(
@@ -80,7 +83,7 @@ export default function MetronomePanel({
           <button
             type="button"
             className={`metronome-show-button ${currentEmotion === 'metronome' ? 'active' : ''}`}
-            onClick={() => onEmotionChange('metronome')}
+            onClick={() => (onStartMetronome ? onStartMetronome() : onEmotionChange('metronome'))}
           >
             Show Metronome
           </button>

@@ -5,10 +5,13 @@ import { drawSpeakingMouth } from './emotions/speaking';
 
 interface AnimatedFaceProps {
   emotion: Emotion;
+  /** When true, canvas fills its container (e.g. for fullscreen); otherwise fixed 400×400 */
+  fillContainer?: boolean;
 }
 
-const AnimatedFace: React.FC<AnimatedFaceProps> = ({ emotion }) => {
+const AnimatedFace: React.FC<AnimatedFaceProps> = ({ emotion, fillContainer = false }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const animationRef = useRef<number>();
   const timeRef = useRef(0);
 
@@ -298,45 +301,76 @@ const AnimatedFace: React.FC<AnimatedFaceProps> = ({ emotion }) => {
     animationRef.current = requestAnimationFrame(animate);
   }, [emotion]);
 
+  const setCanvasSize = useCallback((w: number, h: number) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    canvas.width = w;
+    canvas.height = h;
+    animate();
+  }, [animate]);
+
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    // Set canvas size
-    canvas.width = 400;
-    canvas.height = 400;
+    if (fillContainer && containerRef.current) {
+      const container = containerRef.current;
+      const updateSize = () => {
+        const w = container.clientWidth;
+        const h = container.clientHeight;
+        if (w > 0 && h > 0) setCanvasSize(w, h);
+      };
+      updateSize();
+      const ro = new ResizeObserver(updateSize);
+      ro.observe(container);
+      return () => {
+        ro.disconnect();
+        if (animationRef.current) {
+          cancelAnimationFrame(animationRef.current);
+        }
+      };
+    }
 
-    // Start animation
-    animate();
+    // Fixed size
+    setCanvasSize(400, 400);
 
     return () => {
       if (animationRef.current) {
         cancelAnimationFrame(animationRef.current);
       }
     };
-  }, [animate]);
+  }, [animate, fillContainer, setCanvasSize]);
+
+  const canvasStyle: React.CSSProperties = {
+    border: fillContainer ? 'none' : '2px solid #00FFFF',
+    borderRadius: fillContainer ? 0 : '15px',
+    background: 'rgba(0, 0, 0, 1)',
+    width: fillContainer ? '100%' : undefined,
+    height: fillContainer ? '100%' : undefined,
+    ...(fillContainer ? {} : {
+      backdropFilter: 'blur(10px)',
+      boxShadow: '0 0 40px rgba(0, 255, 255, 0.4)'
+    })
+  };
 
   return (
-    <div className="animated-face">
-      <canvas
-        ref={canvasRef}
-        style={{ 
-          border: '2px solid #00FFFF', 
-          borderRadius: '15px',
-          background: 'rgba(0, 0, 0, 1)',
-          backdropFilter: 'blur(10px)',
-          boxShadow: '0 0 40px rgba(0, 255, 255, 0.4)'
-        }}
-      />
-      <p style={{ 
-        marginTop: '1rem', 
-        fontSize: '1.2rem', 
-        textTransform: 'capitalize',
-        color: '#00FFFF',
-        textShadow: '0 0 15px #00FFFF'
-      }}>
-        Current Emotion: <strong>{emotion}</strong>
-      </p>
+    <div
+      ref={fillContainer ? containerRef : undefined}
+      className={`animated-face ${fillContainer ? 'animated-face--fill' : ''}`}
+      style={fillContainer ? { width: '100%', height: '100%' } : undefined}
+    >
+      <canvas ref={canvasRef} style={canvasStyle} />
+      {!fillContainer && (
+        <p style={{
+          marginTop: '1rem',
+          fontSize: '1.2rem',
+          textTransform: 'capitalize',
+          color: '#00FFFF',
+          textShadow: '0 0 15px #00FFFF'
+        }}>
+          Current Emotion: <strong>{emotion}</strong>
+        </p>
+      )}
     </div>
   );
 };

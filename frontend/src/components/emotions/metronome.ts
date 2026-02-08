@@ -4,7 +4,7 @@ import { playTickIfNewBeat } from '../../metronomeAudio';
 
 // METRONOME emotion - blinking blue screen synced to BPM
 // Uses performance.now() for accurate wall-clock timing (frame-based time drifts)
-export const drawMetronome: EmotionDrawFunction = (ctx, _time, _breathingPhase, transitionProgress = 1, _fromEmotion) => {
+export const drawMetronome: EmotionDrawFunction = (ctx, _time, _breathingPhase, transitionProgress = 1, fromEmotion) => {
   const bpm = getMetronomeBpm();
   const beatsPerSecond = bpm / 60;
   const period = 1 / beatsPerSecond; // seconds per beat
@@ -13,8 +13,11 @@ export const drawMetronome: EmotionDrawFunction = (ctx, _time, _breathingPhase, 
   const phase = (realTimeSeconds % period) / period;
   const isOn = phase < 0.2;
 
+  // When coming from thinking: no overlap — blink only after thinking has fully faded
+  const fullyTransitioned = transitionProgress >= 1 || fromEmotion !== 'thinking';
+
   // Play tick sound when light flashes (only when fully visible to avoid extra ticks during transitions)
-  if (transitionProgress >= 1) {
+  if (fullyTransitioned) {
     playTickIfNewBeat(realTimeSeconds, period, phase);
   }
 
@@ -29,8 +32,10 @@ export const drawMetronome: EmotionDrawFunction = (ctx, _time, _breathingPhase, 
     alpha = (0.2 - phase) / fadeDuration;
   }
 
-  // Apply transition from previous emotion (fade in metronome)
-  const effectiveAlpha = alpha * Math.min(1, transitionProgress * 1.5);
+  // Apply transition from previous emotion (fade in metronome). From thinking: no blink until transition done.
+  const effectiveAlpha = fullyTransitioned
+    ? alpha * Math.min(1, transitionProgress * 1.5)
+    : 0;
 
   ctx.save();
 

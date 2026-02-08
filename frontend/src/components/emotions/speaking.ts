@@ -79,7 +79,7 @@ export const drawSpeaking: EmotionDrawFunction = (ctx, time, breathingPhase, _tr
   ctx.roundRect(-faceWidth / 2, -faceHeight / 2, faceWidth, faceHeight, cornerRadius);
   ctx.stroke();
 
-  // Left eye: cyan ring, black pupil, cyan highlight
+  // Left eye: cyan ring, black pupil, cyan highlight (same dimensions as neutral)
   ctx.save();
   ctx.translate(-eyeSpacing, -10);
   ctx.shadowBlur = 30 + Math.sin(time * 1.8) * 8;

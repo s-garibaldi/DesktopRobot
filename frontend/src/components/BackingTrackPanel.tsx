@@ -50,6 +50,10 @@ interface BackingTrackPanelProps {
   elevenLabsApiKey: string;
   /** Optional: called with handlers so parent can trigger actions (e.g. voice commands). */
   onHandlersReady?: (handlers: BackingTrackHandlers) => void;
+  /** Optional: called when ElevenLabs music generation starts (face can show thinking). */
+  onGenerationStart?: () => void;
+  /** Optional: called when ElevenLabs music generation ends (success or error). */
+  onGenerationEnd?: () => void;
 }
 
 export default function BackingTrackPanel({
@@ -57,6 +61,8 @@ export default function BackingTrackPanel({
   onPlayingStop,
   elevenLabsApiKey,
   onHandlersReady,
+  onGenerationStart,
+  onGenerationEnd,
 }: BackingTrackPanelProps) {
   const [status, setStatus] = useState<BackingTrackStatus>('idle');
   const [transcript, setTranscript] = useState('');
@@ -65,7 +71,9 @@ export default function BackingTrackPanel({
   const [savedLoops, setSavedLoops] = useState<SavedLoopMeta[]>([]);
   const [selectedSavedId, setSelectedSavedId] = useState('');
   const [hasTrackToSave, setHasTrackToSave] = useState(false);
+  const [importing, setImporting] = useState(false);
   const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
+  const importInputRef = useRef<HTMLInputElement | null>(null);
   const currentBufferRef = useRef<ArrayBuffer | null>(null);
   const currentSpecRef = useRef<{ chords?: string[]; bpm?: number; style?: string } | null>(null);
 
@@ -94,6 +102,7 @@ export default function BackingTrackPanel({
       const spec = parseBackingTrackCommand(text);
       setStatus('generating');
       setStatusMessage(`Generating: ${spec.chords?.join(' ') || 'chords'} ${spec.bpm} bpm ${spec.style}…`);
+      onGenerationStart?.();
       try {
         const audioBuffer = await generateBackingTrack(spec, elevenLabsApiKey.trim());
         currentBufferRef.current = audioBuffer;
@@ -108,9 +117,11 @@ export default function BackingTrackPanel({
         setStatus('error');
         setStatusMessage(msg);
         onPlayingStop();
+      } finally {
+        onGenerationEnd?.();
       }
     },
-    [elevenLabsApiKey, play, onPlayingStart, onPlayingStop]
+    [elevenLabsApiKey, play, onPlayingStart, onPlayingStop, onGenerationStart, onGenerationEnd]
   );
 
   const finalTranscriptRef = useRef('');
@@ -216,6 +227,41 @@ export default function BackingTrackPanel({
   const handlePlaySelectedSaved = useCallback(() => {
     if (selectedSavedId) handleLoadSaved(selectedSavedId);
   }, [selectedSavedId, handleLoadSaved]);
+
+  const handleImportFiles = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const files = e.target.files;
+      if (!files?.length) return;
+      setImporting(true);
+      let ok = 0;
+      let fail = 0;
+      try {
+        for (let i = 0; i < files.length; i++) {
+          const file = files[i];
+          try {
+            const buffer = await file.arrayBuffer();
+            const name = file.name.replace(/\.[^.]+$/, '') || file.name;
+            await saveLoop(buffer, { name });
+            ok++;
+          } catch {
+            fail++;
+          }
+        }
+        await refreshSavedLoops();
+        setStatusMessage(
+          ok > 0 ? `Imported ${ok} track(s)${fail > 0 ? `; ${fail} failed` : ''}.` : `Import failed for ${fail} file(s).`
+        );
+      } finally {
+        setImporting(false);
+        e.target.value = '';
+      }
+    },
+    [refreshSavedLoops]
+  );
+
+  const triggerImport = useCallback(() => {
+    importInputRef.current?.click();
+  }, []);
 
   const handlePause = useCallback(() => {
     pause();
@@ -354,11 +400,33 @@ export default function BackingTrackPanel({
           )}
         </div>
 
-        {savedLoops.length > 0 && (
-          <div className="backing-track-saved-section">
+        <div className="backing-track-saved-section">
+          <div className="backing-track-saved-header">
             <label htmlFor="backing-track-saved" className="backing-track-label">
               Saved loops
             </label>
+            <input
+              ref={importInputRef}
+              type="file"
+              accept="audio/*,.mp3,.wav,.m4a,.aac"
+              multiple
+              className="backing-track-import-input"
+              onChange={handleImportFiles}
+              aria-label="Import audio files"
+            />
+            <button
+              type="button"
+              className="backing-track-import-button"
+              onClick={triggerImport}
+              disabled={importing || status === 'generating'}
+            >
+              {importing ? 'Importing…' : 'Import file(s)'}
+            </button>
+          </div>
+          <p className="backing-track-import-hint">
+            Add pre-downloaded backing tracks (e.g. from TrueFire): use Import file(s) and choose the audio files from your computer.
+          </p>
+          {savedLoops.length > 0 ? (
             <div className="backing-track-saved-row">
               <select
                 id="backing-track-saved"
@@ -382,8 +450,8 @@ export default function BackingTrackPanel({
                 Play
               </button>
             </div>
-          </div>
-        )}
+          ) : null}
+        </div>
         {transcript && status === 'listening' && (
           <p className="backing-track-status listening">Heard: {transcript}</p>
         )}

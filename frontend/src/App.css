@@ -39,6 +39,72 @@
   max-width: 400px;
 }
 
+.animated-face-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.emotion-fullscreen-enter {
+  padding: 0.5rem 1rem;
+  font-size: 0.95rem;
+  color: #00FFFF;
+  background: rgba(0, 0, 0, 0.5);
+  border: 1px solid #00FFFF;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.2s, box-shadow 0.2s;
+}
+
+.emotion-fullscreen-enter:hover {
+  background: rgba(0, 255, 255, 0.15);
+  box-shadow: 0 0 20px rgba(0, 255, 255, 0.3);
+}
+
+/* Fullscreen: same layout as normal, just fills the viewport */
+.app-fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  padding: 2rem;
+  display: flex;
+  flex-direction: column;
+  overflow: auto;
+}
+
+.app-fullscreen .robot-container {
+  flex: 1;
+  max-width: none;
+  min-height: 0;
+}
+
+.app-fullscreen .animated-face-wrapper {
+  width: min(45vw, 80vh);
+  height: min(45vw, 80vh);
+  flex-shrink: 0;
+}
+
+.emotion-fullscreen-exit {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  padding: 0.5rem 1rem;
+  font-size: 0.95rem;
+  color: #00FFFF;
+  background: rgba(0, 0, 0, 0.6);
+  border: 1px solid #00FFFF;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.2s, box-shadow 0.2s;
+}
+
+.emotion-fullscreen-exit:hover {
+  background: rgba(0, 255, 255, 0.2);
+  box-shadow: 0 0 20px rgba(0, 255, 255, 0.3);
+}
+
 /* Responsive adjustments */
 @media (max-width: 768px) {
   .robot-container {

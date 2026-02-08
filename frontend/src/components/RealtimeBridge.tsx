@@ -22,7 +22,9 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isCallingTool, setIsCallingTool] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [realtimeUrl, setRealtimeUrl] = useState('http://localhost:3000');
+  const [realtimeUrl, setRealtimeUrl] = useState(
+    () => (import.meta.env.VITE_BACKEND_URL as string | undefined) || 'http://localhost:3000'
+  );
   const [iframeLoaded, setIframeLoaded] = useState(false);
   const [lastEmotionChange, setLastEmotionChange] = useState<number>(0);
   const [agentConfig] = useState('musicalCompanion'); // Musical Companion as the only agent
@@ -418,21 +420,47 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
 
   const lastKnownMicEnabledRef = useRef(true);
   const savedMicBeforeBackingTrackRef = useRef(true);
+  const metronomeStartTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  /** Duration to show "thinking" while "generating" metronome sound/timing before switching to metronome face. */
+  const METRONOME_PREPARE_MS = 600;
 
   const handleMicCommand = (payload: { type: 'set_backend_mic_enabled'; enabled: boolean }) => {
     lastKnownMicEnabledRef.current = payload.enabled;
     sendMessageToIframe(payload);
   };
 
+  const handleStartMetronome = useCallback(() => {
+    handleEmotionChange('thinking', 'metronome_preparing', true);
+    if (metronomeStartTimeoutRef.current) clearTimeout(metronomeStartTimeoutRef.current);
+    metronomeStartTimeoutRef.current = setTimeout(() => {
+      metronomeStartTimeoutRef.current = null;
+      handleEmotionChange('metronome', 'metronome_started', true);
+    }, METRONOME_PREPARE_MS);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (metronomeStartTimeoutRef.current) {
+        clearTimeout(metronomeStartTimeoutRef.current);
+        metronomeStartTimeoutRef.current = null;
+      }
+    };
+  }, []);
+
   const handleMetronomeCommand = (action: 'start' | 'stop' | 'setBpm', bpm?: number) => {
     if (action === 'stop') {
+      if (metronomeStartTimeoutRef.current) {
+        clearTimeout(metronomeStartTimeoutRef.current);
+        metronomeStartTimeoutRef.current = null;
+      }
       onEmotionChange('neutral');
       return;
     }
     if (bpm !== undefined) {
       setMetronomeBpm(bpm);
       if (action === 'start') {
-        onEmotionChange('metronome');
+        handleStartMetronome();
       }
       // 'setBpm' only updates store; face already on metronome will use new BPM
     }
@@ -484,6 +512,17 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
       type: 'set_backend_mic_enabled',
       enabled: savedMicBeforeBackingTrackRef.current,
     });
+  };
+
+  const handleBackingTrackGenerationStart = () => {
+    lastActivityTimeRef.current = Date.now();
+    handleEmotionChange('thinking', 'backing_track_generation', true);
+  };
+
+  const handleBackingTrackGenerationEnd = () => {
+    if (currentEmotion === 'thinking') {
+      handleEmotionChange('neutral', 'backing_track_generation_done', true);
+    }
   };
 
   // When user enables frontend mic, also enable backend mic (when connected)
@@ -571,11 +610,14 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
         onPlayingStop={handleBackingTrackPlayingStop}
         elevenLabsApiKey={import.meta.env?.VITE_ELEVENLABS_API_KEY ?? ''}
         onHandlersReady={handleBackingTrackHandlersReady}
+        onGenerationStart={handleBackingTrackGenerationStart}
+        onGenerationEnd={handleBackingTrackGenerationEnd}
       />
 
       <MetronomePanel
         currentEmotion={currentEmotion}
         onEmotionChange={onEmotionChange}
+        onStartMetronome={handleStartMetronome}
       />
 
       {micStatus === 'granted' && isConnected && (

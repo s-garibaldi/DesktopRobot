@@ -173,6 +173,53 @@
   border-top: 1px solid rgba(0, 0, 0, 0.08);
 }
 
+.backing-track-saved-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.backing-track-saved-header .backing-track-label {
+  margin-bottom: 0;
+}
+
+.backing-track-import-input {
+  position: absolute;
+  width: 0.1px;
+  height: 0.1px;
+  opacity: 0;
+  overflow: hidden;
+  z-index: -1;
+}
+
+.backing-track-import-button {
+  padding: 0.4rem 0.8rem;
+  font-size: 0.9rem;
+  color: #fff;
+  background: #6366f1;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  margin-left: auto;
+}
+
+.backing-track-import-button:hover:not(:disabled) {
+  background: #4f46e5;
+}
+
+.backing-track-import-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.backing-track-import-hint {
+  margin-top: 0.35rem;
+  margin-bottom: 0.5rem;
+  font-size: 0.8rem;
+  color: #64748b;
+}
+
 .backing-track-saved-row {
   display: flex;
   align-items: center;
