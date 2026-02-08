@@ -33,6 +33,7 @@ export type MetronomeVoiceAction = 'start' | 'stop' | 'setBpm';
 export type BackingTrackVoiceAction = 'describe' | 'pause' | 'play' | 'save' | 'stop';
 
 const COOLDOWN_MS = 2500;
+const BACKING_DESCRIPTION_TIMEOUT_MS = 5000;
 const PHRASE_OFF = 'microphone off';
 const PHRASE_ON = 'microphone on';
 const PHRASE_BACKING_TRACK = 'backing track';
@@ -149,6 +150,7 @@ export function useVoiceCommandMicOnOff(
   const enabledRef = useRef(enabled);
   const waitingForBackingDescriptionRef = useRef(false);
   const chimePlayedForBackingRef = useRef(false);
+  const backingDescriptionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const waitingForMetronomeBpmRef = useRef(false);
   const chimePlayedForMetronomeRef = useRef(false);
   onCommandRef.current = onCommand;
@@ -196,6 +198,10 @@ export function useVoiceCommandMicOnOff(
         // If we're waiting for a backing track description, next utterance is the description (unless it's a command)
         if (waitingForBackingDescriptionRef.current && onBackingTrackCommandRef.current) {
           waitingForBackingDescriptionRef.current = false;
+          if (backingDescriptionTimeoutRef.current) {
+            clearTimeout(backingDescriptionTimeoutRef.current);
+            backingDescriptionTimeoutRef.current = null;
+          }
           if (transcriptContainsPhrase(transcript, PHRASE_OFF)) {
             lastCommandTimeRef.current = now;
             playChimeDown();
@@ -285,7 +291,14 @@ export function useVoiceCommandMicOnOff(
           if (backingDesc !== null) {
             lastCommandTimeRef.current = now;
             if (backingDesc.trim() === '') {
+              if (backingDescriptionTimeoutRef.current) clearTimeout(backingDescriptionTimeoutRef.current);
               waitingForBackingDescriptionRef.current = true;
+              backingDescriptionTimeoutRef.current = setTimeout(() => {
+                backingDescriptionTimeoutRef.current = null;
+                waitingForBackingDescriptionRef.current = false;
+                playChimeDown();
+                console.log('Voice command: backing track description timeout (5s)');
+              }, BACKING_DESCRIPTION_TIMEOUT_MS);
               console.log('Voice command: backing track (say description after chime)');
             } else {
               onBackingTrackCommandRef.current('describe', backingDesc);
@@ -375,6 +388,10 @@ export function useVoiceCommandMicOnOff(
     return () => {
       waitingForBackingDescriptionRef.current = false;
       chimePlayedForBackingRef.current = false;
+      if (backingDescriptionTimeoutRef.current) {
+        clearTimeout(backingDescriptionTimeoutRef.current);
+        backingDescriptionTimeoutRef.current = null;
+      }
       waitingForMetronomeBpmRef.current = false;
       chimePlayedForMetronomeRef.current = false;
       try {
