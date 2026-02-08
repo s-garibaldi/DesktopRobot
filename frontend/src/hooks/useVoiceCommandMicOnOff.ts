@@ -34,6 +34,7 @@ export type BackingTrackVoiceAction = 'describe' | 'pause' | 'play' | 'save' | '
 
 const COOLDOWN_MS = 2500;
 const BACKING_DESCRIPTION_TIMEOUT_MS = 5000;
+const METRONOME_BPM_TIMEOUT_MS = 5000;
 const PHRASE_OFF = 'microphone off';
 const PHRASE_ON = 'microphone on';
 const PHRASE_BACKING_TRACK = 'backing track';
@@ -153,6 +154,7 @@ export function useVoiceCommandMicOnOff(
   const backingDescriptionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const waitingForMetronomeBpmRef = useRef(false);
   const chimePlayedForMetronomeRef = useRef(false);
+  const metronomeBpmTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   onCommandRef.current = onCommand;
   onMetronomeCommandRef.current = onMetronomeCommand;
   onBackingTrackCommandRef.current = onBackingTrackCommand;
@@ -256,10 +258,76 @@ export function useVoiceCommandMicOnOff(
           return;
         }
 
-        // If we're waiting for a metronome BPM, next utterance is the number (or we clear and fall through)
+        // If we're waiting for a metronome BPM — same idle pattern as backing track: any utterance clears timeout and stops waiting, then we branch
         if (waitingForMetronomeBpmRef.current && onMetronomeCommandRef.current) {
           waitingForMetronomeBpmRef.current = false;
           chimePlayedForMetronomeRef.current = false;
+          if (metronomeBpmTimeoutRef.current) {
+            clearTimeout(metronomeBpmTimeoutRef.current);
+            metronomeBpmTimeoutRef.current = null;
+          }
+          if (transcriptContainsPhrase(transcript, PHRASE_OFF)) {
+            lastCommandTimeRef.current = now;
+            playChimeDown();
+            onCommandRef.current({ type: 'set_backend_mic_enabled', enabled: false });
+            console.log('Voice command: microphone off');
+            return;
+          }
+          if (transcriptContainsPhrase(transcript, PHRASE_ON)) {
+            lastCommandTimeRef.current = now;
+            playChime();
+            onCommandRef.current({ type: 'set_backend_mic_enabled', enabled: true });
+            console.log('Voice command: microphone on');
+            return;
+          }
+          if (isStopCommand(transcript)) {
+            lastCommandTimeRef.current = now;
+            if (onBackingTrackCommandRef.current) onBackingTrackCommandRef.current('stop');
+            onMetronomeCommandRef.current('stop');
+            console.log('Voice command: stop (backing + metronome)');
+            return;
+          }
+          if (onBackingTrackCommandRef.current) {
+            const backingDesc = extractBackingTrackDescription(transcript);
+            if (backingDesc !== null) {
+              lastCommandTimeRef.current = now;
+              playChime();
+              if (backingDesc.trim() !== '') {
+                onBackingTrackCommandRef.current('describe', backingDesc);
+                console.log('Voice command: backing track', backingDesc);
+              } else {
+                waitingForBackingDescriptionRef.current = true;
+                if (backingDescriptionTimeoutRef.current) clearTimeout(backingDescriptionTimeoutRef.current);
+                backingDescriptionTimeoutRef.current = setTimeout(() => {
+                  backingDescriptionTimeoutRef.current = null;
+                  waitingForBackingDescriptionRef.current = false;
+                  playChimeDown();
+                  console.log('Voice command: backing track description timeout (5s)');
+                }, BACKING_DESCRIPTION_TIMEOUT_MS);
+                console.log('Voice command: backing track (say description after chime)');
+              }
+              chimePlayedForBackingRef.current = false;
+              return;
+            }
+            if (isPauseCommand(transcript)) {
+              lastCommandTimeRef.current = now;
+              onBackingTrackCommandRef.current('pause');
+              console.log('Voice command: backing track pause');
+              return;
+            }
+            if (isPlayCommand(transcript)) {
+              lastCommandTimeRef.current = now;
+              onBackingTrackCommandRef.current('play');
+              console.log('Voice command: backing track play');
+              return;
+            }
+            if (isSaveCommand(transcript)) {
+              lastCommandTimeRef.current = now;
+              onBackingTrackCommandRef.current('save');
+              console.log('Voice command: backing track save');
+              return;
+            }
+          }
           const bpm = parseMetronomeBpm(transcript);
           if (bpm !== null) {
             lastCommandTimeRef.current = now;
@@ -267,7 +335,8 @@ export function useVoiceCommandMicOnOff(
             console.log('Voice command: metronome (follow-up)', bpm);
             return;
           }
-          // Not a number; clear waiting and fall through (other commands or cooldown)
+          // Not a number and not a command: cancel wait (already cleared above), do nothing else
+          return;
         }
 
         if (now - lastCommandTimeRef.current < COOLDOWN_MS) return;
@@ -345,7 +414,15 @@ export function useVoiceCommandMicOnOff(
             onMetronomeCommandRef.current('start', bpm);
             console.log('Voice command: metronome', bpm);
           } else {
+            if (metronomeBpmTimeoutRef.current) clearTimeout(metronomeBpmTimeoutRef.current);
             waitingForMetronomeBpmRef.current = true;
+            metronomeBpmTimeoutRef.current = setTimeout(() => {
+              metronomeBpmTimeoutRef.current = null;
+              waitingForMetronomeBpmRef.current = false;
+              chimePlayedForMetronomeRef.current = false;
+              playChimeDown();
+              console.log('Voice command: metronome BPM timeout (5s)');
+            }, METRONOME_BPM_TIMEOUT_MS);
             console.log('Voice command: metronome (say BPM after chime)');
           }
           chimePlayedForMetronomeRef.current = false;
@@ -394,6 +471,10 @@ export function useVoiceCommandMicOnOff(
       }
       waitingForMetronomeBpmRef.current = false;
       chimePlayedForMetronomeRef.current = false;
+      if (metronomeBpmTimeoutRef.current) {
+        clearTimeout(metronomeBpmTimeoutRef.current);
+        metronomeBpmTimeoutRef.current = null;
+      }
       try {
         recognition.stop();
       } catch {
