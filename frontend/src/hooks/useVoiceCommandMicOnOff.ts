@@ -123,6 +123,8 @@ export function useVoiceCommandMicOnOff(
   const enabledRef = useRef(enabled);
   const waitingForBackingDescriptionRef = useRef(false);
   const chimePlayedForBackingRef = useRef(false);
+  const waitingForMetronomeBpmRef = useRef(false);
+  const chimePlayedForMetronomeRef = useRef(false);
   onCommandRef.current = onCommand;
   onMetronomeCommandRef.current = onMetronomeCommand;
   onBackingTrackCommandRef.current = onBackingTrackCommand;
@@ -153,10 +155,14 @@ export function useVoiceCommandMicOnOff(
         const result = results[i];
         const transcript = (result[0]?.transcript ?? '').trim();
 
-        // Play chime as soon as "backing track" is detected (including interim) so it feels immediate
+        // Play chime as soon as "backing track" or "metronome" is detected (including interim) so it feels immediate
         if (extractBackingTrackDescription(transcript) !== null && !chimePlayedForBackingRef.current) {
           playChime();
           chimePlayedForBackingRef.current = true;
+        }
+        if (transcriptContainsPhrase(transcript, 'metronome') && !chimePlayedForMetronomeRef.current) {
+          playChime();
+          chimePlayedForMetronomeRef.current = true;
         }
 
         if (!result.isFinal) continue;
@@ -214,6 +220,20 @@ export function useVoiceCommandMicOnOff(
           onBackingTrackCommandRef.current('describe', transcript || '');
           console.log('Voice command: backing track (follow-up)', transcript || '(defaults)');
           return;
+        }
+
+        // If we're waiting for a metronome BPM, next utterance is the number (or we clear and fall through)
+        if (waitingForMetronomeBpmRef.current && onMetronomeCommandRef.current) {
+          waitingForMetronomeBpmRef.current = false;
+          chimePlayedForMetronomeRef.current = false;
+          const bpm = parseMetronomeBpm(transcript);
+          if (bpm !== null) {
+            lastCommandTimeRef.current = now;
+            onMetronomeCommandRef.current('start', bpm);
+            console.log('Voice command: metronome (follow-up)', bpm);
+            return;
+          }
+          // Not a number; clear waiting and fall through (other commands or cooldown)
         }
 
         if (now - lastCommandTimeRef.current < COOLDOWN_MS) return;
@@ -275,13 +295,25 @@ export function useVoiceCommandMicOnOff(
           console.log('Voice command: metronome stop');
           return;
         }
+        if (onMetronomeCommandRef.current && transcriptContainsPhrase(transcript, 'metronome')) {
+          const bpm = parseMetronomeBpm(transcript);
+          lastCommandTimeRef.current = now;
+          if (bpm !== null) {
+            onMetronomeCommandRef.current('start', bpm);
+            console.log('Voice command: metronome', bpm);
+          } else {
+            waitingForMetronomeBpmRef.current = true;
+            console.log('Voice command: metronome (say BPM after chime)');
+          }
+          chimePlayedForMetronomeRef.current = false;
+          return;
+        }
         if (onMetronomeCommandRef.current) {
           const bpm = parseMetronomeBpm(transcript);
           if (bpm !== null) {
             lastCommandTimeRef.current = now;
-            const hasMetronomeWord = transcriptContainsPhrase(transcript, 'metronome');
-            onMetronomeCommandRef.current(hasMetronomeWord ? 'start' : 'setBpm', bpm);
-            console.log('Voice command: metronome', hasMetronomeWord ? 'start' : 'setBpm', bpm);
+            onMetronomeCommandRef.current('setBpm', bpm);
+            console.log('Voice command: metronome setBpm', bpm);
             return;
           }
         }
@@ -313,6 +345,8 @@ export function useVoiceCommandMicOnOff(
     return () => {
       waitingForBackingDescriptionRef.current = false;
       chimePlayedForBackingRef.current = false;
+      waitingForMetronomeBpmRef.current = false;
+      chimePlayedForMetronomeRef.current = false;
       try {
         recognition.stop();
       } catch {
