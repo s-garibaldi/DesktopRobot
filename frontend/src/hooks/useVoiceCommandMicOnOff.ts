@@ -37,6 +37,32 @@ const PHRASE_OFF = 'microphone off';
 const PHRASE_ON = 'microphone on';
 const PHRASE_BACKING_TRACK = 'backing track';
 
+/** Play a short chime to acknowledge "backing track" (ready for description). */
+function playChime(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const Ctor = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    if (!Ctor) return;
+    const ctx = new Ctor();
+    const now = ctx.currentTime;
+    const freq = [523.25, 659.25]; // C5, E5
+    freq.forEach((f, i) => {
+      const osc = ctx.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(f, now + i * 0.08);
+      const gain = ctx.createGain();
+      gain.gain.setValueAtTime(0.225, now + i * 0.08); // ~50% louder than 0.15
+      gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.08 + 0.25);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now + i * 0.08);
+      osc.stop(now + i * 0.08 + 0.26);
+    });
+  } catch {
+    // ignore
+  }
+}
+
 function normalize(s: string): string {
   return s.toLowerCase().trim().replace(/\s+/g, ' ');
 }
@@ -95,6 +121,8 @@ export function useVoiceCommandMicOnOff(
   const onBackingTrackCommandRef = useRef(onBackingTrackCommand);
   const lastCommandTimeRef = useRef(0);
   const enabledRef = useRef(enabled);
+  const waitingForBackingDescriptionRef = useRef(false);
+  const chimePlayedForBackingRef = useRef(false);
   onCommandRef.current = onCommand;
   onMetronomeCommandRef.current = onMetronomeCommand;
   onBackingTrackCommandRef.current = onBackingTrackCommand;
@@ -119,13 +147,77 @@ export function useVoiceCommandMicOnOff(
 
     recognition.onresult = (event: SpeechRecognitionEvent) => {
       const now = Date.now();
-      if (now - lastCommandTimeRef.current < COOLDOWN_MS) return;
-
       const results = event.results;
+
       for (let i = event.resultIndex; i < results.length; i++) {
         const result = results[i];
+        const transcript = (result[0]?.transcript ?? '').trim();
+
+        // Play chime as soon as "backing track" is detected (including interim) so it feels immediate
+        if (extractBackingTrackDescription(transcript) !== null && !chimePlayedForBackingRef.current) {
+          playChime();
+          chimePlayedForBackingRef.current = true;
+        }
+
         if (!result.isFinal) continue;
-        const transcript = result[0]?.transcript ?? '';
+
+        // If we're waiting for a backing track description, next utterance is the description (unless it's a command)
+        if (waitingForBackingDescriptionRef.current && onBackingTrackCommandRef.current) {
+          waitingForBackingDescriptionRef.current = false;
+          if (transcriptContainsPhrase(transcript, PHRASE_OFF)) {
+            lastCommandTimeRef.current = now;
+            onCommandRef.current({ type: 'set_backend_mic_enabled', enabled: false });
+            console.log('Voice command: microphone off');
+            return;
+          }
+          if (transcriptContainsPhrase(transcript, PHRASE_ON)) {
+            lastCommandTimeRef.current = now;
+            onCommandRef.current({ type: 'set_backend_mic_enabled', enabled: true });
+            console.log('Voice command: microphone on');
+            return;
+          }
+          if (isStopCommand(transcript)) {
+            lastCommandTimeRef.current = now;
+            onBackingTrackCommandRef.current('stop');
+            if (onMetronomeCommandRef.current) onMetronomeCommandRef.current('stop');
+            console.log('Voice command: stop (backing + metronome)');
+            return;
+          }
+          if (isPauseCommand(transcript)) {
+            lastCommandTimeRef.current = now;
+            onBackingTrackCommandRef.current('pause');
+            console.log('Voice command: backing track pause');
+            return;
+          }
+          if (isPlayCommand(transcript)) {
+            lastCommandTimeRef.current = now;
+            onBackingTrackCommandRef.current('play');
+            console.log('Voice command: backing track play');
+            return;
+          }
+          if (isSaveCommand(transcript)) {
+            lastCommandTimeRef.current = now;
+            onBackingTrackCommandRef.current('save');
+            console.log('Voice command: backing track save');
+            return;
+          }
+          const bpm = parseMetronomeBpm(transcript);
+          if (bpm !== null && onMetronomeCommandRef.current) {
+            lastCommandTimeRef.current = now;
+            const hasMetronomeWord = transcriptContainsPhrase(transcript, 'metronome');
+            onMetronomeCommandRef.current(hasMetronomeWord ? 'start' : 'setBpm', bpm);
+            console.log('Voice command: metronome', hasMetronomeWord ? 'start' : 'setBpm', bpm);
+            return;
+          }
+          // Use this utterance as the backing track description
+          lastCommandTimeRef.current = now;
+          onBackingTrackCommandRef.current('describe', transcript || '');
+          console.log('Voice command: backing track (follow-up)', transcript || '(defaults)');
+          return;
+        }
+
+        if (now - lastCommandTimeRef.current < COOLDOWN_MS) return;
+
         if (transcriptContainsPhrase(transcript, PHRASE_OFF)) {
           lastCommandTimeRef.current = now;
           onCommandRef.current({ type: 'set_backend_mic_enabled', enabled: false });
@@ -142,8 +234,14 @@ export function useVoiceCommandMicOnOff(
           const backingDesc = extractBackingTrackDescription(transcript);
           if (backingDesc !== null) {
             lastCommandTimeRef.current = now;
-            onBackingTrackCommandRef.current('describe', backingDesc);
-            console.log('Voice command: backing track', backingDesc || '(defaults)');
+            if (backingDesc.trim() === '') {
+              waitingForBackingDescriptionRef.current = true;
+              console.log('Voice command: backing track (say description after chime)');
+            } else {
+              onBackingTrackCommandRef.current('describe', backingDesc);
+              console.log('Voice command: backing track', backingDesc);
+            }
+            chimePlayedForBackingRef.current = false; // so next "backing track" plays chime again
             return;
           }
           if (isStopCommand(transcript)) {
@@ -213,6 +311,8 @@ export function useVoiceCommandMicOnOff(
     }
 
     return () => {
+      waitingForBackingDescriptionRef.current = false;
+      chimePlayedForBackingRef.current = false;
       try {
         recognition.stop();
       } catch {

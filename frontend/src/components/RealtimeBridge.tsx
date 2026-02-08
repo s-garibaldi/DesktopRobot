@@ -624,7 +624,7 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
         <p className="voice-command-hint">
           Voice: <strong>&quot;microphone off&quot;</strong> / <strong>&quot;microphone on&quot;</strong>;
           <strong> &quot;metronome&quot;</strong> + number; <strong>&quot;stop&quot;</strong> (metronome + backing);
-          <strong> &quot;backing track&quot;</strong> + description (e.g. &quot;backing track jazz in C 120 bpm&quot;);
+          <strong> &quot;backing track&quot;</strong> (chime), then say description — or &quot;backing track&quot; + description in one phrase;
           <strong> &quot;pause&quot;</strong> / <strong>&quot;play&quot;</strong> / <strong>&quot;save&quot;</strong> for backing track.
         </p>
       )}
