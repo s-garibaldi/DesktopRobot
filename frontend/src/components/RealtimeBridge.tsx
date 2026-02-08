@@ -448,13 +448,17 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
     };
   }, []);
 
-  const handleMetronomeCommand = (action: 'start' | 'stop' | 'setBpm', bpm?: number) => {
-    if (action === 'stop') {
+  const handleMetronomeCommand = (action: 'start' | 'stop' | 'setBpm' | 'pause' | 'play', bpm?: number) => {
+    if (action === 'stop' || action === 'pause') {
       if (metronomeStartTimeoutRef.current) {
         clearTimeout(metronomeStartTimeoutRef.current);
         metronomeStartTimeoutRef.current = null;
       }
       onEmotionChange('neutral');
+      return;
+    }
+    if (action === 'play') {
+      handleStartMetronome();
       return;
     }
     if (bpm !== undefined) {

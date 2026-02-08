@@ -10,9 +10,22 @@ import { useEvent } from '../contexts/EventContext';
 import { useHandleSessionHistory } from './useHandleSessionHistory';
 import { SessionStatus } from '../types';
 
+/** Normalize transcript for comparison (lowercase, trim, collapse spaces). */
+function normalizeTranscript(s: string): string {
+  return (s ?? '').toLowerCase().trim().replace(/\s+/g, ' ');
+}
+
+/** True if transcript is "microphone off" or "microphone on". */
+function isMicCommandPhrase(transcript: string): boolean {
+  const t = normalizeTranscript(transcript);
+  return t.includes('microphone off') || t.includes('microphone on');
+}
+
 export interface RealtimeSessionCallbacks {
   onConnectionChange?: (status: SessionStatus) => void;
   onAgentHandoff?: (agentName: string) => void;
+  /** When user input is detected as "microphone off" or "microphone on" (e.g. to play a short ack). */
+  onMicCommandTranscription?: (transcript: string) => void;
 }
 
 export interface ConnectOptions {
@@ -42,7 +55,9 @@ export function useRealtimeSession(callbacks: RealtimeSessionCallbacks = {}) {
   const { logServerEvent } = useEvent();
 
   const historyHandlers = useHandleSessionHistory().current;
-  
+  const onMicCommandTranscriptionRef = useRef(callbacks.onMicCommandTranscription);
+  onMicCommandTranscriptionRef.current = callbacks.onMicCommandTranscription;
+
   // Track if we've already sent a speaking signal for the current response
   // This prevents flooding the bridge with delta events
   const speakingSignalSentRef = useRef(false);
@@ -61,6 +76,11 @@ export function useRealtimeSession(callbacks: RealtimeSessionCallbacks = {}) {
     // Handle additional server events that aren't managed by the session
     switch (event.type) {
       case "conversation.item.input_audio_transcription.completed": {
+        const transcript = (event.transcript ?? '').trim();
+        if (isMicCommandPhrase(transcript)) {
+          sessionRef.current?.interrupt();
+          onMicCommandTranscriptionRef.current?.(transcript);
+        }
         historyHandlers.handleTranscriptionCompleted(event);
         logServerEvent(event); // Forward to bridge for emotion sync
         break;

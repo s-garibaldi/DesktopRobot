@@ -28,7 +28,7 @@ interface SpeechRecognitionErrorEvent extends Event {
   error: string;
 }
 
-export type MetronomeVoiceAction = 'start' | 'stop' | 'setBpm';
+export type MetronomeVoiceAction = 'start' | 'stop' | 'setBpm' | 'pause' | 'play';
 
 export type BackingTrackVoiceAction = 'describe' | 'pause' | 'play' | 'save' | 'stop';
 
@@ -220,6 +220,7 @@ export function useVoiceCommandMicOnOff(
           }
           if (isStopCommand(transcript)) {
             lastCommandTimeRef.current = now;
+            playChimeDown();
             onBackingTrackCommandRef.current('stop');
             if (onMetronomeCommandRef.current) onMetronomeCommandRef.current('stop');
             console.log('Voice command: stop (backing + metronome)');
@@ -227,18 +228,23 @@ export function useVoiceCommandMicOnOff(
           }
           if (isPauseCommand(transcript)) {
             lastCommandTimeRef.current = now;
+            playChimeDown();
             onBackingTrackCommandRef.current('pause');
+            if (onMetronomeCommandRef.current) onMetronomeCommandRef.current('pause');
             console.log('Voice command: backing track pause');
             return;
           }
           if (isPlayCommand(transcript)) {
             lastCommandTimeRef.current = now;
+            playChime();
             onBackingTrackCommandRef.current('play');
+            if (onMetronomeCommandRef.current) onMetronomeCommandRef.current('play');
             console.log('Voice command: backing track play');
             return;
           }
           if (isSaveCommand(transcript)) {
             lastCommandTimeRef.current = now;
+            playChime();
             onBackingTrackCommandRef.current('save');
             console.log('Voice command: backing track save');
             return;
@@ -246,6 +252,7 @@ export function useVoiceCommandMicOnOff(
           const bpm = parseMetronomeBpm(transcript);
           if (bpm !== null && onMetronomeCommandRef.current) {
             lastCommandTimeRef.current = now;
+            playChime();
             const hasMetronomeWord = transcriptContainsPhrase(transcript, 'metronome');
             onMetronomeCommandRef.current(hasMetronomeWord ? 'start' : 'setBpm', bpm);
             console.log('Voice command: metronome', hasMetronomeWord ? 'start' : 'setBpm', bpm);
@@ -282,6 +289,7 @@ export function useVoiceCommandMicOnOff(
           }
           if (isStopCommand(transcript)) {
             lastCommandTimeRef.current = now;
+            playChimeDown();
             if (onBackingTrackCommandRef.current) onBackingTrackCommandRef.current('stop');
             onMetronomeCommandRef.current('stop');
             console.log('Voice command: stop (backing + metronome)');
@@ -311,18 +319,23 @@ export function useVoiceCommandMicOnOff(
             }
             if (isPauseCommand(transcript)) {
               lastCommandTimeRef.current = now;
+              playChimeDown();
               onBackingTrackCommandRef.current('pause');
+              if (onMetronomeCommandRef.current) onMetronomeCommandRef.current('pause');
               console.log('Voice command: backing track pause');
               return;
             }
             if (isPlayCommand(transcript)) {
               lastCommandTimeRef.current = now;
+              playChime();
               onBackingTrackCommandRef.current('play');
+              if (onMetronomeCommandRef.current) onMetronomeCommandRef.current('play');
               console.log('Voice command: backing track play');
               return;
             }
             if (isSaveCommand(transcript)) {
               lastCommandTimeRef.current = now;
+              playChime();
               onBackingTrackCommandRef.current('save');
               console.log('Voice command: backing track save');
               return;
@@ -331,6 +344,7 @@ export function useVoiceCommandMicOnOff(
           const bpm = parseMetronomeBpm(transcript);
           if (bpm !== null) {
             lastCommandTimeRef.current = now;
+            playChime();
             onMetronomeCommandRef.current('start', bpm);
             console.log('Voice command: metronome (follow-up)', bpm);
             return;
@@ -378,6 +392,7 @@ export function useVoiceCommandMicOnOff(
           }
           if (isStopCommand(transcript)) {
             lastCommandTimeRef.current = now;
+            playChimeDown();
             onBackingTrackCommandRef.current('stop');
             if (onMetronomeCommandRef.current) onMetronomeCommandRef.current('stop');
             console.log('Voice command: stop (backing + metronome)');
@@ -385,32 +400,51 @@ export function useVoiceCommandMicOnOff(
           }
           if (isPauseCommand(transcript)) {
             lastCommandTimeRef.current = now;
+            playChimeDown();
             onBackingTrackCommandRef.current('pause');
+            if (onMetronomeCommandRef.current) onMetronomeCommandRef.current('pause');
             console.log('Voice command: backing track pause');
             return;
           }
           if (isPlayCommand(transcript)) {
             lastCommandTimeRef.current = now;
+            playChime();
             onBackingTrackCommandRef.current('play');
+            if (onMetronomeCommandRef.current) onMetronomeCommandRef.current('play');
             console.log('Voice command: backing track play');
             return;
           }
           if (isSaveCommand(transcript)) {
             lastCommandTimeRef.current = now;
+            playChime();
             onBackingTrackCommandRef.current('save');
             console.log('Voice command: backing track save');
             return;
           }
         } else if (onMetronomeCommandRef.current && isStopCommand(transcript)) {
           lastCommandTimeRef.current = now;
+          playChimeDown();
           onMetronomeCommandRef.current('stop');
           console.log('Voice command: metronome stop');
+          return;
+        } else if (onMetronomeCommandRef.current && isPauseCommand(transcript)) {
+          lastCommandTimeRef.current = now;
+          playChimeDown();
+          onMetronomeCommandRef.current('pause');
+          console.log('Voice command: metronome pause');
+          return;
+        } else if (onMetronomeCommandRef.current && isPlayCommand(transcript)) {
+          lastCommandTimeRef.current = now;
+          playChime();
+          onMetronomeCommandRef.current('play');
+          console.log('Voice command: metronome play');
           return;
         }
         if (onMetronomeCommandRef.current && transcriptContainsPhrase(transcript, 'metronome')) {
           const bpm = parseMetronomeBpm(transcript);
           lastCommandTimeRef.current = now;
           if (bpm !== null) {
+            playChime();
             onMetronomeCommandRef.current('start', bpm);
             console.log('Voice command: metronome', bpm);
           } else {
