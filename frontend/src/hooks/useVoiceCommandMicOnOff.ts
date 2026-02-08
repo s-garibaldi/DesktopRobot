@@ -37,7 +37,7 @@ const PHRASE_OFF = 'microphone off';
 const PHRASE_ON = 'microphone on';
 const PHRASE_BACKING_TRACK = 'backing track';
 
-/** Play a short chime to acknowledge "backing track" (ready for description). */
+/** Play a short ascending chime (C5 → E5) to acknowledge e.g. "backing track", "metronome", "microphone on". */
 function playChime(): void {
   if (typeof window === 'undefined') return;
   try {
@@ -45,13 +45,39 @@ function playChime(): void {
     if (!Ctor) return;
     const ctx = new Ctor();
     const now = ctx.currentTime;
-    const freq = [523.25, 659.25]; // C5, E5
+    const freq = [523.25, 659.25]; // C5, E5 — low then high
     freq.forEach((f, i) => {
       const osc = ctx.createOscillator();
       osc.type = 'sine';
       osc.frequency.setValueAtTime(f, now + i * 0.08);
       const gain = ctx.createGain();
-      gain.gain.setValueAtTime(0.225, now + i * 0.08); // ~50% louder than 0.15
+      gain.gain.setValueAtTime(0.225, now + i * 0.08);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.08 + 0.25);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now + i * 0.08);
+      osc.stop(now + i * 0.08 + 0.26);
+    });
+  } catch {
+    // ignore
+  }
+}
+
+/** Play a short descending chime (E5 → C5) to acknowledge "microphone off". */
+function playChimeDown(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const Ctor = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    if (!Ctor) return;
+    const ctx = new Ctor();
+    const now = ctx.currentTime;
+    const freq = [659.25, 523.25]; // E5, C5 — high then low
+    freq.forEach((f, i) => {
+      const osc = ctx.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(f, now + i * 0.08);
+      const gain = ctx.createGain();
+      gain.gain.setValueAtTime(0.225, now + i * 0.08);
       gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.08 + 0.25);
       osc.connect(gain);
       gain.connect(ctx.destination);
@@ -172,12 +198,14 @@ export function useVoiceCommandMicOnOff(
           waitingForBackingDescriptionRef.current = false;
           if (transcriptContainsPhrase(transcript, PHRASE_OFF)) {
             lastCommandTimeRef.current = now;
+            playChimeDown();
             onCommandRef.current({ type: 'set_backend_mic_enabled', enabled: false });
             console.log('Voice command: microphone off');
             return;
           }
           if (transcriptContainsPhrase(transcript, PHRASE_ON)) {
             lastCommandTimeRef.current = now;
+            playChime();
             onCommandRef.current({ type: 'set_backend_mic_enabled', enabled: true });
             console.log('Voice command: microphone on');
             return;
@@ -240,12 +268,14 @@ export function useVoiceCommandMicOnOff(
 
         if (transcriptContainsPhrase(transcript, PHRASE_OFF)) {
           lastCommandTimeRef.current = now;
+          playChimeDown();
           onCommandRef.current({ type: 'set_backend_mic_enabled', enabled: false });
           console.log('Voice command: microphone off');
           return;
         }
         if (transcriptContainsPhrase(transcript, PHRASE_ON)) {
           lastCommandTimeRef.current = now;
+          playChime();
           onCommandRef.current({ type: 'set_backend_mic_enabled', enabled: true });
           console.log('Voice command: microphone on');
           return;
