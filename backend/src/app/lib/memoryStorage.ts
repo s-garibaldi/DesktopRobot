@@ -148,11 +148,11 @@ export async function getMemories(filters?: MemoryFilters): Promise<MemoryItem[]
   const invoke = await getTauriInvoke();
   if (invoke) {
     try {
-      const memories = await invoke<MemoryItem[]>('load_memories', {
+      const memories = (await invoke('load_memories', {
         agentType: filters?.agentType || null,
         topic: filters?.topic || null,
         limit: filters?.limit || null,
-      });
+      })) as MemoryItem[] | null;
       return memories || [];
     } catch (error) {
       console.warn('Tauri load failed, using localStorage:', error);

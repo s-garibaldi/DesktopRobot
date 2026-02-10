@@ -1,5 +1,5 @@
 import { tool } from '@openai/agents/realtime';
-import { saveMemory, getMemories, type MemoryItem } from './memoryStorage';
+import { saveMemory, getMemories } from './memoryStorage';
 
 /**
  * Tool for agents to store important information in memory

@@ -125,9 +125,9 @@ function App() {
 
     // Fallback: detect silence by monitoring timeupdate
     // With WebRTC, we may not get pause/ended events
-    let lastTimeUpdate = 0;
+    const lastTimeUpdateRef = { current: 0 };
     const handleTimeUpdate = () => {
-      lastTimeUpdate = Date.now();
+      lastTimeUpdateRef.current = Date.now();
     };
 
     sdkAudioElement.addEventListener('playing', handlePlaying);

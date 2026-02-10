@@ -21,8 +21,12 @@ DesktopRobot/
 │   ├── package.json      # Backend dependencies
 │   └── .env              # Environment variables (API keys)
 │
-└── README.md            # This file
+├── external/             # Upstream / reference repos (e.g. realtime-agents)
+├── docs/                 # Project documentation (architecture, guides, deployment)
+└── README.md             # This file
 ```
+
+More detail: [docs/STRUCTURE.md](docs/STRUCTURE.md) and [docs/README.md](docs/README.md).
 
 ## Architecture
 

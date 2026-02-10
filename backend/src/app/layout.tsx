@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Script from "next/script";
 import "./globals.css";
 import "./lib/envSetup";
 
@@ -16,7 +17,7 @@ export default function RootLayout({
     <html lang="en">
       <body className={`antialiased`}>
         {children}
-        <script src="/bridge.js"></script>
+        <Script src="/bridge.js" strategy="afterInteractive" />
       </body>
     </html>
   );

@@ -1,6 +1,7 @@
 import React, { useRef, useEffect, useCallback } from 'react';
 import { Emotion } from '../App';
 import { emotionDrawFunctions, easeInOut } from './emotions';
+import { lerp } from './emotions/types';
 import { drawSpeakingMouth } from './emotions/speaking';
 
 interface AnimatedFaceProps {
@@ -56,6 +57,14 @@ const AnimatedFace: React.FC<AnimatedFaceProps> = ({ emotion, fillContainer = fa
       // Use longer duration for neutral->time transition (0.6s for zoom + fade, 50% faster)
       if (prevEmotionRef.current === 'neutral' && emotion === 'time') {
         state.emotionTransition.duration = 0.6;
+      } else if (prevEmotionRef.current === 'neutral' && emotion === 'metronome') {
+        state.emotionTransition.duration = 0.6; // Same as neutral→time: zoom out to point, then metronome blinks in
+      } else if (prevEmotionRef.current === 'metronome' && emotion === 'neutral') {
+        state.emotionTransition.duration = 0.5; // Two-phase: metronome cut off, then neutral zoom in
+      } else if (prevEmotionRef.current === 'metronome' && emotion === 'thinking') {
+        state.emotionTransition.duration = 0.5; // Two-phase: metronome stops blinking, then thinking zooms in from dot
+      } else if (prevEmotionRef.current === 'thinking' && emotion === 'metronome') {
+        state.emotionTransition.duration = 0.6; // Two-phase: thinking zoom out to point, then metronome blinks in
       } else if (prevEmotionRef.current === 'time' && emotion === 'listening') {
         // Time→listening: fast time fade, neutral zoom in, then neutral→listening (~0.9s, 50% faster)
         state.emotionTransition.duration = 0.9;
@@ -233,6 +242,34 @@ const AnimatedFace: React.FC<AnimatedFaceProps> = ({ emotion, fillContainer = fa
         // Transition from neutral to time - face zooms to dot, then time fades in
         // Duration is already set to 1.2s in the transition setup
         toDraw(ctx, time, state.breathingPhase, easedProgress, 'neutral');
+      } else if (state.emotionTransition.fromEmotion === 'neutral' && state.emotionTransition.toEmotion === 'metronome') {
+        // Two-phase: (1) neutral face zooms out to point (like neutral→time), (2) metronome blinks in
+        const p = easedProgress;
+        const ZOOM_OUT_PHASE_END = 0.15; // Same as neutral→time — neutral fully zoomed out before metronome
+        if (p < ZOOM_OUT_PHASE_END) {
+          // Phase 1: neutral face zooms out to tiny dot
+          const zoomOutProgress = p / ZOOM_OUT_PHASE_END;
+          const easedZoomOut = easeInOut(zoomOutProgress);
+          const faceScale = lerp(1, 0.02, easedZoomOut);
+          const neutralDraw = emotionDrawFunctions['neutral'];
+          if (neutralDraw) {
+            ctx.save();
+            ctx.globalAlpha = 1;
+            ctx.scale(faceScale, faceScale);
+            neutralDraw(ctx, time, state.breathingPhase, 1, 'neutral');
+            ctx.restore();
+          }
+        } else {
+          // Phase 2: metronome blinks in (no neutral visible)
+          const metronomeFadeIn = (p - ZOOM_OUT_PHASE_END) / (1 - ZOOM_OUT_PHASE_END);
+          const metronomeDraw = emotionDrawFunctions['metronome'];
+          if (metronomeDraw) {
+            ctx.save();
+            ctx.globalAlpha = 1;
+            metronomeDraw(ctx, time, state.breathingPhase, metronomeFadeIn, 'neutral');
+            ctx.restore();
+          }
+        }
       } else if (state.emotionTransition.fromEmotion === 'time' && state.emotionTransition.toEmotion === 'neutral') {
         // Transition from time to neutral - time fades out, neutral zooms in from dot
         const fromDraw = emotionDrawFunctions['time'];
@@ -259,21 +296,108 @@ const AnimatedFace: React.FC<AnimatedFaceProps> = ({ emotion, fillContainer = fa
           const listenProgress = (p - NEUTRAL_ZOOM_END) / (1 - NEUTRAL_ZOOM_END);
           if (listenDraw) listenDraw(ctx, time, state.breathingPhase, listenProgress, 'neutral');
         }
+      } else if (state.emotionTransition.fromEmotion === 'metronome' && state.emotionTransition.toEmotion === 'neutral') {
+        // Two-phase: (1) metronome cuts off completely, (2) neutral zooms in from dot (like time→neutral)
+        const p = easedProgress;
+        const METRONOME_CUTOFF = 0.15; // Same as time fade-out phase — metronome fully off before neutral
+        if (p < METRONOME_CUTOFF) {
+          // Phase 1: only metronome, fade out to zero — no neutral, no blink overlap
+          const metronomeDraw = emotionDrawFunctions['metronome'];
+          if (metronomeDraw) {
+            ctx.save();
+            ctx.globalAlpha = 1 - p / METRONOME_CUTOFF;
+            metronomeDraw(ctx, time, state.breathingPhase, 1, 'metronome');
+            ctx.restore();
+          }
+        } else {
+          // Phase 2: only neutral, zoom in from dot (same as time→neutral)
+          const zoomInProgress = (p - METRONOME_CUTOFF) / (1 - METRONOME_CUTOFF);
+          const easedZoomIn = easeInOut(zoomInProgress);
+          const faceScale = lerp(0.02, 1, easedZoomIn);
+          const neutralDraw = emotionDrawFunctions['neutral'];
+          if (neutralDraw) {
+            ctx.save();
+            ctx.globalAlpha = 1;
+            ctx.scale(faceScale, faceScale);
+            neutralDraw(ctx, time, state.breathingPhase, 1, 'neutral');
+            ctx.restore();
+          }
+        }
+      } else if (state.emotionTransition.fromEmotion === 'metronome' && state.emotionTransition.toEmotion === 'thinking') {
+        // Two-phase: (1) metronome stops blinking (fade out), (2) thinking face zooms in from dot (like time→neutral)
+        const p = easedProgress;
+        const METRONOME_CUTOFF = 0.15; // Metronome fully off before thinking appears
+        if (p < METRONOME_CUTOFF) {
+          // Phase 1: only metronome, fade out to zero — stop blinking
+          const metronomeDraw = emotionDrawFunctions['metronome'];
+          if (metronomeDraw) {
+            ctx.save();
+            ctx.globalAlpha = 1 - p / METRONOME_CUTOFF;
+            metronomeDraw(ctx, time, state.breathingPhase, 1, 'metronome');
+            ctx.restore();
+          }
+        } else {
+          // Phase 2: only thinking, zoom in from dot (same as time→neutral for neutral)
+          const zoomInProgress = (p - METRONOME_CUTOFF) / (1 - METRONOME_CUTOFF);
+          const easedZoomIn = easeInOut(zoomInProgress);
+          const faceScale = lerp(0.02, 1, easedZoomIn);
+          const thinkingDraw = emotionDrawFunctions['thinking'];
+          if (thinkingDraw) {
+            ctx.save();
+            ctx.globalAlpha = 1;
+            ctx.scale(faceScale, faceScale);
+            thinkingDraw(ctx, time, state.breathingPhase, 1, 'thinking');
+            ctx.restore();
+          }
+        }
       } else if (state.emotionTransition.fromEmotion === 'metronome') {
-        // Transition from metronome: crossfade blue screen out, target emotion in
-        const metronomeDraw = emotionDrawFunctions['metronome'];
-        if (metronomeDraw) {
+        // Transition from metronome to other (non-neutral, non-thinking): cut off metronome first, then show target
+        const p = easedProgress;
+        const METRONOME_CUTOFF = 0.15;
+        if (p < METRONOME_CUTOFF) {
+          const metronomeDraw = emotionDrawFunctions['metronome'];
+          if (metronomeDraw) {
+            ctx.save();
+            ctx.globalAlpha = 1 - p / METRONOME_CUTOFF;
+            metronomeDraw(ctx, time, state.breathingPhase, 1, 'metronome');
+            ctx.restore();
+          }
+        } else {
           ctx.save();
-          ctx.globalAlpha = 1 - easedProgress;
-          metronomeDraw(ctx, time, state.breathingPhase, 1, 'metronome');
+          ctx.globalAlpha = 1;
+          toDraw(ctx, time, state.breathingPhase, 1, 'metronome');
           ctx.restore();
         }
-        ctx.save();
-        ctx.globalAlpha = easedProgress;
-        toDraw(ctx, time, state.breathingPhase, 1, 'metronome');
-        ctx.restore();
+      } else if (state.emotionTransition.fromEmotion === 'thinking' && state.emotionTransition.toEmotion === 'metronome') {
+        // Two-phase: (1) thinking face zooms out to point (like neutral→time), (2) metronome blinks in
+        const p = easedProgress;
+        const ZOOM_OUT_PHASE_END = 0.15; // Same as neutral→time — thinking fully zoomed out before metronome
+        if (p < ZOOM_OUT_PHASE_END) {
+          // Phase 1: thinking face zooms out to tiny dot
+          const zoomOutProgress = p / ZOOM_OUT_PHASE_END;
+          const easedZoomOut = easeInOut(zoomOutProgress);
+          const faceScale = lerp(1, 0.02, easedZoomOut);
+          const thinkingDraw = emotionDrawFunctions['thinking'];
+          if (thinkingDraw) {
+            ctx.save();
+            ctx.globalAlpha = 1;
+            ctx.scale(faceScale, faceScale);
+            thinkingDraw(ctx, time, state.breathingPhase, 1, 'thinking');
+            ctx.restore();
+          }
+        } else {
+          // Phase 2: metronome blinks in (no thinking visible)
+          const metronomeFadeIn = (p - ZOOM_OUT_PHASE_END) / (1 - ZOOM_OUT_PHASE_END);
+          const metronomeDraw = emotionDrawFunctions['metronome'];
+          if (metronomeDraw) {
+            ctx.save();
+            ctx.globalAlpha = metronomeFadeIn;
+            metronomeDraw(ctx, time, state.breathingPhase, 1, 'thinking');
+            ctx.restore();
+          }
+        }
       } else if (state.emotionTransition.toEmotion === 'metronome') {
-        // Transition to metronome: crossfade from-emotion out, metronome in
+        // Transition to metronome (non-thinking): crossfade from-emotion out, metronome in
         const fromDraw = emotionDrawFunctions[state.emotionTransition.fromEmotion];
         if (fromDraw) {
           ctx.save();

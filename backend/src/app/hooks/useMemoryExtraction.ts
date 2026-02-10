@@ -37,8 +37,6 @@ export function useMemoryExtraction({ agentType, enabled = true }: MemoryExtract
         continue;
       }
 
-      const lowerText = text.toLowerCase();
-
       // Pattern matching for common memory-worthy information
       const memoryPatterns = [
         // Name patterns

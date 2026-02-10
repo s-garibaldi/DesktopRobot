@@ -13,12 +13,15 @@ interface MetronomePanelProps {
   onEmotionChange: (emotion: Emotion) => void;
   /** When starting the metronome (Set or Show), parent can show thinking then metronome. If not provided, goes straight to metronome. */
   onStartMetronome?: () => void;
+  /** When stopping the metronome (Stop button), parent can exit metronome mode and restore mic. */
+  onStopMetronome?: () => void;
 }
 
 export default function MetronomePanel({
   currentEmotion,
   onEmotionChange,
   onStartMetronome,
+  onStopMetronome,
 }: MetronomePanelProps) {
   const [textInput, setTextInput] = useState('');
   const [statusMessage, setStatusMessage] = useState('');
@@ -91,7 +94,10 @@ export default function MetronomePanel({
             <button
               type="button"
               className="metronome-stop-button"
-              onClick={() => onEmotionChange('neutral')}
+              onClick={() => {
+                onStopMetronome?.();
+                onEmotionChange('neutral');
+              }}
             >
               Stop
             </button>

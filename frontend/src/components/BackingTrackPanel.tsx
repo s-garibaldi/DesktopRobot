@@ -267,8 +267,8 @@ export default function BackingTrackPanel({
     pause();
     setStatus('paused');
     setStatusMessage('Paused. Click Play to resume.');
-    onPlayingStop();
-  }, [pause, onPlayingStop]);
+    // Do not call onPlayingStop — backing track mode stays active until full stop or idle
+  }, [pause]);
 
   const handleResume = useCallback(() => {
     resume();

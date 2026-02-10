@@ -1,0 +1,169 @@
+/* Outlining box: same size and style as neutral face (400×400 canvas) */
+.guitar-tabs-face {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  width: 400px;
+  height: 400px;
+  padding: 1rem;
+  box-sizing: border-box;
+  background: rgba(0, 0, 0, 1);
+  border: 2px solid #00FFFF;
+  border-radius: 15px;
+  backdrop-filter: blur(10px);
+  box-shadow: 0 0 40px rgba(0, 255, 255, 0.4);
+  color: #00FFFF;
+  flex-shrink: 0;
+}
+
+.guitar-tabs-display {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  width: 100%;
+}
+
+/* Inner box: same as neutral face head outline (200×150, radius 20, 6px stroke, glow) */
+.guitar-tabs-inner-box {
+  width: 200px;
+  height: 150px;
+  border-radius: 20px;
+  border: 6px solid #00FFFF;
+  box-shadow: 0 0 30px rgba(0, 255, 255, 0.4);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: stretch;
+  padding: 10px 0 0;
+  box-sizing: border-box;
+  flex-shrink: 0;
+}
+
+.guitar-tabs-inner-box .guitar-tabs-diagram-wrap {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  max-width: none;
+  aspect-ratio: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 30px;
+  margin-left: -10px;
+}
+
+/* Diagram (and fret number inside SVG) centered via preserveAspectRatio xMidYMid meet; scale up 50% from center */
+.guitar-tabs-inner-box .guitar-tabs-diagram {
+  width: 100%;
+  height: 100%;
+  display: block;
+  transform: scale(1.953125);
+  transform-origin: center center;
+}
+
+/* Fixed-height name row so diagram area never shifts when name appears */
+.guitar-tabs-inner-box .guitar-tabs-name {
+  margin: 0;
+  padding: 2px 4px 4px;
+  font-size: 0.75rem;
+  line-height: 1.2;
+  height: 1.35rem;
+  min-height: 1.35rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #00FFFF;
+  text-shadow: 0 0 10px rgba(0, 255, 255, 0.5);
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.guitar-tabs-name strong {
+  font-weight: 600;
+}
+
+.guitar-tabs-title {
+  margin: 0;
+  font-size: 1.1rem;
+  text-shadow: 0 0 10px rgba(0, 255, 255, 0.5);
+}
+
+.guitar-tabs-title strong {
+  text-transform: capitalize;
+}
+
+.guitar-tabs-title .guitar-tabs-base-fret {
+  font-weight: normal;
+  opacity: 0.9;
+  margin-left: 0.25rem;
+}
+
+.guitar-tabs-diagram-wrap {
+  width: 100%;
+  max-width: 280px;
+  aspect-ratio: 280 / 220;
+}
+
+.guitar-tabs-diagram {
+  width: 100%;
+  height: 100%;
+}
+
+.guitar-tabs-diagram .diagram-line {
+  stroke: #00FFFF;
+  stroke-width: 1.5;
+  stroke-opacity: 0.85;
+}
+
+.guitar-tabs-diagram .fret-label {
+  fill: rgba(0, 255, 255, 0.8);
+  font-size: 18px;
+  font-weight: 600;
+  font-family: system-ui, sans-serif;
+}
+
+.guitar-tabs-diagram .fret-label-left {
+  font-variant-numeric: tabular-nums;
+}
+
+.guitar-tabs-diagram .mute-label,
+.guitar-tabs-diagram .open-label {
+  fill: #00FFFF;
+  font-size: 18px;
+  font-weight: bold;
+  text-anchor: middle;
+  dominant-baseline: middle;
+}
+
+.guitar-tabs-diagram .finger-dot,
+.guitar-tabs-diagram .scale-dot {
+  fill: #00FFFF;
+  stroke: rgba(0, 255, 255, 0.6);
+  stroke-width: 1;
+}
+
+.guitar-tabs-diagram .barre {
+  fill: none;
+  stroke: #00FFFF;
+  stroke-width: 12;
+  stroke-linecap: round;
+  stroke-opacity: 0.9;
+}
+
+.guitar-tabs-face .string-names {
+  display: flex;
+  justify-content: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  letter-spacing: 0.2em;
+  opacity: 0.9;
+}
+
+.guitar-tabs-face .string-name {
+  min-width: 1.2em;
+  text-align: center;
+}

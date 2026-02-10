@@ -2,14 +2,16 @@
 
 ## Overview
 
-The project has been reorganized into a clear frontend/backend separation:
+The project is organized with a clear separation of concerns:
 
 ```
 DesktopRobot/
 ├── frontend/          # Tauri Desktop Application
-├── backend/          # Next.js AI Backend
-├── README.md         # Main documentation
-└── package.json      # Root-level convenience scripts
+├── backend/           # Next.js AI Backend
+├── external/          # Upstream / reference repos (e.g. realtime-agents)
+├── docs/              # Project documentation (see docs/README.md)
+├── README.md          # Main entry point
+└── package.json       # Root-level convenience scripts (workspaces: frontend, backend)
 ```
 
 ## Frontend (`frontend/`)
@@ -66,6 +68,10 @@ cp .env.sample .env
 # Edit .env with your API keys
 npm run dev
 ```
+
+## External (`external/`)
+
+Reference or upstream repositories (e.g. **realtime-agents** as a git submodule). The app runs from `frontend/` and `backend/`; `external/` is for comparison, updates, or reuse only.
 
 ## Communication Flow
 

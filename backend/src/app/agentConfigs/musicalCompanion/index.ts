@@ -1,17 +1,34 @@
 import { RealtimeAgent, tool } from '@openai/agents/realtime';
 import { createMemoryTools } from '../../lib/memoryTools';
+import {
+  getChordTheory,
+  getDiatonicChords,
+  getProgressionsForStyle,
+  getAllStyles,
+  parseChordName,
+  CHORD_FORMULAS,
+} from '../../lib/musicKnowledge';
 import { webSearchTool } from '../../lib/webSearchTool';
 
-// Guitar chord recognition tool
+// Common open-position fingerings (optional; theory works for any chord)
+const OPEN_FINGERINGS: Record<string, string> = {
+  C: 'x-3-2-0-1-0', Am: 'x-0-2-2-1-0', F: '1-3-3-2-1-1', G: '3-2-0-0-3-3',
+  D: 'x-x-0-2-3-2', Em: '0-2-2-0-0-0', G7: '3-2-0-0-0-1', C7: 'x-3-2-3-1-0',
+  Dm: 'x-x-0-2-3-1', Bm: 'x-2-4-4-3-2', A: 'x-0-2-2-2-0', E: '0-2-2-1-0-0',
+  Am7: 'x-0-2-0-1-0', Dm7: 'x-x-0-2-1-1', Em7: '0-2-0-0-0-0', Cmaj7: 'x-3-2-0-0-0',
+  Fmaj7: '1-3-2-2-1-1', Gmaj7: '3-2-0-0-0-2',
+};
+
+// Guitar chord recognition tool — uses music knowledge for notes/theory; fingerings when available
 const recognizeChordTool = tool({
   name: 'recognize_guitar_chord',
-  description: 'Recognize guitar chords and provide chord information, fingerings, and theory',
+  description: 'Recognize guitar chords and provide chord information, fingerings (when available), and theory. Supports triads, 7ths, maj7, m7, dim, aug, sus2, sus4, add9, 9, 11, 13, and more.',
   parameters: {
     type: 'object',
     properties: {
       chord_name: {
         type: 'string',
-        description: 'The name of the guitar chord (e.g., "C major", "Am", "F#m7", "G7")',
+        description: 'The name of the guitar chord (e.g. "C", "Am", "F#m7", "Gmaj7", "Dm7b5", "Eadd9", "Bb7")',
       },
     },
     required: ['chord_name'],
@@ -19,113 +36,101 @@ const recognizeChordTool = tool({
   },
   execute: async (input: any) => {
     const { chord_name } = input as { chord_name: string };
-    
     try {
-      // Common guitar chords database
-      const chordDatabase: Record<string, any> = {
-        'C': {
-          name: 'C Major',
-          notes: ['C', 'E', 'G'],
-          fingering: 'x-3-2-0-1-0',
-          theory: 'Major triad built on C',
-          common_progressions: ['C-Am-F-G', 'C-F-G-C', 'C-G-Am-F']
-        },
-        'Am': {
-          name: 'A Minor',
-          notes: ['A', 'C', 'E'],
-          fingering: 'x-0-2-2-1-0',
-          theory: 'Minor triad built on A',
-          common_progressions: ['Am-F-C-G', 'Am-Dm-G-C', 'Am-G-F-E']
-        },
-        'F': {
-          name: 'F Major',
-          notes: ['F', 'A', 'C'],
-          fingering: '1-3-3-2-1-1',
-          theory: 'Major triad built on F',
-          common_progressions: ['F-G-Am-C', 'F-C-Dm-Bb', 'F-Bb-C-F']
-        },
-        'G': {
-          name: 'G Major',
-          notes: ['G', 'B', 'D'],
-          fingering: '3-2-0-0-3-3',
-          theory: 'Major triad built on G',
-          common_progressions: ['G-C-D-G', 'G-Am-C-D', 'G-Em-C-D']
-        },
-        'D': {
-          name: 'D Major',
-          notes: ['D', 'F#', 'A'],
-          fingering: 'x-x-0-2-3-2',
-          theory: 'Major triad built on D',
-          common_progressions: ['D-G-A-D', 'D-Em-G-A', 'D-Bm-G-A']
-        },
-        'Em': {
-          name: 'E Minor',
-          notes: ['E', 'G', 'B'],
-          fingering: '0-2-2-0-0-0',
-          theory: 'Minor triad built on E',
-          common_progressions: ['Em-C-G-D', 'Em-Am-C-G', 'Em-F-G-Em']
-        },
-        'G7': {
-          name: 'G Dominant 7th',
-          notes: ['G', 'B', 'D', 'F'],
-          fingering: '3-2-0-0-0-1',
-          theory: 'Dominant 7th chord, creates tension',
-          common_progressions: ['G7-C', 'Dm-G7-C', 'Am-Dm-G7-C']
-        },
-        'C7': {
-          name: 'C Dominant 7th',
-          notes: ['C', 'E', 'G', 'Bb'],
-          fingering: 'x-3-2-3-1-0',
-          theory: 'Dominant 7th chord, bluesy sound',
-          common_progressions: ['C7-F', 'Gm-C7-F', 'Bb-C7-F']
-        }
-      };
-
-      const normalizedChord = chord_name.trim().toLowerCase();
-      let chordInfo = null;
-
-      // Try exact match first
-      for (const [key, value] of Object.entries(chordDatabase)) {
-        if (key.toLowerCase() === normalizedChord) {
-          chordInfo = { ...value, key };
-          break;
-        }
-      }
-
-      // If no exact match, try partial matches
-      if (!chordInfo) {
-        for (const [key, value] of Object.entries(chordDatabase)) {
-          if (key.toLowerCase().includes(normalizedChord) || normalizedChord.includes(key.toLowerCase())) {
-            chordInfo = { ...value, key };
-            break;
-          }
-        }
-      }
-
-      if (chordInfo) {
-        return {
-          success: true,
-          chord: chordInfo,
-          message: `Here's information about ${chordInfo.name}:`,
-          details: {
-            notes: chordInfo.notes.join(' - '),
-            fingering: chordInfo.fingering,
-            theory: chordInfo.theory,
-            progressions: chordInfo.common_progressions.join(', ')
-          }
-        };
-      } else {
+      const normalized = chord_name.trim().replace(/\s+/g, '');
+      const parsed = parseChordName(normalized);
+      const info = parsed ? getChordTheory(parsed.root, parsed.quality) : null;
+      if (!info) {
         return {
           success: false,
-          message: `I don't have information about the chord "${chord_name}". Try common chords like C, Am, F, G, D, Em, G7, or C7.`,
-          suggestions: ['C', 'Am', 'F', 'G', 'D', 'Em', 'G7', 'C7']
+          message: `I couldn't parse the chord "${chord_name}". Try formats like C, Am, F#m7, Gmaj7, Dm7b5, Eadd9, or Bb13.`,
+          supported_types: Object.keys(CHORD_FORMULAS).join(', '),
         };
       }
+      const fingering = OPEN_FINGERINGS[info.name] ?? OPEN_FINGERINGS[info.name.replace(/maj7|m7|7/g, (m) => m === 'maj7' ? 'maj7' : m === 'm7' ? 'm7' : '7')];
+      return {
+        success: true,
+        chord: { name: info.name, notes: info.notes, theory: info.theory, fingering: fingering ?? null },
+        message: `Here's information about ${info.name}:`,
+        details: {
+          notes: info.notes.join(' - '),
+          theory: info.theory,
+          fingering: fingering ?? 'Use the chord diagram in the app for voicings, or try a barre shape.',
+        },
+      };
     } catch (error) {
       return {
         success: false,
         error: `Chord recognition failed: ${error}`,
         chord_name: chord_name,
+      };
+    }
+  },
+});
+
+// Suggest chord progressions by key, style, and complexity
+const suggestChordProgressionTool = tool({
+  name: 'suggest_chord_progression',
+  description: 'Suggest chord progressions in a given key and style, from basic to advanced (jazz, pop, rock, folk, R&B, country). Returns chord names and short descriptions.',
+  parameters: {
+    type: 'object',
+    properties: {
+      key: {
+        type: 'string',
+        description: 'Key (e.g. C, G, D, F, Am, Bb, F#)',
+      },
+      style: {
+        type: 'string',
+        enum: ['pop', 'rock', 'folk', 'blues', 'jazz', 'country', 'r&b'],
+        description: 'Musical style',
+      },
+      complexity: {
+        type: 'string',
+        enum: ['basic', 'intermediate', 'advanced'],
+        description: 'Complexity level of the progressions',
+      },
+      use_sevenths: {
+        type: 'boolean',
+        description: 'Include 7th chords where appropriate (e.g. maj7, m7)',
+      },
+    },
+    required: ['key', 'style'],
+    additionalProperties: false,
+  },
+  execute: async (input: any) => {
+    const { key, style, complexity = 'intermediate', use_sevenths = false } = input as {
+      key: string; style: string; complexity?: string; use_sevenths?: boolean;
+    };
+    try {
+      const keyRoot = key.trim().replace(/\s+/g, '');
+      const comp = (complexity === 'basic' || complexity === 'intermediate' || complexity === 'advanced')
+        ? complexity : 'intermediate';
+      const styleNorm = style.toLowerCase().replace(/\s+/g, '') === 'r&b' ? 'r&b' : style.toLowerCase();
+      let progressions = getProgressionsForStyle(styleNorm, comp as 'basic' | 'intermediate' | 'advanced', keyRoot, use_sevenths);
+      if (progressions.length === 0) {
+        progressions = getProgressionsForStyle('pop', comp as 'basic' | 'intermediate' | 'advanced', keyRoot, use_sevenths);
+      }
+      const diatonic = getDiatonicChords(keyRoot);
+      return {
+        success: true,
+        key: keyRoot,
+        style: styleNorm,
+        complexity: comp,
+        progressions: progressions.map((p) => ({
+          name: p.name,
+          chords: p.chords.join(' → '),
+          chord_list: p.chords,
+          description: p.description,
+        })),
+        diatonic_in_key: diatonic ? diatonic.map((d) => `${d.roman} ${d.chord}`).join(', ') : null,
+        available_styles: getAllStyles(),
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: `Progression suggestion failed: ${error}`,
+        key,
+        style,
       };
     }
   },
@@ -308,7 +313,20 @@ const musicTheoryTool = tool({
           minor_triad: 'Root + Minor 3rd + Perfect 5th',
           dominant_7th: 'Major triad + Minor 7th',
           major_7th: 'Major triad + Major 7th',
-          minor_7th: 'Minor triad + Minor 7th'
+          minor_7th: 'Minor triad + Minor 7th',
+          diminished: 'Root + Minor 3rd + Diminished 5th',
+          augmented: 'Root + Major 3rd + Augmented 5th',
+          extended_chords: '9th = 7th + 9th; 11th adds 11th; 13th adds 13th (often omit some notes on guitar)'
+        },
+        'circle_of_fifths': {
+          order: 'C → G → D → A → E → B → F#/Gb → Db → Ab → Eb → Bb → F → C',
+          meaning: 'Each step is a perfect 5th up (or 4th down). Keys next to each other share most notes.',
+          use: 'Find closely related keys for modulations; order of sharps/flats; diatonic chord families'
+        },
+        'harmony': {
+          diatonic: 'In a key, chords built on each scale degree: I, ii, iii, IV, V, vi, vii°. Uppercase = major, lowercase = minor, ° = diminished.',
+          tension_resolution: 'Dominant (V or V7) resolves to tonic (I). ii–V–I is a classic cadence.',
+          borrowed_chords: 'Chords from parallel minor in a major key (e.g. bVII, iv) add color.'
         }
       };
 
@@ -345,7 +363,7 @@ const musicTheoryTool = tool({
 
 export const musicalCompanionAgent = new RealtimeAgent({
   name: 'musicalCompanionAgent',
-  voice: 'shimmer',
+  voice: 'shimmer', // High-pitched, cute desktop robot
   instructions: `
 You are a knowledgeable and enthusiastic musical companion AI, specialized in guitar, songwriting, and music theory. You help musicians with chord recognition, songwriting suggestions, and music theory explanations.
 
@@ -364,9 +382,10 @@ You have access to memories from previous conversations. When the session starts
 - Different musical styles and genres
 
 # How to Use Your Tools
-- Use recognize_guitar_chord for chord information and fingerings
-- Use songwriting_suggestion for creative songwriting help
-- Use music_theory_help for theory explanations and learning
+- Use recognize_guitar_chord for chord information, notes, and theory (supports triads, 7ths, maj7, m7, dim, aug, sus2, sus4, add9, 9, 11, 13)
+- Use suggest_chord_progression to suggest progressions in a key and style (pop, rock, jazz, folk, R&B, country) at basic, intermediate, or advanced complexity; use this when the user wants chord progressions, "what chords go together", or more complex/interesting progressions
+- Use songwriting_suggestion for creative songwriting help (structure, lyrics themes, tempo)
+- Use music_theory_help for theory explanations (scales, intervals, harmony, chord construction, circle of fifths)
 - Use search_web to find current information, recent music news, new songs, artist information, or any up-to-date content
 - Use store_memory to save user preferences, favorite chords, musical interests, or skill level
 - Use retrieve_memories to recall information from previous conversations
@@ -381,10 +400,12 @@ You have access to memories from previous conversations. When the session starts
 - Remember user preferences and refer to them when relevant
 
 # Examples
-- "What's the fingering for C major?" → Use recognize_guitar_chord
+- "What's the fingering for C major?" or "What notes are in F#m7?" → Use recognize_guitar_chord
+- "Give me a chord progression in G" / "Jazz progressions in Bb" / "Something more complex in D" → Use suggest_chord_progression (choose style and complexity as appropriate)
+- "What chords go well together?" / "Suggest a progression for a sad song" → Use suggest_chord_progression
 - "I want to write a happy pop song" → Use songwriting_suggestion
-- "Explain major scales" → Use music_theory_help
-- "What chords go well with Am?" → Use recognize_guitar_chord and provide progression suggestions
+- "Explain major scales" / "Circle of fifths" → Use music_theory_help
+- "What chords go well with Am?" → Use recognize_guitar_chord for Am, then suggest_chord_progression in A minor or related key
 - User says "I love jazz" → Use store_memory to save this preference
 - User asks "What's my favorite genre?" → Use retrieve_memories to recall
 
@@ -396,7 +417,7 @@ You have access to memories from previous conversations. When the session starts
 - Suggest creative ideas and experiments
 - Be supportive of different skill levels
 `,
-  tools: [recognizeChordTool, songwritingSuggestionTool, musicTheoryTool, webSearchTool, ...createMemoryTools('musicalCompanion')],
+  tools: [recognizeChordTool, suggestChordProgressionTool, songwritingSuggestionTool, musicTheoryTool, webSearchTool, ...createMemoryTools('musicalCompanion')],
   handoffs: [],
   handoffDescription: 'Musical companion AI for guitar, songwriting, and music theory',
 });

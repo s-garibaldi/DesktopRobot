@@ -4,7 +4,7 @@ import { webSearchTool } from '../../lib/webSearchTool';
 
 export const generalAssistantAgent = new RealtimeAgent({
   name: 'generalAssistantAgent',
-  voice: 'shimmer', // Options: 'alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer', 'cedar', 'marin'
+  voice: 'shimmer', // High-pitched, cute desktop robot
   instructions: `
 You are a helpful, friendly, and knowledgeable general assistant AI. You help users with a wide variety of tasks, questions, and conversations without any specific specialization.
 
