@@ -13,6 +13,8 @@ interface RealtimeBridgeProps {
   currentEmotion: Emotion;
 }
 
+export type ActiveMode = 'backing_track' | 'metronome' | 'backend_mic' | null;
+
 const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({ 
   onEmotionChange, 
   currentEmotion 
@@ -28,6 +30,9 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
   const [iframeLoaded, setIframeLoaded] = useState(false);
   const [lastEmotionChange, setLastEmotionChange] = useState<number>(0);
   const [agentConfig] = useState('musicalCompanion'); // Musical Companion as the only agent
+  /** Only one of these can be active: opening phrase enters that mode; backing_track/metronome exit on "stop" or idle; backend_mic exits only on "microphone off". */
+  const [activeMode, setActiveMode] = useState<ActiveMode>(null);
+  const activeModeRef = useRef<ActiveMode>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const lastActivityTimeRef = useRef<number>(Date.now());
 
@@ -379,30 +384,6 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
     return () => clearInterval(interval);
   }, [realtimeUrl]);
 
-  // Idle timeout: switch to "time" after 10 seconds of no input/output activity
-  const IDLE_TIMEOUT_MS = 10000;
-  useEffect(() => {
-    if (!isConnected) return;
-
-    const checkIdleTimeout = () => {
-      const now = Date.now();
-      // Idle timeout: 10s since last activity; avoid during transitions (~500ms after emotion change)
-      const timeSinceLastActivity = now - lastActivityTimeRef.current;
-      const isTransitioning = (now - lastEmotionChange) < 500;
-
-      if (timeSinceLastActivity >= IDLE_TIMEOUT_MS && currentEmotion !== 'time' && currentEmotion !== 'metronome' && !isTransitioning) {
-        console.log('Idle timeout reached, switching to time display');
-        setLastEmotionChange(now);
-        handleEmotionChange('time', 'idle_timeout', true);
-      }
-    };
-
-    // Check every second
-    const interval = setInterval(checkIdleTimeout, 1000);
-    
-    return () => clearInterval(interval);
-  }, [isConnected, currentEmotion, onEmotionChange, lastEmotionChange]);
-
   // Send message to iframe (target origin for postMessage)
   const iframeOrigin = (() => {
     try {
@@ -420,24 +401,55 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
 
   const lastKnownMicEnabledRef = useRef(true);
   const savedMicBeforeBackingTrackRef = useRef(true);
+  const savedMicBeforeMetronomeRef = useRef(true);
   const metronomeStartTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const setActiveModeAndRef = useCallback((mode: ActiveMode) => {
+    setActiveMode(mode);
+    activeModeRef.current = mode;
+  }, []);
 
   /** Duration to show "thinking" while "generating" metronome sound/timing before switching to metronome face. */
   const METRONOME_PREPARE_MS = 600;
 
-  const handleMicCommand = (payload: { type: 'set_backend_mic_enabled'; enabled: boolean }) => {
-    lastKnownMicEnabledRef.current = payload.enabled;
-    sendMessageToIframe(payload);
-  };
+  const handleMicCommand = useCallback((payload: { type: 'set_backend_mic_enabled'; enabled: boolean }) => {
+    const mode = activeModeRef.current;
+    if (payload.enabled) {
+      // "microphone on" — only enter backend_mic mode when not in backing_track or metronome (or already in backend_mic)
+      if (mode === 'backing_track' || mode === 'metronome') return;
+      setActiveModeAndRef('backend_mic');
+      backingTrackHandlersRef.current?.stop();
+      if (metronomeStartTimeoutRef.current) {
+        clearTimeout(metronomeStartTimeoutRef.current);
+        metronomeStartTimeoutRef.current = null;
+      }
+      onEmotionChange('neutral');
+      lastKnownMicEnabledRef.current = true;
+      sendMessageToIframe({ type: 'set_backend_mic_enabled', enabled: true });
+    } else {
+      // "microphone off" — only exit backend_mic mode
+      if (mode !== 'backend_mic') return;
+      setActiveModeAndRef(null);
+      lastKnownMicEnabledRef.current = false;
+      sendMessageToIframe({ type: 'set_backend_mic_enabled', enabled: false });
+    }
+  }, [setActiveModeAndRef, onEmotionChange]);
 
   const handleStartMetronome = useCallback(() => {
+    if (activeModeRef.current !== 'metronome') {
+      setActiveModeAndRef('metronome');
+      savedMicBeforeMetronomeRef.current = lastKnownMicEnabledRef.current;
+      lastKnownMicEnabledRef.current = false;
+      sendMessageToIframe({ type: 'set_backend_mic_enabled', enabled: false });
+      backingTrackHandlersRef.current?.stop();
+    }
     handleEmotionChange('thinking', 'metronome_preparing', true);
     if (metronomeStartTimeoutRef.current) clearTimeout(metronomeStartTimeoutRef.current);
     metronomeStartTimeoutRef.current = setTimeout(() => {
       metronomeStartTimeoutRef.current = null;
       handleEmotionChange('metronome', 'metronome_started', true);
     }, METRONOME_PREPARE_MS);
-  }, []);
+  }, [setActiveModeAndRef]);
 
   useEffect(() => {
     return () => {
@@ -448,14 +460,43 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
     };
   }, []);
 
-  const handleMetronomeCommand = (action: 'start' | 'stop' | 'setBpm' | 'pause' | 'play', bpm?: number) => {
+  const backingTrackHandlersRef = useRef<BackingTrackHandlers | null>(null);
+  const handleBackingTrackHandlersReady = useCallback((handlers: BackingTrackHandlers) => {
+    backingTrackHandlersRef.current = handlers;
+  }, []);
+
+  const handleStopMetronome = useCallback(() => {
+    if (activeModeRef.current !== 'metronome') return;
+    setActiveModeAndRef(null);
+    lastKnownMicEnabledRef.current = savedMicBeforeMetronomeRef.current;
+    sendMessageToIframe({ type: 'set_backend_mic_enabled', enabled: savedMicBeforeMetronomeRef.current });
+    if (metronomeStartTimeoutRef.current) {
+      clearTimeout(metronomeStartTimeoutRef.current);
+      metronomeStartTimeoutRef.current = null;
+    }
+  }, [setActiveModeAndRef]);
+
+  const handleMetronomeCommand = useCallback((action: 'start' | 'stop' | 'setBpm' | 'pause' | 'play', bpm?: number) => {
+    const mode = activeModeRef.current;
     if (action === 'stop' || action === 'pause') {
+      if (mode !== 'metronome') return;
+      setActiveModeAndRef(null);
+      lastKnownMicEnabledRef.current = savedMicBeforeMetronomeRef.current;
+      sendMessageToIframe({ type: 'set_backend_mic_enabled', enabled: savedMicBeforeMetronomeRef.current });
       if (metronomeStartTimeoutRef.current) {
         clearTimeout(metronomeStartTimeoutRef.current);
         metronomeStartTimeoutRef.current = null;
       }
       onEmotionChange('neutral');
       return;
+    }
+    if (mode === 'backing_track' || mode === 'backend_mic') return;
+    if (mode === null) {
+      savedMicBeforeMetronomeRef.current = lastKnownMicEnabledRef.current;
+      lastKnownMicEnabledRef.current = false;
+      sendMessageToIframe({ type: 'set_backend_mic_enabled', enabled: false });
+      backingTrackHandlersRef.current?.stop();
+      setActiveModeAndRef('metronome');
     }
     if (action === 'play') {
       handleStartMetronome();
@@ -466,18 +507,28 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
       if (action === 'start') {
         handleStartMetronome();
       }
-      // 'setBpm' only updates store; face already on metronome will use new BPM
     }
-  };
+  }, [setActiveModeAndRef, onEmotionChange]);
 
-  const backingTrackHandlersRef = useRef<BackingTrackHandlers | null>(null);
-  const handleBackingTrackHandlersReady = useCallback((handlers: BackingTrackHandlers) => {
-    backingTrackHandlersRef.current = handlers;
-  }, []);
   const handleBackingTrackCommand = useCallback(
     (action: 'describe' | 'pause' | 'play' | 'save' | 'stop', description?: string) => {
+      const mode = activeModeRef.current;
+      if (mode === 'metronome' || mode === 'backend_mic') return;
       const h = backingTrackHandlersRef.current;
       if (!h) return;
+      if (mode === null) {
+        setActiveModeAndRef('backing_track');
+        savedMicBeforeBackingTrackRef.current = lastKnownMicEnabledRef.current;
+        lastKnownMicEnabledRef.current = false;
+        sendMessageToIframe({ type: 'set_backend_mic_enabled', enabled: false });
+      }
+      if (action === 'stop') {
+        h.stop();
+        setActiveModeAndRef(null);
+        lastKnownMicEnabledRef.current = savedMicBeforeBackingTrackRef.current;
+        sendMessageToIframe({ type: 'set_backend_mic_enabled', enabled: savedMicBeforeBackingTrackRef.current });
+        return;
+      }
       switch (action) {
         case 'describe':
           void h.runCommand(description ?? '');
@@ -491,12 +542,9 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
         case 'save':
           h.save();
           break;
-        case 'stop':
-          h.stop();
-          break;
       }
     },
-    []
+    [setActiveModeAndRef]
   );
 
   useVoiceCommandMicOnOff(
@@ -506,17 +554,58 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
     handleBackingTrackCommand
   );
 
-  const handleBackingTrackPlayingStart = () => {
+  const handleBackingTrackPlayingStart = useCallback(() => {
+    setActiveModeAndRef('backing_track');
     savedMicBeforeBackingTrackRef.current = lastKnownMicEnabledRef.current;
     sendMessageToIframe({ type: 'set_backend_mic_enabled', enabled: false });
-  };
+  }, [setActiveModeAndRef]);
 
-  const handleBackingTrackPlayingStop = () => {
-    sendMessageToIframe({
-      type: 'set_backend_mic_enabled',
-      enabled: savedMicBeforeBackingTrackRef.current,
-    });
-  };
+  const handleBackingTrackPlayingStop = useCallback(() => {
+    if (activeModeRef.current === 'backing_track') {
+      setActiveModeAndRef(null);
+      sendMessageToIframe({
+        type: 'set_backend_mic_enabled',
+        enabled: savedMicBeforeBackingTrackRef.current,
+      });
+      lastKnownMicEnabledRef.current = savedMicBeforeBackingTrackRef.current;
+    }
+  }, [setActiveModeAndRef]);
+
+  // Idle timeout: exit metronome mode (stop and restore mic); switch to "time" after 10s of no activity.
+  // Backing track is NOT stopped by idle timeout — it plays continuously until user says "stop" or "pause".
+  const IDLE_TIMEOUT_MS = 10000;
+  useEffect(() => {
+    if (!isConnected) return;
+
+    const checkIdleTimeout = () => {
+      const now = Date.now();
+      const timeSinceLastActivity = now - lastActivityTimeRef.current;
+      const isTransitioning = (now - lastEmotionChange) < 500;
+      const mode = activeModeRef.current;
+
+      if (timeSinceLastActivity >= IDLE_TIMEOUT_MS) {
+        // Do not stop backing track on idle — it should loop until user says "stop" or "pause"
+        if (mode === 'metronome') {
+          if (metronomeStartTimeoutRef.current) {
+            clearTimeout(metronomeStartTimeoutRef.current);
+            metronomeStartTimeoutRef.current = null;
+          }
+          setActiveModeAndRef(null);
+          sendMessageToIframe({ type: 'set_backend_mic_enabled', enabled: savedMicBeforeMetronomeRef.current });
+          lastKnownMicEnabledRef.current = savedMicBeforeMetronomeRef.current;
+          onEmotionChange('neutral');
+        }
+        if (currentEmotion !== 'time' && currentEmotion !== 'metronome' && currentEmotion !== 'guitarTabs' && !isTransitioning) {
+          console.log('Idle timeout reached, switching to time display');
+          setLastEmotionChange(now);
+          handleEmotionChange('time', 'idle_timeout', true);
+        }
+      }
+    };
+
+    const interval = setInterval(checkIdleTimeout, 1000);
+    return () => clearInterval(interval);
+  }, [isConnected, currentEmotion, onEmotionChange, lastEmotionChange, setActiveModeAndRef]);
 
   const handleBackingTrackGenerationStart = () => {
     lastActivityTimeRef.current = Date.now();
@@ -529,23 +618,31 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
     }
   };
 
-  // When user enables frontend mic, also enable backend mic (when connected)
-  const handleMicRequestAccess = () => {
+  // When user enables frontend mic, enter backend_mic mode and enable backend mic (when connected)
+  const handleMicRequestAccess = useCallback(() => {
     micRequestAccess();
     if (isConnected && iframeLoaded) {
+      setActiveModeAndRef('backend_mic');
+      backingTrackHandlersRef.current?.stop();
+      if (metronomeStartTimeoutRef.current) {
+        clearTimeout(metronomeStartTimeoutRef.current);
+        metronomeStartTimeoutRef.current = null;
+      }
+      onEmotionChange('neutral');
       lastKnownMicEnabledRef.current = true;
       sendMessageToIframe({ type: 'set_backend_mic_enabled', enabled: true });
     }
-  };
+  }, [isConnected, iframeLoaded, setActiveModeAndRef, onEmotionChange]);
 
-  // When user disables frontend mic, also mute backend mic (when connected)
-  const handleMicStop = () => {
+  // When user disables frontend mic, exit backend_mic mode and mute backend mic (when connected)
+  const handleMicStop = useCallback(() => {
     micStop();
     if (isConnected && iframeLoaded) {
+      if (activeModeRef.current === 'backend_mic') setActiveModeAndRef(null);
       lastKnownMicEnabledRef.current = false;
       sendMessageToIframe({ type: 'set_backend_mic_enabled', enabled: false });
     }
-  };
+  }, [isConnected, iframeLoaded, setActiveModeAndRef]);
 
   // Handle iframe load
   const handleIframeLoad = () => {
@@ -575,6 +672,9 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
         <h3>OpenAI Realtime Voice Chat</h3>
         <div className="current-emotion-display">
           Current: <strong>{currentEmotion}</strong>
+          {activeMode && (
+            <span className="active-mode-display"> · Mode: <strong>{activeMode.replace('_', ' ')}</strong></span>
+          )}
         </div>
       </div>
 
@@ -622,6 +722,7 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
         currentEmotion={currentEmotion}
         onEmotionChange={onEmotionChange}
         onStartMetronome={handleStartMetronome}
+        onStopMetronome={handleStopMetronome}
       />
 
       {micStatus === 'granted' && isConnected && (
