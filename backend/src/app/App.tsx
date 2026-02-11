@@ -177,7 +177,7 @@ function App() {
     },
   );
   // Voice command from Tauri frontend: "microphone off" / "microphone on" to disable/enable backend mic input
-  const [backendMicEnabledByVoice, setBackendMicEnabledByVoice] = useState<boolean>(true);
+  const [backendMicEnabledByVoice, setBackendMicEnabledByVoice] = useState<boolean>(false);
 
   // Initialize the recording hook.
   const { startRecording, stopRecording, downloadRecording } =

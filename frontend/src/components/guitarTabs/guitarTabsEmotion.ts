@@ -1,4 +1,4 @@
-import type { EmotionDrawFunction } from './types';
+import type { EmotionDrawFunction } from '../face/emotions/types';
 
 // Guitar tabs view is rendered as a separate React component (GuitarTabsFace), not on the canvas.
 // This stub exists only to satisfy the Emotion -> draw function map type.

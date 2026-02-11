@@ -5,9 +5,9 @@ import { drawThinking } from './thinking';
 import { drawListening } from './listening';
 import { drawTime } from './time';
 import { drawSpeaking } from './speaking';
-import { drawMetronome } from './metronome';
-import { drawGuitarTabs } from './guitarTabs';
-import { Emotion } from '../../App';
+import { drawMetronome } from '../../metronome/metronomeEmotion';
+import { drawGuitarTabs } from '../../guitarTabs/guitarTabsEmotion';
+import { Emotion } from '../../../App';
 import { EmotionDrawFunction } from './types';
 
 // Map emotions to their drawing functions

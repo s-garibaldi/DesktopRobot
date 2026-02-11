@@ -1,6 +1,6 @@
-import type { EmotionDrawFunction } from './types';
-import { getMetronomeBpm } from '../../metronomeStore';
-import { playTickIfNewBeat } from '../../metronomeAudio';
+import type { EmotionDrawFunction } from '../face/emotions/types';
+import { getMetronomeBpm } from './metronomeStore';
+import { playTickIfNewBeat } from './metronomeAudio';
 
 // METRONOME emotion - blinking blue screen synced to BPM
 // Uses performance.now() for accurate wall-clock timing (frame-based time drifts)

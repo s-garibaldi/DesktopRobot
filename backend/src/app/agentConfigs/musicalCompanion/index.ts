@@ -6,8 +6,10 @@ import {
   getProgressionsForStyle,
   getAllStyles,
   parseChordName,
+  getTempoBpmForGenre,
   CHORD_FORMULAS,
 } from '../../lib/musicKnowledge';
+import { postClientAction } from '../../lib/bridge';
 import { webSearchTool } from '../../lib/webSearchTool';
 
 // Common open-position fingerings (optional; theory works for any chord)
@@ -261,6 +263,58 @@ const songwritingSuggestionTool = tool({
   },
 });
 
+// Send BPM to the frontend; frontend sets it and starts the metronome automatically.
+const setMetronomeBpmTool = tool({
+  name: 'set_metronome_bpm',
+  description: 'Set the metronome BPM on the user\'s device and start it. Use when the user asks for a metronome for a style (e.g. rumba, salsa, waltz) or at a specific tempo. You send the BPM number; the frontend sets it and starts the metronome automatically. Do NOT say the words "stop" or "pause" in your reply (the frontend mic would hear them and stop the metronome); say instead that they can control it with voice.',
+  parameters: {
+    type: 'object',
+    properties: {
+      bpm: {
+        type: 'number',
+        description: 'Beats per minute (40–240). Use when user gives a number or when resolving a genre.',
+      },
+      genre: {
+        type: 'string',
+        description: 'Optional. Genre name to look up typical BPM (e.g. "rumba", "salsa", "bossa nova", "waltz", "ballad"). If provided, bpm can be omitted and will be set from the genre.',
+      },
+    },
+    required: [],
+    additionalProperties: false,
+  },
+  execute: async (input: any) => {
+    let bpm: number;
+    const { bpm: inputBpm, genre } = input as { bpm?: number; genre?: string };
+    if (genre?.trim()) {
+      const genreBpm = getTempoBpmForGenre(genre.trim());
+      if (genreBpm != null) {
+        bpm = genreBpm;
+      } else if (typeof inputBpm === 'number' && inputBpm >= 40 && inputBpm <= 240) {
+        bpm = Math.round(inputBpm);
+      } else {
+        return {
+          success: false,
+          message: `I don't know a typical tempo for "${genre}". Say a BPM (e.g. 120) or try another genre like rumba, salsa, waltz, or ballad.`,
+        };
+      }
+    } else if (typeof inputBpm === 'number' && inputBpm >= 40 && inputBpm <= 240) {
+      bpm = Math.round(inputBpm);
+    } else {
+      return {
+        success: false,
+        message: 'Please specify a BPM (40–240) or a genre (e.g. rumba, salsa, waltz) for the metronome.',
+      };
+    }
+    const clamped = Math.max(40, Math.min(240, bpm));
+    postClientAction('metronome_set_bpm', { bpm: clamped });
+    return {
+      success: true,
+      bpm: clamped,
+      message: `Metronome set to ${clamped} BPM and starting. You can control it with voice anytime.`,
+    };
+  },
+});
+
 // Music theory tool
 const musicTheoryTool = tool({
   name: 'music_theory_help',
@@ -373,6 +427,9 @@ When the conversation starts or when you first connect, immediately greet the us
 # Memory and Context
 You have access to memories from previous conversations. When the session starts, you may receive memories in the format "[Memory: topic] content". Review these to understand the user's preferences, name,  favorite chords, musical style, or other relevant information. Use retrieve_memories to recall additional information when needed. When the user shares important information (like favorite genres, skill level, preferences, or personal facts), use store_memory to save it for future conversations. The system may also automatically extract some information, but you should still use store_memory for important details.
 
+# Brevity
+Keep replies brief unless the user asks for more. Prefer one clear sentence over a paragraph. If a topic could be explained at length, give the gist first and offer to elaborate.
+
 # Your Expertise
 - Guitar chord recognition and fingerings
 - Songwriting suggestions and chord progressions
@@ -386,38 +443,37 @@ You have access to memories from previous conversations. When the session starts
 - Use suggest_chord_progression to suggest progressions in a key and style (pop, rock, jazz, folk, R&B, country) at basic, intermediate, or advanced complexity; use this when the user wants chord progressions, "what chords go together", or more complex/interesting progressions
 - Use songwriting_suggestion for creative songwriting help (structure, lyrics themes, tempo)
 - Use music_theory_help for theory explanations (scales, intervals, harmony, chord construction, circle of fifths)
+- Use set_metronome_bpm when the user asks for a metronome: pass a genre (e.g. "rumba", "salsa", "waltz", "bossa nova", "ballad") or a specific bpm (40–240). You send the BPM to the frontend; the metronome starts automatically. Do NOT say the words "stop" or "pause" in your reply (the frontend hears the agent and would stop the metronome); say they can control it with voice instead.
 - Use search_web to find current information, recent music news, new songs, artist information, or any up-to-date content
 - Use store_memory to save user preferences, favorite chords, musical interests, or skill level
 - Use retrieve_memories to recall information from previous conversations
 
 # Guidelines
-- Be encouraging and supportive of musical creativity
-- Provide practical, actionable advice
-- Explain music theory in accessible terms
-- Suggest chord progressions that work well together
-- Help with song structure and arrangement
-- Be enthusiastic about music and creativity
-- Remember user preferences and refer to them when relevant
+- Be encouraging and supportive; keep answers concise unless the user wants more.
+- Give practical, actionable advice in a few sentences; offer to go deeper if relevant.
+- When explaining theory, start with the essential idea and ask if they want more detail.
+- Suggest chord progressions and structures clearly and briefly.
+- Remember user preferences and refer to them when relevant.
 
 # Examples
 - "What's the fingering for C major?" or "What notes are in F#m7?" → Use recognize_guitar_chord
 - "Give me a chord progression in G" / "Jazz progressions in Bb" / "Something more complex in D" → Use suggest_chord_progression (choose style and complexity as appropriate)
 - "What chords go well together?" / "Suggest a progression for a sad song" → Use suggest_chord_progression
 - "I want to write a happy pop song" → Use songwriting_suggestion
-- "Explain major scales" / "Circle of fifths" → Use music_theory_help
+- "Explain major scales" / "Circle of fifths" → Use music_theory_help; give a one-sentence summary first, then ask "Want me to go deeper on that?"
 - "What chords go well with Am?" → Use recognize_guitar_chord for Am, then suggest_chord_progression in A minor or related key
+- "Play a metronome for a rumba" / "Metronome at 120" / "Set metronome for waltz" → Use set_metronome_bpm with genre or bpm
 - User says "I love jazz" → Use store_memory to save this preference
 - User asks "What's my favorite genre?" → Use retrieve_memories to recall
 
 # Response Style
-- Give shorter more concise responses, especially when responding to questions.
-- Be enthusiastic and encouraging
-- Use musical terminology appropriately
-- Provide practical tips and exercises
-- Suggest creative ideas and experiments
-- Be supportive of different skill levels
+- Default to short, conversational answers: 1–3 sentences for most questions. Sound like a helpful friend, not a textbook.
+- Before giving a long or theory-heavy explanation, offer it instead of dumping it. For example: give a one-sentence answer, then ask "Want me to go deeper on that?" or "I can explain the theory behind that if you'd like."
+- Only give longer, in-depth explanations when the user clearly asks for more (e.g. "explain more," "why?," "how does that work?," or "tell me more") or when their question is explicitly about learning in detail.
+- Be enthusiastic and encouraging. Use musical terminology when it helps, but keep the main reply concise.
+- Suggest creative ideas and next steps in a sentence or two; don't over-explain unless asked.
 `,
-  tools: [recognizeChordTool, suggestChordProgressionTool, songwritingSuggestionTool, musicTheoryTool, webSearchTool, ...createMemoryTools('musicalCompanion')],
+  tools: [recognizeChordTool, suggestChordProgressionTool, songwritingSuggestionTool, musicTheoryTool, setMetronomeBpmTool, webSearchTool, ...createMemoryTools('musicalCompanion')],
   handoffs: [],
   handoffDescription: 'Musical companion AI for guitar, songwriting, and music theory',
 });

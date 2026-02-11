@@ -234,3 +234,37 @@ export function getAllStyles(): string[] {
   const set = new Set(NAMED_PROGRESSIONS.map(p => p.style));
   return Array.from(set).sort();
 }
+
+/** Typical BPM range for common genres (used for metronome). Returns a single representative BPM. */
+const GENRE_TEMPO_BPM: Record<string, number> = {
+  rumba: 104,
+  salsa: 180,
+  'bossa nova': 120,
+  bossa: 120,
+  samba: 100,
+  tango: 120,
+  waltz: 90,
+  'slow waltz': 84,
+  'viennese waltz': 180,
+  swing: 120,
+  jazz: 120,
+  blues: 100,
+  ballad: 72,
+  pop: 120,
+  rock: 120,
+  folk: 100,
+  reggae: 80,
+  funk: 110,
+  'hip hop': 90,
+  house: 120,
+  'four on the floor': 120,
+};
+
+/**
+ * Get a suggested BPM for a genre (e.g. "rumba" -> 104).
+ * Genre is matched case-insensitively; returns null if unknown.
+ */
+export function getTempoBpmForGenre(genre: string): number | null {
+  const key = genre.trim().toLowerCase().replace(/\s+/g, ' ');
+  return GENRE_TEMPO_BPM[key] ?? null;
+}

@@ -60,4 +60,3 @@ export function playTickIfNewBeat(realTimeSeconds: number, period: number, phase
     playTick();
   }
 }
-

@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useCallback } from 'react';
-import { Emotion } from '../App';
+import { Emotion } from '../../App';
 import { emotionDrawFunctions, easeInOut } from './emotions';
 import { lerp } from './emotions/types';
 import { drawSpeakingMouth } from './emotions/speaking';

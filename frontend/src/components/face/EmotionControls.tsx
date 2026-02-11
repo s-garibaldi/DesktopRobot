@@ -1,5 +1,5 @@
 import React from 'react';
-import { Emotion } from '../App';
+import { Emotion } from '../../App';
 import './EmotionControls.css';
 
 interface EmotionControlsProps {

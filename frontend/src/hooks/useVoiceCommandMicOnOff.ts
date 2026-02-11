@@ -1,5 +1,5 @@
-import { useEffect, useRef } from 'react';
-import { parseMetronomeBpm } from '../parseMetronomeCommand';
+import { useEffect, useRef, type MutableRefObject } from 'react';
+import { parseMetronomeBpm } from '../components/metronome/parseMetronomeCommand';
 
 declare global {
   interface Window {
@@ -35,6 +35,8 @@ export type BackingTrackVoiceAction = 'describe' | 'pause' | 'play' | 'save' | '
 const COOLDOWN_MS = 2500;
 const BACKING_DESCRIPTION_TIMEOUT_MS = 5000;
 const METRONOME_BPM_TIMEOUT_MS = 5000;
+/** Ignore "stop" / "pause" for metronome for this long after metronome start (avoids agent saying "say stop to control it" triggering stop). */
+const METRONOME_START_COOLDOWN_MS = 6000;
 const PHRASE_OFF = 'microphone off';
 const PHRASE_ON = 'microphone on';
 const PHRASE_BACKING_TRACK = 'backing track';
@@ -100,6 +102,18 @@ function transcriptContainsPhrase(transcript: string, phrase: string): boolean {
   return t.includes(phrase) || t === phrase;
 }
 
+/** Stricter check for "microphone off" to reduce false positives (e.g. AI echo). */
+function isMicOffCommand(transcript: string): boolean {
+  const t = normalize(transcript);
+  return t === PHRASE_OFF || t.endsWith(PHRASE_OFF);
+}
+
+/** Stricter check for "microphone on" to reduce false positives (e.g. AI echo). */
+function isMicOnCommand(transcript: string): boolean {
+  const t = normalize(transcript);
+  return t === PHRASE_ON || t.endsWith(PHRASE_ON);
+}
+
 function isStopCommand(transcript: string): boolean {
   const t = normalize(transcript);
   return t === 'stop' || t.startsWith('stop ');
@@ -142,12 +156,19 @@ export function useVoiceCommandMicOnOff(
   enabled: boolean,
   onCommand: (payload: { type: 'set_backend_mic_enabled'; enabled: boolean }) => void,
   onMetronomeCommand?: (action: MetronomeVoiceAction, bpm?: number) => void,
-  onBackingTrackCommand?: (action: BackingTrackVoiceAction, description?: string) => void
+  onBackingTrackCommand?: (action: BackingTrackVoiceAction, description?: string) => void,
+  lastMetronomeStartTimeRef?: MutableRefObject<number>
 ) {
   const onCommandRef = useRef(onCommand);
   const onMetronomeCommandRef = useRef(onMetronomeCommand);
   const onBackingTrackCommandRef = useRef(onBackingTrackCommand);
   const lastCommandTimeRef = useRef(0);
+
+  const isInMetronomeStopCooldown = (now: number): boolean => {
+    if (!lastMetronomeStartTimeRef) return false;
+    const elapsed = now - lastMetronomeStartTimeRef.current;
+    return elapsed >= 0 && elapsed < METRONOME_START_COOLDOWN_MS;
+  };
   const enabledRef = useRef(enabled);
   const waitingForBackingDescriptionRef = useRef(false);
   const chimePlayedForBackingRef = useRef(false);
@@ -204,14 +225,14 @@ export function useVoiceCommandMicOnOff(
             clearTimeout(backingDescriptionTimeoutRef.current);
             backingDescriptionTimeoutRef.current = null;
           }
-          if (transcriptContainsPhrase(transcript, PHRASE_OFF)) {
+          if (isMicOffCommand(transcript)) {
             lastCommandTimeRef.current = now;
             playChimeDown();
             onCommandRef.current({ type: 'set_backend_mic_enabled', enabled: false });
             console.log('Voice command: microphone off');
             return;
           }
-          if (transcriptContainsPhrase(transcript, PHRASE_ON)) {
+          if (isMicOnCommand(transcript)) {
             lastCommandTimeRef.current = now;
             playChime();
             onCommandRef.current({ type: 'set_backend_mic_enabled', enabled: true });
@@ -219,19 +240,23 @@ export function useVoiceCommandMicOnOff(
             return;
           }
           if (isStopCommand(transcript)) {
-            lastCommandTimeRef.current = now;
-            playChimeDown();
-            onBackingTrackCommandRef.current('stop');
-            if (onMetronomeCommandRef.current) onMetronomeCommandRef.current('stop');
-            console.log('Voice command: stop (backing + metronome)');
+            if (!isInMetronomeStopCooldown(now)) {
+              lastCommandTimeRef.current = now;
+              playChimeDown();
+              onBackingTrackCommandRef.current('stop');
+              if (onMetronomeCommandRef.current) onMetronomeCommandRef.current('stop');
+              console.log('Voice command: stop (backing + metronome)');
+            }
             return;
           }
           if (isPauseCommand(transcript)) {
-            lastCommandTimeRef.current = now;
-            playChimeDown();
-            onBackingTrackCommandRef.current('pause');
-            if (onMetronomeCommandRef.current) onMetronomeCommandRef.current('pause');
-            console.log('Voice command: backing track pause');
+            if (!isInMetronomeStopCooldown(now)) {
+              lastCommandTimeRef.current = now;
+              playChimeDown();
+              onBackingTrackCommandRef.current('pause');
+              if (onMetronomeCommandRef.current) onMetronomeCommandRef.current('pause');
+              console.log('Voice command: backing track pause');
+            }
             return;
           }
           if (isPlayCommand(transcript)) {
@@ -273,14 +298,14 @@ export function useVoiceCommandMicOnOff(
             clearTimeout(metronomeBpmTimeoutRef.current);
             metronomeBpmTimeoutRef.current = null;
           }
-          if (transcriptContainsPhrase(transcript, PHRASE_OFF)) {
+          if (isMicOffCommand(transcript)) {
             lastCommandTimeRef.current = now;
             playChimeDown();
             onCommandRef.current({ type: 'set_backend_mic_enabled', enabled: false });
             console.log('Voice command: microphone off');
             return;
           }
-          if (transcriptContainsPhrase(transcript, PHRASE_ON)) {
+          if (isMicOnCommand(transcript)) {
             lastCommandTimeRef.current = now;
             playChime();
             onCommandRef.current({ type: 'set_backend_mic_enabled', enabled: true });
@@ -288,11 +313,13 @@ export function useVoiceCommandMicOnOff(
             return;
           }
           if (isStopCommand(transcript)) {
-            lastCommandTimeRef.current = now;
-            playChimeDown();
-            if (onBackingTrackCommandRef.current) onBackingTrackCommandRef.current('stop');
-            onMetronomeCommandRef.current('stop');
-            console.log('Voice command: stop (backing + metronome)');
+            if (!isInMetronomeStopCooldown(now)) {
+              lastCommandTimeRef.current = now;
+              playChimeDown();
+              if (onBackingTrackCommandRef.current) onBackingTrackCommandRef.current('stop');
+              onMetronomeCommandRef.current('stop');
+              console.log('Voice command: stop (backing + metronome)');
+            }
             return;
           }
           if (onBackingTrackCommandRef.current) {
@@ -318,11 +345,13 @@ export function useVoiceCommandMicOnOff(
               return;
             }
             if (isPauseCommand(transcript)) {
-              lastCommandTimeRef.current = now;
-              playChimeDown();
-              onBackingTrackCommandRef.current('pause');
-              if (onMetronomeCommandRef.current) onMetronomeCommandRef.current('pause');
-              console.log('Voice command: backing track pause');
+              if (!isInMetronomeStopCooldown(now)) {
+                lastCommandTimeRef.current = now;
+                playChimeDown();
+                onBackingTrackCommandRef.current('pause');
+                if (onMetronomeCommandRef.current) onMetronomeCommandRef.current('pause');
+                console.log('Voice command: backing track pause');
+              }
               return;
             }
             if (isPlayCommand(transcript)) {
@@ -355,14 +384,14 @@ export function useVoiceCommandMicOnOff(
 
         if (now - lastCommandTimeRef.current < COOLDOWN_MS) return;
 
-        if (transcriptContainsPhrase(transcript, PHRASE_OFF)) {
+        if (isMicOffCommand(transcript)) {
           lastCommandTimeRef.current = now;
           playChimeDown();
           onCommandRef.current({ type: 'set_backend_mic_enabled', enabled: false });
           console.log('Voice command: microphone off');
           return;
         }
-        if (transcriptContainsPhrase(transcript, PHRASE_ON)) {
+        if (isMicOnCommand(transcript)) {
           lastCommandTimeRef.current = now;
           playChime();
           onCommandRef.current({ type: 'set_backend_mic_enabled', enabled: true });
@@ -391,19 +420,23 @@ export function useVoiceCommandMicOnOff(
             return;
           }
           if (isStopCommand(transcript)) {
-            lastCommandTimeRef.current = now;
-            playChimeDown();
-            onBackingTrackCommandRef.current('stop');
-            if (onMetronomeCommandRef.current) onMetronomeCommandRef.current('stop');
-            console.log('Voice command: stop (backing + metronome)');
+            if (!isInMetronomeStopCooldown(now)) {
+              lastCommandTimeRef.current = now;
+              playChimeDown();
+              onBackingTrackCommandRef.current('stop');
+              if (onMetronomeCommandRef.current) onMetronomeCommandRef.current('stop');
+              console.log('Voice command: stop (backing + metronome)');
+            }
             return;
           }
           if (isPauseCommand(transcript)) {
-            lastCommandTimeRef.current = now;
-            playChimeDown();
-            onBackingTrackCommandRef.current('pause');
-            if (onMetronomeCommandRef.current) onMetronomeCommandRef.current('pause');
-            console.log('Voice command: backing track pause');
+            if (!isInMetronomeStopCooldown(now)) {
+              lastCommandTimeRef.current = now;
+              playChimeDown();
+              onBackingTrackCommandRef.current('pause');
+              if (onMetronomeCommandRef.current) onMetronomeCommandRef.current('pause');
+              console.log('Voice command: backing track pause');
+            }
             return;
           }
           if (isPlayCommand(transcript)) {
@@ -422,16 +455,24 @@ export function useVoiceCommandMicOnOff(
             return;
           }
         } else if (onMetronomeCommandRef.current && isStopCommand(transcript)) {
-          lastCommandTimeRef.current = now;
-          playChimeDown();
-          onMetronomeCommandRef.current('stop');
-          console.log('Voice command: metronome stop');
+          if (isInMetronomeStopCooldown(now)) {
+            console.log('Voice command: ignoring metronome stop (start cooldown)');
+          } else {
+            lastCommandTimeRef.current = now;
+            playChimeDown();
+            onMetronomeCommandRef.current('stop');
+            console.log('Voice command: metronome stop');
+          }
           return;
         } else if (onMetronomeCommandRef.current && isPauseCommand(transcript)) {
-          lastCommandTimeRef.current = now;
-          playChimeDown();
-          onMetronomeCommandRef.current('pause');
-          console.log('Voice command: metronome pause');
+          if (isInMetronomeStopCooldown(now)) {
+            console.log('Voice command: ignoring metronome pause (start cooldown)');
+          } else {
+            lastCommandTimeRef.current = now;
+            playChimeDown();
+            onMetronomeCommandRef.current('pause');
+            console.log('Voice command: metronome pause');
+          }
           return;
         } else if (onMetronomeCommandRef.current && isPlayCommand(transcript)) {
           lastCommandTimeRef.current = now;

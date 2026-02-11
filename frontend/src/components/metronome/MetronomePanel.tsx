@@ -3,9 +3,9 @@
  */
 
 import { useState, useCallback } from 'react';
-import { Emotion } from '../App';
-import { parseMetronomeBpm } from '../parseMetronomeCommand';
-import { getMetronomeBpm, setMetronomeBpm } from '../metronomeStore';
+import { Emotion } from '../../App';
+import { parseMetronomeBpm } from './parseMetronomeCommand';
+import { getMetronomeBpm, setMetronomeBpm } from './metronomeStore';
 import './MetronomePanel.css';
 
 interface MetronomePanelProps {

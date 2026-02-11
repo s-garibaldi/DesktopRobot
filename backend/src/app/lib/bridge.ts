@@ -45,3 +45,23 @@ export function postBridgeMessage(message: BridgeLogEvent) {
   window.parent.postMessage(message, origin);
 }
 
+/**
+ * Send a client action to the parent window (e.g. start_metronome).
+ * Used by agent tools to trigger frontend behavior (metronome, etc.).
+ */
+export function postClientAction(type: string, payload?: Record<string, unknown>) {
+  if (typeof window === "undefined") {
+    console.warn("[bridge] postClientAction skipped: no window (e.g. running in worker or Node)");
+    return;
+  }
+  if (!window.parent || window.parent === window) {
+    console.warn("[bridge] postClientAction skipped: not embedded in iframe (window.parent === window)");
+    return;
+  }
+
+  const origin = safeParentOrigin();
+  const message = { type, ...payload };
+  window.parent.postMessage(message, origin);
+  console.log("[bridge] postClientAction sent:", type, payload, "targetOrigin:", origin);
+}
+

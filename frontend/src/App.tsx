@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import AnimatedFace from './components/AnimatedFace';
-import EmotionControls from './components/EmotionControls';
+import AnimatedFace from './components/face/AnimatedFace';
+import EmotionControls from './components/face/EmotionControls';
 import GuitarTabsFace from './components/guitarTabs/GuitarTabsFace';
 import { getChordVoicings, getScaleVoicings, normalizeChordInput } from './components/guitarTabs/chordData';
 import RealtimeBridge from './components/RealtimeBridge';
