@@ -1,0 +1,255 @@
+{
+  "CmBlues70.mp3": {
+    "key": "Cm",
+    "genre": "Blues",
+    "bpm": 70,
+    "scales": [
+      "C Minor Pentatonic",
+      "C Blues Scale",
+      "C Dorian",
+      "Eb Major Pentatonic"
+    ]
+  },
+  "CmJazz120.mp3": {
+    "key": "Cm",
+    "genre": "Jazz",
+    "bpm": 120,
+    "scales": [
+      "C Dorian",
+      "C Minor Pentatonic",
+      "C Melodic Minor",
+      "C Harmonic Minor"
+    ]
+  },
+  "CmPop120.mp3": {
+    "key": "Cm",
+    "genre": "Pop",
+    "bpm": 120,
+    "scales": [
+      "C Minor (Aeolian)",
+      "C Minor Pentatonic",
+      "C Dorian",
+      "Eb Major Pentatonic"
+    ]
+  },
+  "CBlues110.mp3": {
+    "key": "C",
+    "genre": "Blues",
+    "bpm": 110,
+    "scales": [
+      "C Minor Pentatonic",
+      "C Blues Scale",
+      "C Mixolydian",
+      "A Minor Pentatonic"
+    ]
+  },
+  "CBlues140.mp3": {
+    "key": "C",
+    "genre": "Blues",
+    "bpm": 140,
+    "scales": [
+      "C Minor Pentatonic",
+      "C Blues Scale",
+      "C Mixolydian",
+      "A Minor Pentatonic"
+    ]
+  },
+  "CRock135.mp3": {
+    "key": "C",
+    "genre": "Rock",
+    "bpm": 135,
+    "scales": [
+      "C Major Pentatonic",
+      "A Minor Pentatonic",
+      "C Mixolydian",
+      "C Major (Ionian)"
+    ]
+  },
+  "CPop60.mp3": {
+    "key": "C",
+    "genre": "Pop",
+    "bpm": 60,
+    "scales": [
+      "C Major Pentatonic",
+      "C Major (Ionian)",
+      "A Minor Pentatonic",
+      "C Lydian"
+    ]
+  },
+  "CBossa135.mp3": {
+    "key": "C",
+    "genre": "Bossa Nova",
+    "bpm": 135,
+    "scales": [
+      "C Major (Ionian)",
+      "C Lydian",
+      "C Major Pentatonic",
+      "A Minor Pentatonic"
+    ]
+  },
+  "CmReagge78.mp3": {
+    "key": "Cm",
+    "genre": "Reggae",
+    "bpm": 78,
+    "scales": [
+      "C Minor Pentatonic",
+      "C Dorian",
+      "C Minor (Aeolian)",
+      "Eb Major Pentatonic"
+    ]
+  },
+  "CmRock135.mp3": {
+    "key": "Cm",
+    "genre": "Rock",
+    "bpm": 135,
+    "scales": [
+      "C Minor Pentatonic",
+      "C Minor (Aeolian)",
+      "C Dorian",
+      "C Blues Scale"
+    ]
+  },
+  "AmBlues60.mp3": {
+    "key": "Am",
+    "genre": "Blues",
+    "bpm": 60,
+    "scales": [
+      "A Minor Pentatonic",
+      "A Blues Scale",
+      "A Dorian",
+      "C Major Pentatonic"
+    ]
+  },
+  "AmBossa92.mp3": {
+    "key": "Am",
+    "genre": "Bossa Nova",
+    "bpm": 92,
+    "scales": [
+      "A Minor (Aeolian)",
+      "A Dorian",
+      "A Minor Pentatonic",
+      "C Major (Ionian)"
+    ]
+  },
+  "AmFunk90.mp3": {
+    "key": "Am",
+    "genre": "Funk",
+    "bpm": 90,
+    "scales": [
+      "A Minor Pentatonic",
+      "A Dorian",
+      "A Minor (Aeolian)",
+      "A Blues Scale"
+    ]
+  },
+  "AmJazz102.mp3": {
+    "key": "Am",
+    "genre": "Jazz",
+    "bpm": 102,
+    "scales": [
+      "A Dorian",
+      "A Minor Pentatonic",
+      "A Melodic Minor",
+      "A Harmonic Minor"
+    ]
+  },
+  "AmReagge90.mp3": {
+    "key": "Am",
+    "genre": "Reggae",
+    "bpm": 90,
+    "scales": [
+      "A Minor Pentatonic",
+      "A Dorian",
+      "A Minor (Aeolian)",
+      "C Major Pentatonic"
+    ]
+  },
+  "AmRock135.mp3": {
+    "key": "Am",
+    "genre": "Rock",
+    "bpm": 135,
+    "scales": [
+      "A Minor Pentatonic",
+      "A Minor (Aeolian)",
+      "A Blues Scale",
+      "C Major Pentatonic"
+    ]
+  },
+  "AFunk95.mp3": {
+    "key": "A",
+    "genre": "Funk",
+    "bpm": 95,
+    "scales": [
+      "A Minor Pentatonic",
+      "A Mixolydian",
+      "A Dorian",
+      "A Blues Scale"
+    ]
+  },
+  "AJazz100.mp3": {
+    "key": "A",
+    "genre": "Jazz",
+    "bpm": 100,
+    "scales": [
+      "A Mixolydian",
+      "A Major Pentatonic",
+      "A Dorian",
+      "F# Minor Pentatonic"
+    ]
+  },
+  "ARock68.mp3": {
+    "key": "A",
+    "genre": "Rock",
+    "bpm": 68,
+    "scales": [
+      "A Major Pentatonic",
+      "F# Minor Pentatonic",
+      "A Mixolydian",
+      "A Major (Ionian)"
+    ]
+  },
+  "AReagge70.mp3": {
+    "key": "A",
+    "genre": "Reggae",
+    "bpm": 70,
+    "scales": [
+      "A Major Pentatonic",
+      "F# Minor Pentatonic",
+      "A Mixolydian",
+      "A Major (Ionian)"
+    ]
+  },
+  "wikiloops_jam_170929.mp3": {
+    "key": "Em",
+    "genre": "Blues",
+    "bpm": 70,
+    "scales": [
+      "E Minor Pentatonic",
+      "E Blues Scale",
+      "E Dorian",
+      "G Major Pentatonic"
+    ]
+  },
+  "wikiloops_jam_15842.mp3": {
+    "key": "E",
+    "genre": "Blues",
+    "bpm": 180,
+    "scales": [
+      "E Minor Pentatonic",
+      "E Blues Scale",
+      "E Mixolydian",
+      "C# Minor Pentatonic"
+    ]
+  },
+  "wikiloops_jam_298734.mp3": {
+    "key": "Em",
+    "genre": "Blues",
+    "bpm": 123,
+    "scales": [
+      "E Minor Pentatonic",
+      "E Blues Scale",
+      "E Dorian",
+      "G Major Pentatonic"
+    ]
+  }
+}

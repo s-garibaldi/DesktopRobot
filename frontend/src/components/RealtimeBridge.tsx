@@ -11,13 +11,15 @@ import './RealtimeBridge.css';
 interface RealtimeBridgeProps {
   onEmotionChange: (emotion: Emotion) => void;
   currentEmotion: Emotion;
+  onGuitarTabDisplayCommand?: (action: 'show' | 'close', description?: string) => void;
 }
 
 export type ActiveMode = 'backing_track' | 'metronome' | 'backend_mic' | null;
 
 const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({ 
   onEmotionChange, 
-  currentEmotion 
+  currentEmotion,
+  onGuitarTabDisplayCommand,
 }) => {
   const [isConnected, setIsConnected] = useState(false);
   const [isListening, setIsListening] = useState(false);
@@ -75,8 +77,12 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
   const handleMetronomeCommandRef = useRef<(action: 'start' | 'stop' | 'setBpm' | 'pause' | 'play', bpm?: number) => void>(() => {});
   /** Backend sends one BPM number → we set it and start. Ref so message handler can call it. */
   const startMetronomeFromBackendBpmRef = useRef<(bpm: number) => void>(() => {});
+  /** Backend can command chord display; ref so message handler can call the callback. */
+  const onGuitarTabDisplayCommandRef = useRef<((action: 'show' | 'close', description?: string) => void) | undefined>(undefined);
   /** Set when metronome starts (voice or backend); voice hook ignores stop/pause for a few seconds to avoid false triggers. */
   const lastMetronomeStartTimeRef = useRef(0);
+  /** Set when chord display is shown from backend; voice hook ignores "close display" for a few seconds so AI saying it doesn't dismiss. */
+  const lastGuitarTabDisplayFromBackendTimeRef = useRef(0);
 
   // Check if realtime service is available
   const checkRealtimeService = async () => {
@@ -109,6 +115,15 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
   // Enhanced emotion change handler with debouncing.
   // `force=true` bypasses debounce for system-triggered state changes (e.g., audio in/out).
   const handleEmotionChange = (emotion: Emotion, source: string = 'unknown', force: boolean = false) => {
+    // Chord tab stays on until user says "close display"; ignore backend-driven emotion changes while on guitarTabs
+    if (currentEmotion === 'guitarTabs') {
+      return;
+    }
+    // Metronome stays on until user says "stop" or "pause"; ignore backend-driven emotion changes while on metronome
+    if (currentEmotion === 'metronome') {
+      return;
+    }
+
     const now = Date.now();
     const timeSinceLastChange = now - lastEmotionChange;
     
@@ -393,6 +408,20 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
               }
               break;
             }
+
+            case 'guitar_tab_display': {
+              const handler = onGuitarTabDisplayCommandRef.current;
+              if (typeof handler !== 'function') break;
+              if (data.action === 'close') {
+                handler('close');
+                console.log('RealtimeBridge: guitar_tab_display close from backend');
+              } else if (data.action === 'show' && data.chord != null) {
+                lastGuitarTabDisplayFromBackendTimeRef.current = Date.now();
+                handler('show', String(data.chord));
+                console.log('RealtimeBridge: guitar_tab_display show from backend', data.chord);
+              }
+              break;
+            }
           }
         } catch (error) {
           console.error('Error handling message from realtime service:', error);
@@ -491,6 +520,7 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
     handleStartMetronome();
   }, [setActiveModeAndRef, handleStartMetronome]);
   startMetronomeFromBackendBpmRef.current = startMetronomeFromBackendBpm;
+  onGuitarTabDisplayCommandRef.current = onGuitarTabDisplayCommand ?? undefined;
 
   useEffect(() => {
     return () => {
@@ -595,12 +625,24 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
     [setActiveModeAndRef]
   );
 
+  const handleGuitarTabDisplayCommand = useCallback(
+    (action: 'show' | 'close', description?: string) => {
+      if (!onGuitarTabDisplayCommand) return;
+      onGuitarTabDisplayCommand(action, description);
+    },
+    [onGuitarTabDisplayCommand]
+  );
+
   useVoiceCommandMicOnOff(
     micStatus === 'granted' && isConnected && iframeLoaded && !isSpeaking,
     handleMicCommand,
     handleMetronomeCommand,
     handleBackingTrackCommand,
-    lastMetronomeStartTimeRef
+    handleGuitarTabDisplayCommand,
+    {
+      lastMetronomeStartTime: lastMetronomeStartTimeRef,
+      lastGuitarTabDisplayFromBackendTime: lastGuitarTabDisplayFromBackendTimeRef,
+    }
   );
 
   const handleBackingTrackPlayingStart = useCallback(() => {
@@ -620,9 +662,9 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
     }
   }, [setActiveModeAndRef]);
 
-  // Idle timeout: switch to "time" display after 10s of no activity when NOT in metronome/backing_track.
+  // Idle timeout: switch to "time" display after 30s of no activity when NOT in metronome/backing_track.
   // Metronome and backing track are NOT stopped by idle — they run until user says "stop" or "pause".
-  const IDLE_TIMEOUT_MS = 5000;
+  const IDLE_TIMEOUT_MS = 30000;
   useEffect(() => {
     if (!isConnected) return;
 
@@ -759,6 +801,7 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
         onPlayingStart={handleBackingTrackPlayingStart}
         onPlayingStop={handleBackingTrackPlayingStop}
         elevenLabsApiKey={import.meta.env?.VITE_ELEVENLABS_API_KEY ?? ''}
+        backendUrl={realtimeUrl}
         onHandlersReady={handleBackingTrackHandlersReady}
         onGenerationStart={handleBackingTrackGenerationStart}
         onGenerationEnd={handleBackingTrackGenerationEnd}
@@ -776,6 +819,7 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
           Voice: <strong>&quot;microphone off&quot;</strong> / <strong>&quot;microphone on&quot;</strong>;
           <strong> &quot;metronome&quot;</strong> (chime), then say BPM — or &quot;metronome&quot; + number; <strong>&quot;stop&quot;</strong> (metronome + backing);
           <strong> &quot;backing track&quot;</strong> (chime), then say description — or &quot;backing track&quot; + description in one phrase;
+          <strong> &quot;eggplant&quot;</strong> (chime), then say chord — or &quot;eggplant&quot; + chord; <strong>&quot;close display&quot;</strong> (back to neutral);
           <strong> &quot;pause&quot;</strong> / <strong>&quot;play&quot;</strong> / <strong>&quot;save&quot;</strong> for backing track.
         </p>
       )}

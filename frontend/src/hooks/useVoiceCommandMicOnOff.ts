@@ -32,14 +32,21 @@ export type MetronomeVoiceAction = 'start' | 'stop' | 'setBpm' | 'pause' | 'play
 
 export type BackingTrackVoiceAction = 'describe' | 'pause' | 'play' | 'save' | 'stop';
 
+export type GuitarTabDisplayVoiceAction = 'show' | 'close';
+
 const COOLDOWN_MS = 2500;
 const BACKING_DESCRIPTION_TIMEOUT_MS = 5000;
+const DISPLAY_DESCRIPTION_TIMEOUT_MS = 5000;
 const METRONOME_BPM_TIMEOUT_MS = 5000;
 /** Ignore "stop" / "pause" for metronome for this long after metronome start (avoids agent saying "say stop to control it" triggering stop). */
 const METRONOME_START_COOLDOWN_MS = 6000;
+/** Ignore "close display" for this long after chord was shown from backend (avoids agent saying "say close display to go back" triggering close). */
+const GUITAR_TAB_CLOSE_COOLDOWN_MS = 6000;
 const PHRASE_OFF = 'microphone off';
 const PHRASE_ON = 'microphone on';
 const PHRASE_BACKING_TRACK = 'backing track';
+const PHRASE_DISPLAY = 'eggplant';
+const PHRASE_CLOSE_DISPLAY = 'close display';
 
 /** Play a short ascending chime (C5 → E5) to acknowledge e.g. "backing track", "metronome", "microphone on". */
 function playChime(): void {
@@ -144,6 +151,21 @@ function extractBackingTrackDescription(transcript: string): string | null {
   return after || ''; // allow "backing track" alone (use defaults)
 }
 
+/** Extract chord/scale description after "eggplant" for guitar tab. */
+function extractDisplayDescription(transcript: string): string | null {
+  const t = transcript.trim();
+  const lower = t.toLowerCase();
+  const idx = lower.indexOf(PHRASE_DISPLAY);
+  if (idx === -1) return null;
+  const after = t.slice(idx + PHRASE_DISPLAY.length).trim();
+  return after || ''; // allow "eggplant" alone (wait for follow-up)
+}
+
+function isCloseDisplayCommand(transcript: string): boolean {
+  const t = normalize(transcript);
+  return t === PHRASE_CLOSE_DISPLAY || t.endsWith(PHRASE_CLOSE_DISPLAY) || t.includes(PHRASE_CLOSE_DISPLAY);
+}
+
 /**
  * Listens for vocal commands via Web Speech API:
  * - "microphone off" / "microphone on" → onCommand
@@ -151,34 +173,52 @@ function extractBackingTrackDescription(transcript: string): string | null {
  * - "stop" → onMetronomeCommand('stop') and onBackingTrackCommand('stop')
  * - "backing track" + description → onBackingTrackCommand('describe', description)
  * - "pause" / "play" / "save" / "stop" → onBackingTrackCommand
+ * - "eggplant" (chime), then say chord — or "eggplant" + chord in one phrase; "close display" → back to neutral
  */
 export function useVoiceCommandMicOnOff(
   enabled: boolean,
   onCommand: (payload: { type: 'set_backend_mic_enabled'; enabled: boolean }) => void,
   onMetronomeCommand?: (action: MetronomeVoiceAction, bpm?: number) => void,
   onBackingTrackCommand?: (action: BackingTrackVoiceAction, description?: string) => void,
-  lastMetronomeStartTimeRef?: MutableRefObject<number>
+  onGuitarTabDisplayCommand?: (action: GuitarTabDisplayVoiceAction, description?: string) => void,
+  voiceCooldownRefs?: {
+    lastMetronomeStartTime: MutableRefObject<number>;
+    lastGuitarTabDisplayFromBackendTime: MutableRefObject<number>;
+  }
 ) {
   const onCommandRef = useRef(onCommand);
   const onMetronomeCommandRef = useRef(onMetronomeCommand);
   const onBackingTrackCommandRef = useRef(onBackingTrackCommand);
+  const onGuitarTabDisplayCommandRef = useRef(onGuitarTabDisplayCommand);
   const lastCommandTimeRef = useRef(0);
+
+  const lastMetronomeStartTimeRef = voiceCooldownRefs?.lastMetronomeStartTime;
+  const lastGuitarTabDisplayFromBackendTimeRef = voiceCooldownRefs?.lastGuitarTabDisplayFromBackendTime;
 
   const isInMetronomeStopCooldown = (now: number): boolean => {
     if (!lastMetronomeStartTimeRef) return false;
     const elapsed = now - lastMetronomeStartTimeRef.current;
     return elapsed >= 0 && elapsed < METRONOME_START_COOLDOWN_MS;
   };
+  const isInGuitarTabCloseCooldown = (now: number): boolean => {
+    if (!lastGuitarTabDisplayFromBackendTimeRef) return false;
+    const elapsed = now - lastGuitarTabDisplayFromBackendTimeRef.current;
+    return elapsed >= 0 && elapsed < GUITAR_TAB_CLOSE_COOLDOWN_MS;
+  };
   const enabledRef = useRef(enabled);
   const waitingForBackingDescriptionRef = useRef(false);
   const chimePlayedForBackingRef = useRef(false);
   const backingDescriptionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const waitingForDisplayDescriptionRef = useRef(false);
+  const chimePlayedForDisplayRef = useRef(false);
+  const displayDescriptionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const waitingForMetronomeBpmRef = useRef(false);
   const chimePlayedForMetronomeRef = useRef(false);
   const metronomeBpmTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   onCommandRef.current = onCommand;
   onMetronomeCommandRef.current = onMetronomeCommand;
   onBackingTrackCommandRef.current = onBackingTrackCommand;
+  onGuitarTabDisplayCommandRef.current = onGuitarTabDisplayCommand;
   enabledRef.current = enabled;
 
   useEffect(() => {
@@ -206,10 +246,14 @@ export function useVoiceCommandMicOnOff(
         const result = results[i];
         const transcript = (result[0]?.transcript ?? '').trim();
 
-        // Play chime as soon as "backing track" or "metronome" is detected (including interim) so it feels immediate
+        // Play chime as soon as "backing track", "display", or "metronome" is detected (including interim) so it feels immediate
         if (extractBackingTrackDescription(transcript) !== null && !chimePlayedForBackingRef.current) {
           playChime();
           chimePlayedForBackingRef.current = true;
+        }
+        if (extractDisplayDescription(transcript) !== null && !chimePlayedForDisplayRef.current) {
+          playChime();
+          chimePlayedForDisplayRef.current = true;
         }
         if (transcriptContainsPhrase(transcript, 'metronome') && !chimePlayedForMetronomeRef.current) {
           playChime();
@@ -217,6 +261,49 @@ export function useVoiceCommandMicOnOff(
         }
 
         if (!result.isFinal) continue;
+
+        // If we're waiting for a guitar tab display description, next utterance is the chord (unless it's a command)
+        if (waitingForDisplayDescriptionRef.current && onGuitarTabDisplayCommandRef.current) {
+          waitingForDisplayDescriptionRef.current = false;
+          if (displayDescriptionTimeoutRef.current) {
+            clearTimeout(displayDescriptionTimeoutRef.current);
+            displayDescriptionTimeoutRef.current = null;
+          }
+          if (isCloseDisplayCommand(transcript)) {
+            lastCommandTimeRef.current = now;
+            playChimeDown();
+            onGuitarTabDisplayCommandRef.current('close');
+            console.log('Voice command: close display');
+            return;
+          }
+          if (isMicOffCommand(transcript)) {
+            lastCommandTimeRef.current = now;
+            playChimeDown();
+            onCommandRef.current({ type: 'set_backend_mic_enabled', enabled: false });
+            console.log('Voice command: microphone off');
+            return;
+          }
+          if (isMicOnCommand(transcript)) {
+            lastCommandTimeRef.current = now;
+            playChime();
+            onCommandRef.current({ type: 'set_backend_mic_enabled', enabled: true });
+            console.log('Voice command: microphone on');
+            return;
+          }
+          if (isStopCommand(transcript) && !isInMetronomeStopCooldown(now)) {
+            lastCommandTimeRef.current = now;
+            playChimeDown();
+            if (onBackingTrackCommandRef.current) onBackingTrackCommandRef.current('stop');
+            if (onMetronomeCommandRef.current) onMetronomeCommandRef.current('stop');
+            onGuitarTabDisplayCommandRef.current('close');
+            console.log('Voice command: stop (close display + backing + metronome)');
+            return;
+          }
+          lastCommandTimeRef.current = now;
+          onGuitarTabDisplayCommandRef.current('show', transcript || '');
+              console.log('Voice command: eggplant (follow-up)', transcript || '');
+          return;
+        }
 
         // If we're waiting for a backing track description, next utterance is the description (unless it's a command)
         if (waitingForBackingDescriptionRef.current && onBackingTrackCommandRef.current) {
@@ -398,6 +485,39 @@ export function useVoiceCommandMicOnOff(
           console.log('Voice command: microphone on');
           return;
         }
+        if (onGuitarTabDisplayCommandRef.current && isCloseDisplayCommand(transcript)) {
+          if (isInGuitarTabCloseCooldown(now)) {
+            console.log('Voice command: ignoring close display (backend cooldown)');
+            return;
+          }
+          lastCommandTimeRef.current = now;
+          playChimeDown();
+          onGuitarTabDisplayCommandRef.current('close');
+          console.log('Voice command: close display');
+          return;
+        }
+        if (onGuitarTabDisplayCommandRef.current) {
+          const displayDesc = extractDisplayDescription(transcript);
+          if (displayDesc !== null) {
+            lastCommandTimeRef.current = now;
+            if (displayDesc.trim() !== '') {
+              onGuitarTabDisplayCommandRef.current('show', displayDesc);
+              console.log('Voice command: display', displayDesc);
+            } else {
+              waitingForDisplayDescriptionRef.current = true;
+              if (displayDescriptionTimeoutRef.current) clearTimeout(displayDescriptionTimeoutRef.current);
+              displayDescriptionTimeoutRef.current = setTimeout(() => {
+                displayDescriptionTimeoutRef.current = null;
+                waitingForDisplayDescriptionRef.current = false;
+                playChimeDown();
+                console.log('Voice command: display description timeout (5s)');
+              }, DISPLAY_DESCRIPTION_TIMEOUT_MS);
+              console.log('Voice command: eggplant (say chord after chime)');
+            }
+            chimePlayedForDisplayRef.current = false;
+            return;
+          }
+        }
         if (onBackingTrackCommandRef.current) {
           const backingDesc = extractBackingTrackDescription(transcript);
           if (backingDesc !== null) {
@@ -543,6 +663,12 @@ export function useVoiceCommandMicOnOff(
       if (backingDescriptionTimeoutRef.current) {
         clearTimeout(backingDescriptionTimeoutRef.current);
         backingDescriptionTimeoutRef.current = null;
+      }
+      waitingForDisplayDescriptionRef.current = false;
+      chimePlayedForDisplayRef.current = false;
+      if (displayDescriptionTimeoutRef.current) {
+        clearTimeout(displayDescriptionTimeoutRef.current);
+        displayDescriptionTimeoutRef.current = null;
       }
       waitingForMetronomeBpmRef.current = false;
       chimePlayedForMetronomeRef.current = false;

@@ -138,11 +138,12 @@ export interface LoggedEvent {
   eventData: Record<string, any>; // can have arbitrary objects logged
 }
 
-// Update the GuardrailOutputZod schema to use the shared ModerationCategoryZod
+// Update the GuardrailOutputZod schema to use the shared ModerationCategoryZod.
+// testText must be .nullable() for OpenAI structured outputs (optional alone is not supported by the API).
 export const GuardrailOutputZod = z.object({
   moderationRationale: z.string(),
   moderationCategory: ModerationCategoryZod,
-  testText: z.string().optional(),
+  testText: z.string().nullish(),
 });
 
 export type GuardrailOutput = z.infer<typeof GuardrailOutputZod>;

@@ -315,6 +315,50 @@ const setMetronomeBpmTool = tool({
   },
 });
 
+// Display a chord or scale on the user's guitar tab (frontend). Use when the user asks to see a chord, e.g. "show me G minor", "display A major", "what does Em look like?".
+const displayGuitarChordTool = tool({
+  name: 'display_guitar_chord',
+  description: 'Show a chord or scale on the user\'s guitar tab display. Use when the user asks to see or display a chord (e.g. "show me G minor", "display A major", "what does Em look like?"). Send the chord name as you would say it (e.g. "G minor", "Em", "F major 7", "A flat minor"); the frontend will resolve it and show the diagram. Use close: true only when the user asks to close or hide the chord display.',
+  parameters: {
+    type: 'object',
+    properties: {
+      chord: {
+        type: 'string',
+        description: 'Chord or scale name to display (e.g. "G minor", "Em", "C major 7", "A flat", "D suspended 4"). Can be natural language; frontend normalizes it.',
+      },
+      close: {
+        type: 'boolean',
+        description: 'If true, close the guitar tab display and return to the neutral face. Use when user says "close display" or "hide the chord".',
+      },
+    },
+    required: [],
+    additionalProperties: false,
+  },
+  execute: async (input: any) => {
+    const { chord, close } = input as { chord?: string; close?: boolean };
+    if (close === true) {
+      postClientAction('guitar_tab_display', { action: 'close' });
+      return {
+        success: true,
+        message: 'Guitar tab display closed.',
+      };
+    }
+    const chordStr = (chord ?? '').trim();
+    if (!chordStr) {
+      return {
+        success: false,
+        message: 'Please specify a chord or scale to display (e.g. "G minor", "Em", "C major 7").',
+      };
+    }
+    postClientAction('guitar_tab_display', { action: 'show', chord: chordStr });
+    return {
+      success: true,
+      chord: chordStr,
+      message: `Showing ${chordStr} on the guitar tab. Say "close display" to return to the main face.`,
+    };
+  },
+});
+
 // Music theory tool
 const musicTheoryTool = tool({
   name: 'music_theory_help',
@@ -438,6 +482,9 @@ Keep replies brief unless the user asks for more. Prefer one clear sentence over
 - Lyric writing tips and themes
 - Different musical styles and genres
 
+# Guitar Tab Display
+When the user asks to see or display a chord (e.g. "show me G minor", "display A major", "what does Em look like?"), use the display_guitar_chord tool with the chord name. The robot will show the chord diagram on screen. If they ask to close or hide the display, use display_guitar_chord with close: true.
+
 # How to Use Your Tools
 - Use recognize_guitar_chord for chord information, notes, and theory (supports triads, 7ths, maj7, m7, dim, aug, sus2, sus4, add9, 9, 11, 13)
 - Use suggest_chord_progression to suggest progressions in a key and style (pop, rock, jazz, folk, R&B, country) at basic, intermediate, or advanced complexity; use this when the user wants chord progressions, "what chords go together", or more complex/interesting progressions
@@ -473,7 +520,7 @@ Keep replies brief unless the user asks for more. Prefer one clear sentence over
 - Be enthusiastic and encouraging. Use musical terminology when it helps, but keep the main reply concise.
 - Suggest creative ideas and next steps in a sentence or two; don't over-explain unless asked.
 `,
-  tools: [recognizeChordTool, suggestChordProgressionTool, songwritingSuggestionTool, musicTheoryTool, setMetronomeBpmTool, webSearchTool, ...createMemoryTools('musicalCompanion')],
+  tools: [recognizeChordTool, suggestChordProgressionTool, songwritingSuggestionTool, musicTheoryTool, setMetronomeBpmTool, displayGuitarChordTool, webSearchTool, ...createMemoryTools('musicalCompanion')],
   handoffs: [],
   handoffDescription: 'Musical companion AI for guitar, songwriting, and music theory',
 });

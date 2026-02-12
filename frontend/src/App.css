@@ -111,6 +111,32 @@
   text-align: center;
 }
 
+.guitar-tabs-confusable-hint {
+  font-size: 0.85rem;
+  color: rgba(0, 255, 255, 0.85);
+  margin: 0.5rem 0 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.guitar-tabs-confusable-btn {
+  padding: 0.25rem 0.5rem;
+  font-size: 0.9rem;
+  color: #00FFFF;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(0, 255, 255, 0.6);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.2s, box-shadow 0.2s;
+}
+
+.guitar-tabs-confusable-btn:hover {
+  background: rgba(0, 255, 255, 0.15);
+  box-shadow: 0 0 8px rgba(0, 255, 255, 0.25);
+}
+
 .animated-face-wrapper {
   display: flex;
   flex-direction: column;

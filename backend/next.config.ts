@@ -1,6 +1,12 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  experimental: {
+    serverActions: {
+      bodySizeLimit: '50mb',
+    },
+    proxyClientMaxBodySize: '50mb',
+  },
   async headers() {
     return [
       {
@@ -13,7 +19,7 @@ const nextConfig: NextConfig = {
           },
           {
             key: 'Access-Control-Allow-Methods',
-            value: 'GET, POST, PUT, DELETE, OPTIONS',
+            value: 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
           },
           {
             key: 'Access-Control-Allow-Headers',

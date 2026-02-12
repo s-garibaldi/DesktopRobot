@@ -65,6 +65,8 @@ const AnimatedFace: React.FC<AnimatedFaceProps> = ({ emotion, fillContainer = fa
         state.emotionTransition.duration = 0.5; // Two-phase: metronome stops blinking, then thinking zooms in from dot
       } else if (prevEmotionRef.current === 'thinking' && emotion === 'metronome') {
         state.emotionTransition.duration = 0.6; // Two-phase: thinking zoom out to point, then metronome blinks in
+      } else if (prevEmotionRef.current === 'speaking' && emotion === 'metronome') {
+        state.emotionTransition.duration = 0.6; // Two-phase: speaking zoom out to point, then metronome blinks in
       } else if (prevEmotionRef.current === 'time' && emotion === 'listening') {
         // Time→listening: fast time fade, neutral zoom in, then neutral→listening (~0.9s, 50% faster)
         state.emotionTransition.duration = 0.9;
@@ -393,6 +395,38 @@ const AnimatedFace: React.FC<AnimatedFaceProps> = ({ emotion, fillContainer = fa
             ctx.save();
             ctx.globalAlpha = metronomeFadeIn;
             metronomeDraw(ctx, time, state.breathingPhase, 1, 'thinking');
+            ctx.restore();
+          }
+        }
+      } else if (state.emotionTransition.fromEmotion === 'speaking' && state.emotionTransition.toEmotion === 'metronome') {
+        // Two-phase: (1) speaking face zooms out to point (like neutral→time), (2) metronome blinks in
+        const p = easedProgress;
+        const ZOOM_OUT_PHASE_END = 0.15; // Same as neutral→time — speaking fully zoomed out before metronome
+        if (p < ZOOM_OUT_PHASE_END) {
+          // Phase 1: speaking face (neutral + mouth) zooms out to tiny dot
+          const zoomOutProgress = p / ZOOM_OUT_PHASE_END;
+          const easedZoomOut = easeInOut(zoomOutProgress);
+          const faceScale = lerp(1, 0.02, easedZoomOut);
+          const neutralDraw = emotionDrawFunctions['neutral'];
+          if (neutralDraw) {
+            ctx.save();
+            ctx.globalAlpha = 1;
+            ctx.scale(faceScale, faceScale);
+            neutralDraw(ctx, time, state.breathingPhase, 1, 'neutral');
+            ctx.restore();
+          }
+          ctx.save();
+          ctx.scale(faceScale, faceScale);
+          drawSpeakingMouth(ctx, time, 1);
+          ctx.restore();
+        } else {
+          // Phase 2: metronome blinks in (no speaking face visible)
+          const metronomeFadeIn = (p - ZOOM_OUT_PHASE_END) / (1 - ZOOM_OUT_PHASE_END);
+          const metronomeDraw = emotionDrawFunctions['metronome'];
+          if (metronomeDraw) {
+            ctx.save();
+            ctx.globalAlpha = 1;
+            metronomeDraw(ctx, time, state.breathingPhase, metronomeFadeIn, 'speaking');
             ctx.restore();
           }
         }

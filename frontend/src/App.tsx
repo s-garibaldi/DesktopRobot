@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import AnimatedFace from './components/face/AnimatedFace';
 import EmotionControls from './components/face/EmotionControls';
 import GuitarTabsFace from './components/guitarTabs/GuitarTabsFace';
-import { getChordVoicings, getScaleVoicings, normalizeChordInput } from './components/guitarTabs/chordData';
+import { getChordVoicings, getScaleVoicings, normalizeChordInput, resolveChordOrScaleDisplayName, getConfusableRootChords, getChordDisplayName } from './components/guitarTabs/chordData';
 import RealtimeBridge from './components/RealtimeBridge';
 import './App.css';
 
@@ -20,10 +20,21 @@ function App() {
   const voicingCount = isScale ? scaleVoicings.length : chordVoicings.length;
   const hasMultipleVoicings = voicingCount > 1;
   const currentBaseFret = isScale && scaleVoicings.length ? scaleVoicings[Math.min(guitarTabsVoicingIndex, scaleVoicings.length - 1)]?.fretOffset : null;
+  const confusableChords = !isScale && chordVoicings.length > 0 ? getConfusableRootChords(guitarTabsInput) : [];
 
   useEffect(() => {
     setGuitarTabsVoicingIndex(0);
   }, [guitarTabsInput]);
+
+  const handleGuitarTabDisplayCommand = (action: 'show' | 'close', description?: string) => {
+    if (action === 'show') {
+      // Convert spoken form to library form (e.g. "E minor" -> "Em") so the diagram displays
+      setGuitarTabsInput(resolveChordOrScaleDisplayName(description ?? ''));
+      setCurrentEmotion('guitarTabs');
+    } else {
+      setCurrentEmotion('neutral');
+    }
+  };
 
   return (
     <div className="app">
@@ -121,6 +132,21 @@ function App() {
                       </button>
                     </div>
                   )}
+                  {confusableChords.length > 0 && (
+                    <p className="guitar-tabs-confusable-hint">
+                      Mic mixed up B/C/D/E?{' '}
+                      {confusableChords.map((key) => (
+                        <button
+                          key={key}
+                          type="button"
+                          className="guitar-tabs-confusable-btn"
+                          onClick={() => setGuitarTabsInput(getChordDisplayName(key))}
+                        >
+                          {getChordDisplayName(key)}
+                        </button>
+                      ))}
+                    </p>
+                  )}
                 </div>
               )}
             </div>
@@ -129,6 +155,7 @@ function App() {
             <RealtimeBridge
               currentEmotion={currentEmotion}
               onEmotionChange={setCurrentEmotion}
+              onGuitarTabDisplayCommand={handleGuitarTabDisplayCommand}
             />
           </div>
         </div>

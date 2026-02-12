@@ -171,7 +171,7 @@ export function useHandleSessionHistory() {
     if (lastAssistant && moderation) {
       const category = moderation.moderationCategory ?? 'NONE';
       const rationale = moderation.moderationRationale ?? '';
-      const offendingText: string | undefined = moderation?.testText;
+      const offendingText: string | undefined = moderation?.testText ?? undefined;
 
       updateTranscriptItem(lastAssistant.itemId, {
         guardrailResult: {
