@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import AnimatedFace from './components/face/AnimatedFace';
 import EmotionControls from './components/face/EmotionControls';
 import GuitarTabsFace from './components/guitarTabs/GuitarTabsFace';
-import { getChordVoicings, getScaleVoicings, normalizeChordInput, resolveChordOrScaleDisplayName, getConfusableRootChords, getChordDisplayName } from './components/guitarTabs/chordData';
+import { getChordVoicings, getScaleVoicings, normalizeChordInput, resolveChordOrScaleInputForDisplay, getConfusableRootChords, getChordDisplayName } from './components/guitarTabs/chordData';
 import RealtimeBridge from './components/RealtimeBridge';
 import './App.css';
 
@@ -28,8 +28,8 @@ function App() {
 
   const handleGuitarTabDisplayCommand = (action: 'show' | 'close', description?: string) => {
     if (action === 'show') {
-      // Convert spoken form to library form (e.g. "E minor" -> "Em") so the diagram displays
-      setGuitarTabsInput(resolveChordOrScaleDisplayName(description ?? ''));
+      // Resolve to display form; for scales include " scale" so the UI shows scale voicings (backend can send "G major scale" or "G major")
+      setGuitarTabsInput(resolveChordOrScaleInputForDisplay(description ?? ''));
       setCurrentEmotion('guitarTabs');
     } else {
       setCurrentEmotion('neutral');
@@ -50,7 +50,7 @@ function App() {
           </button>
         )}
         <h1>Desktop Robot</h1>
-        <div className="robot-container">
+        <div className={`robot-container${currentEmotion === 'guitarTabs' ? ' guitar-tabs-active' : ''}`}>
           <div className="left-panel">
             <div className="animated-face-wrapper">
               {currentEmotion === 'guitarTabs' ? (

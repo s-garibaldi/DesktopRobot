@@ -249,16 +249,17 @@ const AnimatedFace: React.FC<AnimatedFaceProps> = ({ emotion, fillContainer = fa
         const p = easedProgress;
         const ZOOM_OUT_PHASE_END = 0.15; // Same as neutral→time — neutral fully zoomed out before metronome
         if (p < ZOOM_OUT_PHASE_END) {
-          // Phase 1: neutral face zooms out to tiny dot
+          // Phase 1: neutral face zooms out to tiny dot; pupils drift quickly back to center
           const zoomOutProgress = p / ZOOM_OUT_PHASE_END;
           const easedZoomOut = easeInOut(zoomOutProgress);
           const faceScale = lerp(1, 0.02, easedZoomOut);
+          const pupilDriftToCenter = Math.min(1, zoomOutProgress / 0.3);
           const neutralDraw = emotionDrawFunctions['neutral'];
           if (neutralDraw) {
             ctx.save();
             ctx.globalAlpha = 1;
             ctx.scale(faceScale, faceScale);
-            neutralDraw(ctx, time, state.breathingPhase, 1, 'neutral');
+            neutralDraw(ctx, time, state.breathingPhase, 1, 'neutral', pupilDriftToCenter);
             ctx.restore();
           }
         } else {

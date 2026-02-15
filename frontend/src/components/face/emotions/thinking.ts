@@ -1,4 +1,5 @@
 import { EmotionDrawFunction, lerp } from './types';
+import { getPupilFloat } from './neutral';
 
 // THINKING emotion - neon face with full circle eyes, drips, and animated dots
 export const drawThinking: EmotionDrawFunction = (ctx, time, breathingPhase, transitionProgress = 1, fromEmotion) => {
@@ -8,6 +9,10 @@ export const drawThinking: EmotionDrawFunction = (ctx, time, breathingPhase, tra
   // Multi-layered glow pulsing
   // For listening->thinking: interpolate from listening (dramatic) to neutral/thinking (normal)
   const isListeningTransition = fromEmotion === 'listening' && transitionProgress < 1;
+  // When from neutral: pupils drift quickly back to center (offset goes 1 -> 0).
+  const fromNeutralPupilOffset = fromEmotion === 'neutral'
+    ? { x: (1 - transitionProgress) * getPupilFloat(time).x, y: (1 - transitionProgress) * getPupilFloat(time).y }
+    : { x: 0, y: 0 };
 
   const listeningPrimaryGlow = 0.9 + Math.sin(time * 1.5) * 0.1;
   const thinkingPrimaryGlow = 0.85 + Math.sin(time * 1.2) * 0.15;
@@ -169,7 +174,7 @@ export const drawThinking: EmotionDrawFunction = (ctx, time, breathingPhase, tra
     ctx.arc(-3, -3, highlightSize, 0, Math.PI * 2);
     ctx.fill();
   } else {
-    // Normal thinking eye - full circle outline
+    // Normal thinking eye - full circle outline (from neutral: pupils drift to center)
     ctx.shadowBlur = 30 + Math.sin(time * 1.8) * 8;
     ctx.shadowColor = '#00FFFF';
     ctx.strokeStyle = '#00FFFF';
@@ -178,16 +183,15 @@ export const drawThinking: EmotionDrawFunction = (ctx, time, breathingPhase, tra
     ctx.lineCap = 'round';
     
     ctx.beginPath();
-    // Draw full circle
     ctx.arc(0, 0, 25, 0, Math.PI * 2);
     ctx.stroke();
     
-    // Black pupil (circular, centered)
+    // Black pupil (circular, centered; from neutral: offset drifts to 0)
     ctx.shadowBlur = 0;
     ctx.fillStyle = '#000000';
     ctx.globalAlpha = 1;
     ctx.beginPath();
-    ctx.arc(0, 0, 15, 0, Math.PI * 2);
+    ctx.arc(0 + fromNeutralPupilOffset.x, 0 + fromNeutralPupilOffset.y, 15, 0, Math.PI * 2);
     ctx.fill();
     
     // Bright cyan highlight dot in center
@@ -196,7 +200,7 @@ export const drawThinking: EmotionDrawFunction = (ctx, time, breathingPhase, tra
     ctx.shadowColor = '#00FFFF';
     ctx.globalAlpha = tertiaryGlow;
     ctx.beginPath();
-    ctx.arc(-3, -3, 4, 0, Math.PI * 2);
+    ctx.arc(-3 + fromNeutralPupilOffset.x, -3 + fromNeutralPupilOffset.y, 4, 0, Math.PI * 2);
     ctx.fill();
   }
   
@@ -323,7 +327,7 @@ export const drawThinking: EmotionDrawFunction = (ctx, time, breathingPhase, tra
     ctx.arc(-3, -3, highlightSize, 0, Math.PI * 2);
     ctx.fill();
   } else {
-    // Normal thinking eye - full circle outline
+    // Normal thinking eye - full circle outline (from neutral: pupils drift to center)
     ctx.shadowBlur = 30 + Math.sin(time * 1.8) * 8;
     ctx.shadowColor = '#00FFFF';
     ctx.strokeStyle = '#00FFFF';
@@ -332,16 +336,15 @@ export const drawThinking: EmotionDrawFunction = (ctx, time, breathingPhase, tra
     ctx.lineCap = 'round';
     
     ctx.beginPath();
-    // Draw full circle
     ctx.arc(0, 0, 25, 0, Math.PI * 2);
     ctx.stroke();
     
-    // Black pupil
+    // Black pupil (from neutral: offset drifts to 0)
     ctx.shadowBlur = 0;
     ctx.fillStyle = '#000000';
     ctx.globalAlpha = 1;
     ctx.beginPath();
-    ctx.arc(0, 0, 15, 0, Math.PI * 2);
+    ctx.arc(0 + fromNeutralPupilOffset.x, 0 + fromNeutralPupilOffset.y, 15, 0, Math.PI * 2);
     ctx.fill();
     
     // Bright cyan highlight dot
@@ -350,7 +353,7 @@ export const drawThinking: EmotionDrawFunction = (ctx, time, breathingPhase, tra
     ctx.shadowColor = '#00FFFF';
     ctx.globalAlpha = tertiaryGlow;
     ctx.beginPath();
-    ctx.arc(-3, -3, 4, 0, Math.PI * 2);
+    ctx.arc(-3 + fromNeutralPupilOffset.x, -3 + fromNeutralPupilOffset.y, 4, 0, Math.PI * 2);
     ctx.fill();
   }
   

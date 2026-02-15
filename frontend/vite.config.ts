@@ -13,7 +13,8 @@ export default defineConfig(async () => ({
   server: {
     port: 1420,
     strictPort: true,
-      watch: {
+    host: true, // listen on 0.0.0.0 so 127.0.0.1:1420 works when Spotify redirects back
+    watch: {
         // 3. tell vite to ignore watching `src-tauri`
         ignored: ["**/src-tauri/**", "**/../backend/**"],
       },

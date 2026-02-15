@@ -589,13 +589,15 @@ export default function BackingTrackPanel({
     pause();
     setStatus('paused');
     setStatusMessage('Paused. Click Play to resume.');
-    // Do not call onPlayingStop — backing track mode stays active until full stop or idle
-  }, [pause]);
+    // Turn backend mic back ON when paused so user can talk to AI
+    onPlayingStop();
+  }, [pause, onPlayingStop]);
 
   const handleResume = useCallback(() => {
     resume();
     setStatus('playing');
     setStatusMessage('Playing (looped). Pause or Stop.');
+    // Turn backend mic back OFF when resuming playback
     onPlayingStart();
   }, [resume, onPlayingStart]);
 
@@ -615,6 +617,49 @@ export default function BackingTrackPanel({
       save: handleSave,
     });
   }, [onHandlersReady, runCommand, handleStop, handlePause, handleResume, handleSave]);
+
+  // Listen for backing track play commands from backend AI
+  useEffect(() => {
+    const handleBackendPlay = async (event: Event) => {
+      const customEvent = event as CustomEvent<{ filename: string; metadata: any; backendUrl: string }>;
+      const { filename, metadata, backendUrl } = customEvent.detail;
+      
+      if (!filename || !backendUrl) return;
+      
+      try {
+        // Fetch and play the track
+        const res = await fetch(`${backendUrl}/api/backing-tracks/${encodeURIComponent(filename)}`, { mode: 'cors' });
+        if (!res.ok) {
+          setStatusMessage(`❌ Could not load ${filename}`);
+          return;
+        }
+        
+        const audio = await res.arrayBuffer();
+        const displayName = filename.replace(/\.[^.]+$/, '') || filename;
+        
+        currentBufferRef.current = audio;
+        currentSpecRef.current = null;
+        setHasTrackToSave(true);
+        onPlayingStart();
+        await play(audio);
+        setStatus('playing');
+        
+        // Build status message with metadata
+        const parts = [displayName];
+        if (metadata?.key) parts.push(metadata.key);
+        if (metadata?.genre) parts.push(metadata.genre);
+        if (metadata?.bpm) parts.push(`${metadata.bpm} BPM`);
+        setStatusMessage(`Playing: ${parts.join(' • ')}`);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        setStatusMessage(`❌ Failed to play: ${msg}`);
+        onPlayingStop();
+      }
+    };
+    
+    window.addEventListener('backend-play-backing-track', handleBackendPlay);
+    return () => window.removeEventListener('backend-play-backing-track', handleBackendPlay);
+  }, [backendUrl, play, onPlayingStart, onPlayingStop]);
 
   const handleCommandClick = useCallback(() => {
     if (status === 'listening') {

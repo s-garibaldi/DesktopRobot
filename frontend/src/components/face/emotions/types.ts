@@ -5,7 +5,8 @@ export type EmotionDrawFunction = (
   time: number,
   breathingPhase: number,
   transitionProgress?: number,
-  fromEmotion?: string
+  fromEmotion?: string,
+  pupilDriftToCenter?: number // 0 = full float, 1 = centered (only used by neutral when leaving)
 ) => void;
 
 // Helper function for smooth interpolation

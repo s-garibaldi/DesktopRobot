@@ -315,16 +315,16 @@ const setMetronomeBpmTool = tool({
   },
 });
 
-// Display a chord or scale on the user's guitar tab (frontend). Use when the user asks to see a chord, e.g. "show me G minor", "display A major", "what does Em look like?".
+// Display a chord or scale on the user's guitar tab (frontend). Use when the user asks to see a chord or scale.
 const displayGuitarChordTool = tool({
   name: 'display_guitar_chord',
-  description: 'Show a chord or scale on the user\'s guitar tab display. Use when the user asks to see or display a chord (e.g. "show me G minor", "display A major", "what does Em look like?"). Send the chord name as you would say it (e.g. "G minor", "Em", "F major 7", "A flat minor"); the frontend will resolve it and show the diagram. Use close: true only when the user asks to close or hide the chord display.',
+  description: 'Show a chord or scale on the user\'s guitar tab display. Use when the user asks to see or display a chord (e.g. "show me G minor", "display A major") or a scale (e.g. "show me the G major scale", "display A dorian scale"). For chords send the chord name (e.g. "G minor", "Em", "F major 7"). For scales you must include the word "scale" in the value (e.g. "G major scale", "A dorian scale", "E minor scale", "C major pentatonic scale") so the diagram shows scale positions and modes. Use close: true only when the user asks to close or hide the display.',
   parameters: {
     type: 'object',
     properties: {
       chord: {
         type: 'string',
-        description: 'Chord or scale name to display (e.g. "G minor", "Em", "C major 7", "A flat", "D suspended 4"). Can be natural language; frontend normalizes it.',
+        description: 'Chord or scale to display. Chords: "G minor", "Em", "C major 7", "A flat minor". Scales: include "scale" (e.g. "G major scale", "A dorian scale", "E minor scale", "C lydian scale", "F mixolydian scale", "D minor pentatonic scale"). Frontend normalizes and supports all modes (dorian, phrygian, lydian, mixolydian, aeolian, locrian) and pentatonics.',
       },
       close: {
         type: 'boolean',
@@ -459,6 +459,59 @@ const musicTheoryTool = tool({
   },
 });
 
+// Play backing track from library based on user's criteria
+const playBackingTrackTool = tool({
+  name: 'play_backing_track',
+  description: 'Search the backing track library and play a track that matches the user\'s criteria (BPM, genre, key, scales). Use when the user asks to play a backing track for practice, jamming, or soloing (e.g. "play a blues track in A minor", "backing track around 90 bpm", "rock track in E").',
+  parameters: {
+    type: 'object',
+    properties: {
+      command: {
+        type: 'string',
+        description: 'Natural language description of the desired backing track (e.g. "blues in A minor around 90 bpm", "rock track in E", "jazz track at 120"). Can include key, genre, BPM, and/or scales.',
+      },
+    },
+    required: ['command'],
+    additionalProperties: false,
+  },
+  execute: async (input: any) => {
+    const { command } = input as { command: string };
+    try {
+      // Dynamic import so fs/promises is only loaded on server when tool runs
+      const { findBestBackingTrack } = await import('../../lib/backingTrackMatcher');
+      const result = await findBestBackingTrack(command);
+      
+      if (!result.filename) {
+        return {
+          success: false,
+          message: result.explanation,
+          criteria: result.criteria,
+        };
+      }
+      
+      // Send play command to frontend
+      postClientAction('play_backing_track', { 
+        filename: result.filename,
+        metadata: result.metadata,
+      });
+      
+      return {
+        success: true,
+        filename: result.filename,
+        metadata: result.metadata,
+        message: result.explanation,
+        criteria: result.criteria,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: `Backing track search failed: ${error}`,
+        command,
+      };
+    }
+  },
+});
+
 export const musicalCompanionAgent = new RealtimeAgent({
   name: 'musicalCompanionAgent',
   voice: 'shimmer', // High-pitched, cute desktop robot
@@ -483,7 +536,7 @@ Keep replies brief unless the user asks for more. Prefer one clear sentence over
 - Different musical styles and genres
 
 # Guitar Tab Display
-When the user asks to see or display a chord (e.g. "show me G minor", "display A major", "what does Em look like?"), use the display_guitar_chord tool with the chord name. The robot will show the chord diagram on screen. If they ask to close or hide the display, use display_guitar_chord with close: true.
+When the user asks to see or display a chord (e.g. "show me G minor", "display A major"), use display_guitar_chord with the chord name. When they ask for a scale (e.g. "show me the G major scale", "display A dorian scale"), use display_guitar_chord with a value that includes the word "scale" (e.g. "G major scale", "A dorian scale") so the diagram shows scale positions. If they ask to close or hide the display, use display_guitar_chord with close: true.
 
 # How to Use Your Tools
 - Use recognize_guitar_chord for chord information, notes, and theory (supports triads, 7ths, maj7, m7, dim, aug, sus2, sus4, add9, 9, 11, 13)
@@ -491,6 +544,7 @@ When the user asks to see or display a chord (e.g. "show me G minor", "display A
 - Use songwriting_suggestion for creative songwriting help (structure, lyrics themes, tempo)
 - Use music_theory_help for theory explanations (scales, intervals, harmony, chord construction, circle of fifths)
 - Use set_metronome_bpm when the user asks for a metronome: pass a genre (e.g. "rumba", "salsa", "waltz", "bossa nova", "ballad") or a specific bpm (40–240). You send the BPM to the frontend; the metronome starts automatically. Do NOT say the words "stop" or "pause" in your reply (the frontend hears the agent and would stop the metronome); say they can control it with voice instead.
+- Use play_backing_track when the user asks to play a backing track for practice, jamming, or soloing. Pass a natural language command describing what they want (e.g. "blues in A minor around 90 bpm", "rock track in E", "jazz at 120"). The tool searches the library, finds the best match, and starts playing automatically. The backing track loops until they say "stop" or use voice controls.
 - Use search_web to find current information, recent music news, new songs, artist information, or any up-to-date content
 - Use store_memory to save user preferences, favorite chords, musical interests, or skill level
 - Use retrieve_memories to recall information from previous conversations
@@ -510,6 +564,7 @@ When the user asks to see or display a chord (e.g. "show me G minor", "display A
 - "Explain major scales" / "Circle of fifths" → Use music_theory_help; give a one-sentence summary first, then ask "Want me to go deeper on that?"
 - "What chords go well with Am?" → Use recognize_guitar_chord for Am, then suggest_chord_progression in A minor or related key
 - "Play a metronome for a rumba" / "Metronome at 120" / "Set metronome for waltz" → Use set_metronome_bpm with genre or bpm
+- "Play a blues backing track" / "I want to jam in A minor" / "Backing track in E around 90 bpm" / "Play something for rock soloing" → Use play_backing_track with a command describing the desired track
 - User says "I love jazz" → Use store_memory to save this preference
 - User asks "What's my favorite genre?" → Use retrieve_memories to recall
 
@@ -520,7 +575,7 @@ When the user asks to see or display a chord (e.g. "show me G minor", "display A
 - Be enthusiastic and encouraging. Use musical terminology when it helps, but keep the main reply concise.
 - Suggest creative ideas and next steps in a sentence or two; don't over-explain unless asked.
 `,
-  tools: [recognizeChordTool, suggestChordProgressionTool, songwritingSuggestionTool, musicTheoryTool, setMetronomeBpmTool, displayGuitarChordTool, webSearchTool, ...createMemoryTools('musicalCompanion')],
+  tools: [recognizeChordTool, suggestChordProgressionTool, songwritingSuggestionTool, musicTheoryTool, setMetronomeBpmTool, displayGuitarChordTool, playBackingTrackTool, webSearchTool, ...createMemoryTools('musicalCompanion')],
   handoffs: [],
   handoffDescription: 'Musical companion AI for guitar, songwriting, and music theory',
 });

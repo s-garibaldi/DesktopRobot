@@ -1,6 +1,8 @@
 /**
- * Reads the legacy scales.json (scaleKeys + positionStep + shapes) and outputs
+ * Reads the legacy scales-legacy.json (scaleKeys + shapes) and outputs
  * scales.json in the same schema as chords: aliases, displayNames, scales (key → voicings).
+ * Every scale gets 6 voicings with the diagram starting at frets: 1, 5, 10, 12, 15, 20.
+ * Uses the first (canonical) shape per scale type from legacy; positions are absolute frets.
  * Run from project root: node frontend/scripts/generate-scales-from-library.js
  *
  * Output is written to frontend/src/components/guitarTabs/scales.json.
@@ -14,8 +16,11 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const INPUT_PATH = join(__dirname, '../src/components/guitarTabs/scales-legacy.json');
 const OUTPUT_PATH = join(__dirname, '../src/components/guitarTabs/scales.json');
 
+/** Voicing start frets for every scale (first fret of the 5-fret window). */
+const VOICING_START_FRETS = [1, 5, 10, 12, 15, 20];
+
 const data = JSON.parse(readFileSync(INPUT_PATH, 'utf8'));
-const { scaleKeys, positionStep, shapes } = data;
+const { scaleKeys, shapes } = data;
 
 function toCanonicalKey(key, type) {
   const root = key.replace(/major|minor|minorAlt/g, '').trim() || key;
@@ -45,33 +50,24 @@ const displayNames = {};
 const scales = {};
 
 for (const [canonicalKey, meta] of Object.entries(keyToMeta)) {
-  const { rootFret, type, keys } = meta;
+  const { type, keys } = meta;
   const templateList = shapes[type];
   const templates = Array.isArray(templateList) ? templateList : [templateList];
+  const template = templates[0];
 
+  const flat = template.positions.flat();
+  const rootInTemplate = Math.min(...flat);
   const voicings = [];
-  const baseFrets = [
-    rootFret,
-    rootFret + positionStep,
-    rootFret + 2 * positionStep,
-    rootFret + 3 * positionStep,
-    rootFret + 4 * positionStep,
-  ].filter((f) => f >= 0 && f <= 24);
 
-  for (const baseFret of baseFrets) {
-    for (const template of templates) {
-      const flat = template.positions.flat();
-      const rootInTemplate = Math.min(...flat);
-      const positions = template.positions.map((row) =>
-        row.map((f) => baseFret + (f - rootInTemplate))
-      );
-      const minFret = Math.min(...positions.flat());
-      if (minFret < 0) continue;
-      voicings.push({ fretOffset: minFret, positions });
-    }
+  for (const baseFret of VOICING_START_FRETS) {
+    const positions = template.positions.map((row) =>
+      row.map((f) => baseFret + (f - rootInTemplate))
+    );
+    const minFret = Math.min(...positions.flat());
+    if (minFret < 0) continue;
+    voicings.push({ fretOffset: minFret, positions });
   }
 
-  voicings.sort((a, b) => a.fretOffset - b.fretOffset);
   scales[canonicalKey] = voicings;
   displayNames[canonicalKey] = displayNameFromKeyAndType(canonicalKey, type);
   for (const k of keys) {

@@ -60,8 +60,12 @@ export const drawTime: EmotionDrawFunction = (ctx, time, breathingPhase, transit
     ctx.save();
     ctx.globalAlpha = faceAlpha;
     ctx.scale(faceScale, faceScale);
-    // Draw neutral at full opacity, we control scale and fade via transforms
-    drawNeutral(ctx, time, breathingPhase, 1, 'neutral');
+    // When zooming out from neutral, pupils drift quickly back to center (first 30% of zoom)
+    const pupilDriftToCenter =
+      fromEmotion === 'neutral' && transitionProgress < ZOOM_OUT_PHASE_END
+        ? Math.min(1, (transitionProgress / ZOOM_OUT_PHASE_END) / 0.3)
+        : undefined;
+    drawNeutral(ctx, time, breathingPhase, 1, 'neutral', pupilDriftToCenter);
     ctx.restore();
   }
 

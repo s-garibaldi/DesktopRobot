@@ -35,25 +35,42 @@ export async function POST(req: NextRequest) {
       count: Math.min(Math.max(count, 1), 20).toString(), // Clamp between 1 and 20
     });
 
-    const braveResponse = await fetch(
-      `https://api.search.brave.com/res/v1/web/search?${searchParams.toString()}`,
-      {
-        method: 'GET',
-        headers: {
-          'X-Subscription-Token': apiKey,
-          'Accept': 'application/json',
+    let braveResponse: Response;
+    try {
+      braveResponse = await fetch(
+        `https://api.search.brave.com/res/v1/web/search?${searchParams.toString()}`,
+        {
+          method: 'GET',
+          headers: {
+            'X-Subscription-Token': apiKey,
+            'Accept': 'application/json',
+          },
+        }
+      );
+    } catch (networkError: any) {
+      const msg = networkError?.message || String(networkError);
+      const code = networkError?.code || '';
+      console.error('Brave Search API network error:', code, msg);
+      const isWebAccess = /ECONNREFUSED|ETIMEDOUT|ENOTFOUND|fetch failed|Failed to fetch/i.test(msg) || code === 'ECONNREFUSED' || code === 'ETIMEDOUT';
+      return NextResponse.json(
+        {
+          success: false,
+          error: isWebAccess
+            ? 'Backend cannot reach the internet. Check network, firewall, or proxy settings.'
+            : `Network error: ${msg}`,
         },
-      }
-    );
+        { status: 503 }
+      );
+    }
 
     if (!braveResponse.ok) {
       const errorText = await braveResponse.text();
       console.error('Brave Search API error:', braveResponse.status, errorText);
-      
+
       return NextResponse.json(
-        { 
+        {
           success: false,
-          error: `Brave Search API error: ${braveResponse.status} - ${errorText}` 
+          error: `Brave Search API error: ${braveResponse.status} - ${errorText}`,
         },
         { status: braveResponse.status }
       );

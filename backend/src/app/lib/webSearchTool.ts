@@ -1,5 +1,18 @@
 import { tool } from '@openai/agents/realtime';
 
+/** Base URL for the backend so search works in browser (iframe) and server contexts */
+function getSearchApiUrl(): string {
+  if (typeof window !== 'undefined') {
+    return `${window.location.origin}/api/search`;
+  }
+  const base = process.env.BACKEND_PUBLIC_URL
+    ? process.env.BACKEND_PUBLIC_URL.replace(/\/$/, '')
+    : process.env.VERCEL_URL
+      ? `https://${process.env.VERCEL_URL}`
+      : 'http://localhost:3000';
+  return `${base}/api/search`;
+}
+
 /**
  * Web search tool using Brave Search API
  * This tool allows agents to search the internet for current information
@@ -36,8 +49,8 @@ export const webSearchTool = tool({
         };
       }
 
-      // Call the backend API route that proxies to Brave Search
-      const response = await fetch('/api/search', {
+      const searchUrl = getSearchApiUrl();
+      const response = await fetch(searchUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

@@ -6,6 +6,7 @@ import { setMetronomeBpm } from './metronome/metronomeStore';
 import MicrophonePanel from './MicrophonePanel';
 import BackingTrackPanel, { type BackingTrackHandlers } from './BackingTrackPanel';
 import MetronomePanel from './metronome/MetronomePanel';
+import SpotifyPanel from './SpotifyPanel';
 import './RealtimeBridge.css';
 
 interface RealtimeBridgeProps {
@@ -319,8 +320,9 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
               isCallingToolRef.current = false;
               setIsCallingTool(false);
               lastActivityTimeRef.current = Date.now();
-              // After tool call ends, go to neutral unless AI starts speaking or metronome is running
-              if (!isSpeakingRef.current && !isListeningRef.current && activeModeRef.current !== 'metronome') {
+              // After tool call ends, go to neutral unless AI starts speaking, metronome is running, or we just showed guitar tab
+              const justShowedGuitarTab = Date.now() - lastGuitarTabDisplayFromBackendTimeRef.current < 3000;
+              if (!isSpeakingRef.current && !isListeningRef.current && activeModeRef.current !== 'metronome' && !justShowedGuitarTab) {
                 handleEmotionChange('neutral', `backend_tool_end:${log.payload.eventType || log.payload.eventName}`, true);
               }
               return;
@@ -378,8 +380,9 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
               isSpeakingRef.current = false;
               setIsSpeaking(false);
               lastActivityTimeRef.current = Date.now();
-              // Audio playback finished → neutral (go-to idle emotion), but not when metronome is running
-              if (!isListeningRef.current && !isCallingToolRef.current && activeModeRef.current !== 'metronome') {
+              // Audio playback finished → neutral, but not when metronome is running or we just showed guitar tab
+              const justShowedGuitarTabOnSpeakingEnd = Date.now() - lastGuitarTabDisplayFromBackendTimeRef.current < 3000;
+              if (!isListeningRef.current && !isCallingToolRef.current && activeModeRef.current !== 'metronome' && !justShowedGuitarTabOnSpeakingEnd) {
                 handleEmotionChange('neutral', 'ai_speaking_end', true);
               }
               break;
@@ -419,6 +422,22 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
                 lastGuitarTabDisplayFromBackendTimeRef.current = Date.now();
                 handler('show', String(data.chord));
                 console.log('RealtimeBridge: guitar_tab_display show from backend', data.chord);
+              }
+              break;
+            }
+
+            case 'play_backing_track': {
+              const filename = data.filename;
+              if (typeof filename === 'string' && filename) {
+                console.log('RealtimeBridge: play_backing_track from backend', filename, data.metadata);
+                // Dispatch custom event for BackingTrackPanel to handle
+                window.dispatchEvent(new CustomEvent('backend-play-backing-track', {
+                  detail: { 
+                    filename, 
+                    metadata: data.metadata,
+                    backendUrl: realtimeUrl,
+                  }
+                }));
               }
               break;
             }
@@ -813,6 +832,8 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
         onStartMetronome={handleStartMetronome}
         onStopMetronome={handleStopMetronome}
       />
+
+      <SpotifyPanel backendUrl={realtimeUrl} />
 
       {micStatus === 'granted' && isConnected && (
         <p className="voice-command-hint">

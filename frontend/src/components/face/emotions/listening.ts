@@ -1,4 +1,5 @@
 import { EmotionDrawFunction, lerp } from './types';
+import { getPupilFloat } from './neutral';
 
 // LISTENING emotion - neutral face with bigger, closer eyes and more dramatic pulsing
 export const drawListening: EmotionDrawFunction = (ctx, time, breathingPhase, transitionProgress = 1, fromEmotion) => {
@@ -16,6 +17,11 @@ export const drawListening: EmotionDrawFunction = (ctx, time, breathingPhase, tr
   // For happy->listening: first half (0-0.5) is happy->neutral, second half (0.5-1) is neutral->listening
   const happyToNeutralPhase = isHappyTransition ? Math.min(transitionProgress * 2, 1) : 0;
   const neutralToListeningPhase = isHappyTransition ? Math.max(0, (transitionProgress - 0.5) * 2) : (isNeutralTransition ? transitionProgress : 1);
+  
+  // When from neutral: pupils drift quickly back to center (offset goes 1 -> 0).
+  const fromNeutralPupilOffset = isNeutralTransition
+    ? { x: (1 - transitionProgress) * getPupilFloat(time).x, y: (1 - transitionProgress) * getPupilFloat(time).y }
+    : { x: 0, y: 0 };
   
   const neutralPrimaryGlow = 0.85 + Math.sin(time * 1.2) * 0.15;
   const happyPrimaryGlow = 0.85 + Math.sin(time * 1.2) * 0.15; // Happy uses same as neutral for glow
@@ -204,7 +210,7 @@ export const drawListening: EmotionDrawFunction = (ctx, time, breathingPhase, tr
     ctx.fillStyle = '#000000';
     ctx.globalAlpha = pupilAlpha;
     ctx.beginPath();
-    ctx.arc(0, eyeVerticalOffset, pupilRadius, 0, Math.PI * 2);
+    ctx.arc(0 + fromNeutralPupilOffset.x, eyeVerticalOffset + fromNeutralPupilOffset.y, pupilRadius, 0, Math.PI * 2);
     ctx.fill();
     
     // Bright cyan highlight dot in center - brighter
@@ -225,7 +231,7 @@ export const drawListening: EmotionDrawFunction = (ctx, time, breathingPhase, tr
     ctx.shadowColor = '#00FFFF';
     ctx.globalAlpha = tertiaryGlow * pupilAlpha;
     ctx.beginPath();
-    ctx.arc(-3, -3 + eyeVerticalOffset, highlightSize, 0, Math.PI * 2);
+    ctx.arc(-3 + fromNeutralPupilOffset.x, -3 + eyeVerticalOffset + fromNeutralPupilOffset.y, highlightSize, 0, Math.PI * 2);
     ctx.fill();
   }
   
@@ -269,7 +275,7 @@ export const drawListening: EmotionDrawFunction = (ctx, time, breathingPhase, tr
     ctx.fillStyle = '#000000';
     ctx.globalAlpha = pupilAlpha;
     ctx.beginPath();
-    ctx.arc(0, eyeVerticalOffset, pupilRadius, 0, Math.PI * 2);
+    ctx.arc(0 + fromNeutralPupilOffset.x, eyeVerticalOffset + fromNeutralPupilOffset.y, pupilRadius, 0, Math.PI * 2);
     ctx.fill();
     
     // Bright cyan highlight dot - brighter
@@ -290,7 +296,7 @@ export const drawListening: EmotionDrawFunction = (ctx, time, breathingPhase, tr
     ctx.shadowColor = '#00FFFF';
     ctx.globalAlpha = tertiaryGlow * pupilAlpha;
     ctx.beginPath();
-    ctx.arc(-3, -3 + eyeVerticalOffset, highlightSize, 0, Math.PI * 2);
+    ctx.arc(-3 + fromNeutralPupilOffset.x, -3 + eyeVerticalOffset + fromNeutralPupilOffset.y, highlightSize, 0, Math.PI * 2);
     ctx.fill();
   }
   

@@ -1,7 +1,15 @@
 import { EmotionDrawFunction, lerp } from './types';
 
+/** Same pupil float as drawNeutral; used by other emotions when transitioning from neutral so pupils drift to center. */
+export function getPupilFloat(time: number): { x: number; y: number } {
+  return {
+    x: Math.sin(time * 1.1) * 2.5 + Math.sin(time * 0.75) * 1.5,
+    y: Math.cos(time * 0.95) * 2 + Math.sin(time * 0.85) * 1.2
+  };
+}
+
 // NEUTRAL emotion - standard neon face with full circle eyes
-export const drawNeutral: EmotionDrawFunction = (ctx, time, breathingPhase, transitionProgress = 1, _fromEmotion) => {
+export const drawNeutral: EmotionDrawFunction = (ctx, time, breathingPhase, transitionProgress = 1, _fromEmotion, pupilDriftToCenter) => {
   // Enhanced breathing animation
   const breathingScale = 1 + Math.sin(breathingPhase) * 0.03;
   
@@ -66,15 +74,26 @@ export const drawNeutral: EmotionDrawFunction = (ctx, time, breathingPhase, tran
   ctx.arc(0, eyeVerticalOffset, eyeRadius, startAngle, endAngle, false);
   ctx.stroke();
   
-  // Draw pupil and highlight - fade in as we transition to neutral
-  // Pupils should appear early in the transition (by 50% progress)
+  // Pupil float: same motion for both eyes so they move in sequence together (faster).
+  // When leaving neutral (pupilDriftToCenter 0→1), drift quickly back to center.
+  // When entering neutral (transitionProgress < 1), float starts at center and ramps to full so no jump.
+  const rawPupilFloatX = Math.sin(time * 1.1) * 2.5 + Math.sin(time * 0.75) * 1.5;
+  const rawPupilFloatY = Math.cos(time * 0.95) * 2 + Math.sin(time * 0.85) * 1.2;
+  const drift = pupilDriftToCenter != null ? Math.min(1, pupilDriftToCenter) : 0;
+  const enterScale = transitionProgress; // 0 = just entered neutral (center), 1 = full float
+  const pupilFloatX = (1 - drift) * rawPupilFloatX * enterScale;
+  const pupilFloatY = (1 - drift) * rawPupilFloatY * enterScale;
+  const highlightBaseX = -3;
+  const highlightBaseY = -3;
+
+  // Draw pupil and highlight - fade in as we transition to neutral (highlight fixed relative to pupil, no float).
   const pupilAlpha = Math.max(0, (transitionProgress * 2) - 1); // Fade in from 50% progress
   if (pupilAlpha > 0.05) {
     ctx.shadowBlur = 0;
     ctx.fillStyle = '#000000';
     ctx.globalAlpha = pupilAlpha;
     ctx.beginPath();
-    ctx.arc(0, eyeVerticalOffset, 15, 0, Math.PI * 2);
+    ctx.arc(pupilFloatX, eyeVerticalOffset + pupilFloatY, 15, 0, Math.PI * 2);
     ctx.fill();
     
     ctx.fillStyle = '#00FFFF';
@@ -82,13 +101,13 @@ export const drawNeutral: EmotionDrawFunction = (ctx, time, breathingPhase, tran
     ctx.shadowColor = '#00FFFF';
     ctx.globalAlpha = tertiaryGlow * pupilAlpha;
     ctx.beginPath();
-    ctx.arc(-3, -3 + eyeVerticalOffset, 4, 0, Math.PI * 2);
+    ctx.arc(pupilFloatX + highlightBaseX, eyeVerticalOffset + pupilFloatY + highlightBaseY, 4, 0, Math.PI * 2);
     ctx.fill();
   }
   
   ctx.restore();
   
-  // Draw right eye - same reverse animation, mirrored
+  // Draw right eye - same reverse animation, mirrored (same pupil float so both move in sequence)
   ctx.save();
   ctx.translate(50, -10);
   
@@ -107,13 +126,13 @@ export const drawNeutral: EmotionDrawFunction = (ctx, time, breathingPhase, tran
   ctx.arc(0, eyeVerticalOffset, eyeRadius, rightStartAngle, rightEndAngle, false);
   ctx.stroke();
   
-  // Right eye pupils
+  // Right eye pupils (same pupilFloat so both eyes move in sequence; highlight fixed relative to pupil)
   if (pupilAlpha > 0.05) {
     ctx.shadowBlur = 0;
     ctx.fillStyle = '#000000';
     ctx.globalAlpha = pupilAlpha;
     ctx.beginPath();
-    ctx.arc(0, eyeVerticalOffset, 15, 0, Math.PI * 2);
+    ctx.arc(pupilFloatX, eyeVerticalOffset + pupilFloatY, 15, 0, Math.PI * 2);
     ctx.fill();
     
     ctx.fillStyle = '#00FFFF';
@@ -121,7 +140,7 @@ export const drawNeutral: EmotionDrawFunction = (ctx, time, breathingPhase, tran
     ctx.shadowColor = '#00FFFF';
     ctx.globalAlpha = tertiaryGlow * pupilAlpha;
     ctx.beginPath();
-    ctx.arc(-3, -3 + eyeVerticalOffset, 4, 0, Math.PI * 2);
+    ctx.arc(pupilFloatX + highlightBaseX, eyeVerticalOffset + pupilFloatY + highlightBaseY, 4, 0, Math.PI * 2);
     ctx.fill();
   }
   

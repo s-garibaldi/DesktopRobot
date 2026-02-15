@@ -1,4 +1,5 @@
 import { EmotionDrawFunction, lerp } from './types';
+import { getPupilFloat } from './neutral';
 
 // HAPPY emotion - neon face with crescent eyes, sparkles, and smiling mouth
 export const drawHappy: EmotionDrawFunction = (ctx, time, breathingPhase, transitionProgress = 1, fromEmotion) => {
@@ -143,7 +144,10 @@ export const drawHappy: EmotionDrawFunction = (ctx, time, breathingPhase, transi
   ctx.stroke();
   
   // Draw pupil and highlight - fade out during neutral->happy phase
-  // Pupils should fade out early in the neutral->happy transition (by 50% of that phase)
+  // When from neutral: pupils drift quickly back to center (offset goes 1 -> 0).
+  const fromNeutralPupilOffset = fromEmotion === 'neutral'
+    ? { x: (1 - transitionProgress) * getPupilFloat(time).x, y: (1 - transitionProgress) * getPupilFloat(time).y }
+    : { x: 0, y: 0 };
   const pupilAlpha = isListeningTransition && listeningToNeutralPhase < 1
     ? 1 // First phase: pupils visible (listening->neutral)
     : Math.max(0, 1 - (neutralToHappyPhase * 2)); // Second phase: fade out during neutral->happy
@@ -167,7 +171,7 @@ export const drawHappy: EmotionDrawFunction = (ctx, time, breathingPhase, transi
     ctx.fillStyle = '#000000';
     ctx.globalAlpha = pupilAlpha;
     ctx.beginPath();
-    ctx.arc(0, eyeVerticalOffset, pupilRadius, 0, Math.PI * 2);
+    ctx.arc(0 + fromNeutralPupilOffset.x, eyeVerticalOffset + fromNeutralPupilOffset.y, pupilRadius, 0, Math.PI * 2);
     ctx.fill();
     
     // Highlight size: listening (4.6875) -> neutral (4) -> happy (4, then fade out)
@@ -189,7 +193,7 @@ export const drawHappy: EmotionDrawFunction = (ctx, time, breathingPhase, transi
     ctx.shadowColor = '#00FFFF';
     ctx.globalAlpha = tertiaryGlow * pupilAlpha;
     ctx.beginPath();
-    ctx.arc(-3, -3 + eyeVerticalOffset, highlightSize, 0, Math.PI * 2);
+    ctx.arc(-3 + fromNeutralPupilOffset.x, -3 + eyeVerticalOffset + fromNeutralPupilOffset.y, highlightSize, 0, Math.PI * 2);
     ctx.fill();
   }
   
@@ -291,7 +295,7 @@ export const drawHappy: EmotionDrawFunction = (ctx, time, breathingPhase, transi
     ctx.fillStyle = '#000000';
     ctx.globalAlpha = pupilAlpha;
     ctx.beginPath();
-    ctx.arc(0, eyeVerticalOffset, rightPupilRadius, 0, Math.PI * 2);
+    ctx.arc(0 + fromNeutralPupilOffset.x, eyeVerticalOffset + fromNeutralPupilOffset.y, rightPupilRadius, 0, Math.PI * 2);
     ctx.fill();
     
     const listeningHighlightSize = 4.6875;
@@ -312,7 +316,7 @@ export const drawHappy: EmotionDrawFunction = (ctx, time, breathingPhase, transi
     ctx.shadowColor = '#00FFFF';
     ctx.globalAlpha = tertiaryGlow * pupilAlpha;
     ctx.beginPath();
-    ctx.arc(-3, -3 + eyeVerticalOffset, rightHighlightSize, 0, Math.PI * 2);
+    ctx.arc(-3 + fromNeutralPupilOffset.x, -3 + eyeVerticalOffset + fromNeutralPupilOffset.y, rightHighlightSize, 0, Math.PI * 2);
     ctx.fill();
   }
   

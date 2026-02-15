@@ -1,12 +1,15 @@
 /**
  * Guitar chord and scale data for tab display.
- * Data is loaded from TuxGuitar-style JSON library (chords.json, scales.json).
+ * Chords: TuxGuitar-style JSON (chords.json). Scales: tonal.js (all modes and scale types).
  * Strings order: low E (index 0) to high e (index 5).
  * Fret values: 0 = open, -1 = mute (X), 1+ = fret number.
  */
 
 import chordsJson from './chords.json';
-import scalesJson from './scales.json';
+import {
+  getScaleShapesFromTonal,
+  resolveTonalScaleName,
+} from './scaleFromTonal';
 
 export interface ChordShape {
   name: string;
@@ -41,18 +44,6 @@ interface ChordsLibraryJson {
   chords: Record<string, ChordVoicingJson[]>;
 }
 
-/** One scale voicing from the library (same idea as chord voicing). */
-interface ScaleVoicingJson {
-  fretOffset: number;
-  positions: number[][];
-}
-
-/** Scales library: same schema as chords (aliases, displayNames, scales key → voicings). */
-interface ScalesLibraryJson {
-  aliases: Record<string, string>;
-  displayNames: Record<string, string>;
-  scales: Record<string, ScaleVoicingJson[]>;
-}
 
 // ----- Voice-to-chord normalization (single pipeline so speech reliably maps to library keys) -----
 
@@ -236,11 +227,7 @@ function shapeAt(idx: number, displayName: string): ChordShape {
   return { ...s, name: displayName };
 }
 
-// ----- Scales: from scales.json (same pattern as chords: aliases, displayNames, scales) -----
-const SCALE_ALIASES = (scalesJson as ScalesLibraryJson).aliases;
-const SCALE_DISPLAY_NAMES = (scalesJson as ScalesLibraryJson).displayNames;
-const SCALE_VOICINGS = (scalesJson as ScalesLibraryJson).scales;
-
+// ----- Scales: from tonal.js (scaleFromTonal.ts) -----
 const STRING_NAMES = ['E', 'A', 'D', 'G', 'B', 'e'];
 
 // ----- Public API -----
@@ -265,35 +252,35 @@ export function getChordVoicings(input: string): ChordShape[] {
   return shapes;
 }
 
-function resolveScaleKey(input: string): string | null {
-  const n = normalizeChordInput(input).replace(/scale/g, '').trim();
-  if (!n) return null;
-  const key = SCALE_ALIASES[n] ?? (SCALE_VOICINGS[n] ? n : null);
-  return key;
+/** Normalize for scale parsing only: keep "major"/"minor"/mode names, strip "scale", accidentals, collapse spaces. */
+function normalizeScaleInput(input: string): string {
+  let s = input.trim().toLowerCase().replace(/\bscale\b/g, '').replace(/\s+/g, ' ').trim();
+  s = s.replace(/♭/g, 'b').replace(/♯/g, 's').replace(/#/g, 's');
+  s = s.replace(/\b([a-g])\s+flat\s+/g, '$1b ').replace(/\b([a-g])\s+sharp\s+/g, '$1s ');
+  s = s.replace(/\bflat\b/g, 'b').replace(/\b(sharp|shop|shaw|shark|sherry)\b/g, 's');
+  return s.replace(/\s+/g, '');
 }
 
-function scaleShapeFromVoicing(v: ScaleVoicingJson, displayName: string): ScaleShape {
-  return { name: displayName, fretOffset: v.fretOffset, positions: v.positions };
+function resolveScaleKey(input: string): string | null {
+  const n = normalizeScaleInput(input);
+  if (!n) return null;
+  return resolveTonalScaleName(n);
 }
 
 export function getScaleShape(input: string): ScaleShape | null {
-  const key = resolveScaleKey(input);
-  if (!key) return null;
-  const list = SCALE_VOICINGS[key];
-  if (!list?.length) return null;
-  const name = SCALE_DISPLAY_NAMES[key] ?? key;
-  return scaleShapeFromVoicing(list[0], name);
+  const tonalName = resolveScaleKey(input);
+  if (!tonalName) return null;
+  const shapes = getScaleShapesFromTonal(tonalName);
+  if (!shapes?.length) return null;
+  return shapes[0];
 }
 
-/** Returns scale voicings from the library (same as chords: sorted by fretOffset, display name from library). */
+/** Returns scale voicings from tonal (6 positions at frets 1, 5, 10, 12, 15, 20). */
 export function getScaleVoicings(input: string): ScaleShape[] {
-  const key = resolveScaleKey(input);
-  if (!key) return [];
-  const list = SCALE_VOICINGS[key];
-  if (!list?.length) return [];
-  const name = SCALE_DISPLAY_NAMES[key] ?? key;
-  const shapes = list.map((v) => scaleShapeFromVoicing(v, name));
-  shapes.sort((a, b) => (a.fretOffset ?? 1) - (b.fretOffset ?? 1));
+  const tonalName = resolveScaleKey(input);
+  if (!tonalName) return [];
+  const shapes = getScaleShapesFromTonal(tonalName);
+  if (!shapes?.length) return [];
   return shapes;
 }
 
@@ -321,6 +308,24 @@ export function resolveChordOrScaleDisplayName(input: string): string {
   for (const candidate of getRootConfusionCandidates(trimmed)) {
     const result = getChordOrScale(candidate);
     if (result) return result.shape.name;
+  }
+  return trimmed;
+}
+
+/**
+ * Returns the exact string to set as guitarTabsInput so the diagram shows correctly.
+ * For scales returns display name + " scale" so the UI shows scale voicings; for chords returns display name only.
+ */
+export function resolveChordOrScaleInputForDisplay(input: string): string {
+  const trimmed = input.trim();
+  if (!trimmed) return trimmed;
+  for (const candidate of getNormalizationCandidates(trimmed)) {
+    const result = getChordOrScale(candidate);
+    if (result) return result.type === 'scale' ? result.shape.name + ' scale' : result.shape.name;
+  }
+  for (const candidate of getRootConfusionCandidates(trimmed)) {
+    const result = getChordOrScale(candidate);
+    if (result) return result.type === 'scale' ? result.shape.name + ' scale' : result.shape.name;
   }
   return trimmed;
 }
