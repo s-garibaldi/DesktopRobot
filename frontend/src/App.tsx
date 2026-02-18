@@ -2,15 +2,19 @@ import { useState, useEffect } from 'react';
 import AnimatedFace from './components/face/AnimatedFace';
 import EmotionControls from './components/face/EmotionControls';
 import GuitarTabsFace from './components/guitarTabs/GuitarTabsFace';
+import SpotifyFace from './components/spotify/SpotifyFace';
 import { getChordVoicings, getScaleVoicings, normalizeChordInput, resolveChordOrScaleInputForDisplay, getConfusableRootChords, getChordDisplayName } from './components/guitarTabs/chordData';
 import RealtimeBridge from './components/RealtimeBridge';
+import type { PlaybackState } from './spotify';
 import './App.css';
 
-export type Emotion = 'neutral' | 'happy' | 'listening' | 'time' | 'thinking' | 'speaking' | 'metronome' | 'guitarTabs';
+export type Emotion = 'neutral' | 'happy' | 'listening' | 'time' | 'thinking' | 'speaking' | 'metronome' | 'guitarTabs' | 'spotify';
 
 function App() {
   const [currentEmotion, setCurrentEmotion] = useState<Emotion>('neutral');
   const [isEmotionFullscreen, setIsEmotionFullscreen] = useState(false);
+  const [spotifyPlaybackState, setSpotifyPlaybackState] = useState<PlaybackState | null>(null);
+  const [spotifyUserStopped, setSpotifyUserStopped] = useState(false);
   const [guitarTabsInput, setGuitarTabsInput] = useState('');
   const [guitarTabsVoicingIndex, setGuitarTabsVoicingIndex] = useState(0);
 
@@ -25,6 +29,20 @@ function App() {
   useEffect(() => {
     setGuitarTabsVoicingIndex(0);
   }, [guitarTabsInput]);
+
+  // Auto-show Spotify face when a track is loaded (playing or paused); only go back to neutral when track is stopped.
+  // If user pressed Stop, don't switch back to Spotify until they play again (no active track).
+  useEffect(() => {
+    const hasActiveTrack =
+      spotifyPlaybackState &&
+      (spotifyPlaybackState.trackName || spotifyPlaybackState.duration > 0);
+    if (hasActiveTrack && !spotifyUserStopped) {
+      setCurrentEmotion('spotify');
+    } else if (!hasActiveTrack) {
+      setSpotifyUserStopped(false);
+      if (currentEmotion === 'spotify') setCurrentEmotion('neutral');
+    }
+  }, [spotifyPlaybackState?.trackName ?? null, spotifyPlaybackState?.duration ?? 0, currentEmotion, spotifyUserStopped]);
 
   const handleGuitarTabDisplayCommand = (action: 'show' | 'close', description?: string) => {
     if (action === 'show') {
@@ -50,7 +68,7 @@ function App() {
           </button>
         )}
         <h1>Desktop Robot</h1>
-        <div className={`robot-container${currentEmotion === 'guitarTabs' ? ' guitar-tabs-active' : ''}`}>
+        <div className={`robot-container${currentEmotion === 'guitarTabs' ? ' guitar-tabs-active' : ''}${currentEmotion === 'spotify' ? ' spotify-active' : ''}`}>
           <div className="left-panel">
             <div className="animated-face-wrapper">
               {currentEmotion === 'guitarTabs' ? (
@@ -58,10 +76,12 @@ function App() {
                   input={guitarTabsInput}
                   voicingIndex={guitarTabsVoicingIndex}
                 />
+              ) : currentEmotion === 'spotify' ? (
+                <SpotifyFace playbackState={spotifyPlaybackState} />
               ) : (
                 <AnimatedFace emotion={currentEmotion} fillContainer={isEmotionFullscreen} />
               )}
-              {!isEmotionFullscreen && currentEmotion !== 'guitarTabs' && (
+              {!isEmotionFullscreen && currentEmotion !== 'guitarTabs' && currentEmotion !== 'spotify' && (
                 <button
                   type="button"
                   className="emotion-fullscreen-enter"
@@ -80,6 +100,17 @@ function App() {
                   textShadow: '0 0 10px #00FFFF'
                 }}>
                   Guitar tabs
+                </p>
+              )}
+              {currentEmotion === 'spotify' && (
+                <p style={{
+                  marginTop: '0.25rem',
+                  fontSize: '1rem',
+                  textTransform: 'capitalize',
+                  color: '#00FFFF',
+                  textShadow: '0 0 10px #00FFFF'
+                }}>
+                  Spotify
                 </p>
               )}
             </div>
@@ -156,6 +187,11 @@ function App() {
               currentEmotion={currentEmotion}
               onEmotionChange={setCurrentEmotion}
               onGuitarTabDisplayCommand={handleGuitarTabDisplayCommand}
+              onSpotifyPlaybackStateChange={setSpotifyPlaybackState}
+              onSpotifyStop={() => {
+                setCurrentEmotion('neutral');
+                setSpotifyUserStopped(true);
+              }}
             />
           </div>
         </div>

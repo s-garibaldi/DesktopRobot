@@ -459,6 +459,65 @@ const musicTheoryTool = tool({
   },
 });
 
+// Play a specific song on the user's Spotify (frontend must be connected to Spotify).
+// Tool runs in iframe: fetches backend search API, then sends play command to parent.
+const playSpotifyTrackTool = tool({
+  name: 'play_spotify_track',
+  description: 'Play a specific song on the user\'s Spotify. Use when the user asks to play a song, artist, or track by name (e.g. "play Bohemian Rhapsody", "play something by Taylor Swift", "play Blinding Lights"). The user must have connected Spotify in the app (Premium required). You send a search query; the app finds the best match and starts playback.',
+  parameters: {
+    type: 'object',
+    properties: {
+      query: {
+        type: 'string',
+        description: 'Search query for the song (e.g. "Bohemian Rhapsody Queen", "Blinding Lights The Weeknd", "Shake It Off Taylor Swift"). Can be song name, song + artist, or artist + song.',
+      },
+    },
+    required: ['query'],
+    additionalProperties: false,
+  },
+  execute: async (input: any) => {
+    const { query } = input as { query: string };
+    const q = (query ?? '').trim();
+    if (!q) {
+      return { success: false, message: 'Please specify a song or artist to play (e.g. "Bohemian Rhapsody" or "Blinding Lights The Weeknd").' };
+    }
+    try {
+      const base = typeof window !== 'undefined' ? window.location.origin : '';
+      const res = await fetch(
+        `${base}/api/spotify/search?q=${encodeURIComponent(q)}&type=track&limit=5`,
+        { mode: 'cors' }
+      );
+      const data = await res.json();
+      if (!data?.success || !data?.tracks?.items?.length) {
+        return {
+          success: false,
+          message: data?.error ?? 'No tracks found. Try a different search or check that Spotify is configured on the server.',
+          query: q,
+        };
+      }
+      const track = data.tracks.items[0];
+      const uri = `spotify:track:${track.id}`;
+      const trackName = track.name ?? '';
+      const artists = Array.isArray(track.artists) ? track.artists.map((a: { name?: string }) => a.name).filter(Boolean).join(', ') : '';
+      postClientAction('play_spotify_track', { uri, trackName, artists });
+      return {
+        success: true,
+        uri,
+        trackName,
+        artists,
+        message: artists ? `Playing "${trackName}" by ${artists}.` : `Playing "${trackName}".`,
+      };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return {
+        success: false,
+        error: `Spotify search failed: ${msg}`,
+        query: q,
+      };
+    }
+  },
+});
+
 // Play backing track from library based on user's criteria
 const playBackingTrackTool = tool({
   name: 'play_backing_track',
@@ -544,6 +603,7 @@ When the user asks to see or display a chord (e.g. "show me G minor", "display A
 - Use songwriting_suggestion for creative songwriting help (structure, lyrics themes, tempo)
 - Use music_theory_help for theory explanations (scales, intervals, harmony, chord construction, circle of fifths)
 - Use set_metronome_bpm when the user asks for a metronome: pass a genre (e.g. "rumba", "salsa", "waltz", "bossa nova", "ballad") or a specific bpm (40–240). You send the BPM to the frontend; the metronome starts automatically. Do NOT say the words "stop" or "pause" in your reply (the frontend hears the agent and would stop the metronome); say they can control it with voice instead.
+- Use play_spotify_track when the user asks to play a song on Spotify (e.g. "play Bohemian Rhapsody", "play Blinding Lights"). The user must have connected Spotify (Premium required).
 - Use play_backing_track when the user asks to play a backing track for practice, jamming, or soloing. Pass a natural language command describing what they want (e.g. "blues in A minor around 90 bpm", "rock track in E", "jazz at 120"). The tool searches the library, finds the best match, and starts playing automatically. The backing track loops until they say "stop" or use voice controls.
 - Use search_web to find current information, recent music news, new songs, artist information, or any up-to-date content
 - Use store_memory to save user preferences, favorite chords, musical interests, or skill level
@@ -564,6 +624,7 @@ When the user asks to see or display a chord (e.g. "show me G minor", "display A
 - "Explain major scales" / "Circle of fifths" → Use music_theory_help; give a one-sentence summary first, then ask "Want me to go deeper on that?"
 - "What chords go well with Am?" → Use recognize_guitar_chord for Am, then suggest_chord_progression in A minor or related key
 - "Play a metronome for a rumba" / "Metronome at 120" / "Set metronome for waltz" → Use set_metronome_bpm with genre or bpm
+- "Play Bohemian Rhapsody" / "Play Blinding Lights" → Use play_spotify_track.
 - "Play a blues backing track" / "I want to jam in A minor" / "Backing track in E around 90 bpm" / "Play something for rock soloing" → Use play_backing_track with a command describing the desired track
 - User says "I love jazz" → Use store_memory to save this preference
 - User asks "What's my favorite genre?" → Use retrieve_memories to recall
@@ -575,7 +636,7 @@ When the user asks to see or display a chord (e.g. "show me G minor", "display A
 - Be enthusiastic and encouraging. Use musical terminology when it helps, but keep the main reply concise.
 - Suggest creative ideas and next steps in a sentence or two; don't over-explain unless asked.
 `,
-  tools: [recognizeChordTool, suggestChordProgressionTool, songwritingSuggestionTool, musicTheoryTool, setMetronomeBpmTool, displayGuitarChordTool, playBackingTrackTool, webSearchTool, ...createMemoryTools('musicalCompanion')],
+  tools: [recognizeChordTool, suggestChordProgressionTool, songwritingSuggestionTool, musicTheoryTool, setMetronomeBpmTool, displayGuitarChordTool, playSpotifyTrackTool, playBackingTrackTool, webSearchTool, ...createMemoryTools('musicalCompanion')],
   handoffs: [],
   handoffDescription: 'Musical companion AI for guitar, songwriting, and music theory',
 });

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   useSpotifyMetadata,
   useSpotifyPlayer,
@@ -6,7 +6,7 @@ import {
   generatePkce,
   SPOTIFY_PLAYBACK_SCOPES,
 } from '../spotify';
-import type { SpotifyTrack } from '../spotify';
+import type { PlaybackState, SpotifyTrack } from '../spotify';
 
 const SPOTIFY_TOKEN_KEY = 'spotify_access_token';
 const SPOTIFY_REFRESH_KEY = 'spotify_refresh_token';
@@ -33,16 +33,91 @@ function loadStoredToken(): string | null {
 
 interface SpotifyPanelProps {
   backendUrl: string;
+  onPlaybackStateChange?: (state: PlaybackState | null) => void;
+  onStop?: () => void;
 }
 
-export default function SpotifyPanel({ backendUrl }: SpotifyPanelProps) {
+export default function SpotifyPanel({ backendUrl, onPlaybackStateChange, onStop }: SpotifyPanelProps) {
   const [token, setToken] = useState<string | null>(loadStoredToken);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<SpotifyTrack[]>([]);
   const [callbackError, setCallbackError] = useState<string | null>(null);
   const [restoringSession, setRestoringSession] = useState(false);
+  const [skipSeconds, setSkipSeconds] = useState(10);
 
   const { searchTracks, loading: searchLoading, error: searchError } = useSpotifyMetadata(backendUrl);
+
+  const getValidToken = useCallback(async (): Promise<string | null> => {
+    const expStr = typeof localStorage !== 'undefined' ? localStorage.getItem(SPOTIFY_EXPIRES_AT_KEY) : null;
+    const exp = expStr ? Number(expStr) : 0;
+    const now = Date.now();
+    if (exp > now + REFRESH_BUFFER_MS) {
+      const t = typeof localStorage !== 'undefined' ? localStorage.getItem(SPOTIFY_TOKEN_KEY) : null;
+      if (t) return t;
+    }
+    const refreshToken = typeof localStorage !== 'undefined' ? localStorage.getItem(SPOTIFY_REFRESH_KEY) : null;
+    if (!refreshToken || !backendUrl) {
+      return typeof localStorage !== 'undefined' ? localStorage.getItem(SPOTIFY_TOKEN_KEY) : null;
+    }
+    try {
+      const res = await fetch(`${backendUrl}/api/spotify/refresh`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refresh_token: refreshToken }),
+        mode: 'cors',
+      });
+      const data = await res.json();
+      if (data.success && data.access_token) {
+        const newExpiresAt = Date.now() + (data.expires_in ?? 3600) * 1000;
+        localStorage.setItem(SPOTIFY_TOKEN_KEY, data.access_token);
+        localStorage.setItem(SPOTIFY_EXPIRES_AT_KEY, String(newExpiresAt));
+        if (data.refresh_token) localStorage.setItem(SPOTIFY_REFRESH_KEY, data.refresh_token);
+        setToken(data.access_token);
+        return data.access_token;
+      }
+    } catch {
+      // fall through
+    }
+    return typeof localStorage !== 'undefined' ? localStorage.getItem(SPOTIFY_TOKEN_KEY) : null;
+  }, [backendUrl]);
+
+  const onAuthenticationError = useCallback(async () => {
+    const refreshToken = typeof localStorage !== 'undefined' ? localStorage.getItem(SPOTIFY_REFRESH_KEY) : null;
+    if (!refreshToken || !backendUrl) {
+      localStorage.removeItem(SPOTIFY_TOKEN_KEY);
+      localStorage.removeItem(SPOTIFY_REFRESH_KEY);
+      localStorage.removeItem(SPOTIFY_EXPIRES_AT_KEY);
+      setToken(null);
+      return;
+    }
+    try {
+      const res = await fetch(`${backendUrl}/api/spotify/refresh`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refresh_token: refreshToken }),
+        mode: 'cors',
+      });
+      const data = await res.json();
+      if (data.success && data.access_token) {
+        const newExpiresAt = Date.now() + (data.expires_in ?? 3600) * 1000;
+        localStorage.setItem(SPOTIFY_TOKEN_KEY, data.access_token);
+        localStorage.setItem(SPOTIFY_EXPIRES_AT_KEY, String(newExpiresAt));
+        if (data.refresh_token) localStorage.setItem(SPOTIFY_REFRESH_KEY, data.refresh_token);
+        setToken(data.access_token);
+      } else {
+        localStorage.removeItem(SPOTIFY_TOKEN_KEY);
+        localStorage.removeItem(SPOTIFY_REFRESH_KEY);
+        localStorage.removeItem(SPOTIFY_EXPIRES_AT_KEY);
+        setToken(null);
+      }
+    } catch {
+      localStorage.removeItem(SPOTIFY_TOKEN_KEY);
+      localStorage.removeItem(SPOTIFY_REFRESH_KEY);
+      localStorage.removeItem(SPOTIFY_EXPIRES_AT_KEY);
+      setToken(null);
+    }
+  }, [backendUrl]);
+
   const {
     ready: playerReady,
     error: playerError,
@@ -55,7 +130,11 @@ export default function SpotifyPanel({ backendUrl }: SpotifyPanelProps) {
     seek,
     skipNext,
     skipPrevious,
-  } = useSpotifyPlayer(token);
+  } = useSpotifyPlayer(token, { getValidToken, onAuthenticationError });
+
+  /** When backend sends play_spotify_track before the SDK device is listed, queue and play once ready. */
+  const pendingBackendPlayRef = useRef<{ uri: string } | null>(null);
+  const pendingBackendPlayTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Handle redirect from Spotify (callback with ?code=...)
   useEffect(() => {
@@ -156,6 +235,113 @@ export default function SpotifyPanel({ backendUrl }: SpotifyPanelProps) {
     })();
   }, [backendUrl]);
 
+  useEffect(() => {
+    onPlaybackStateChange?.(token ? playbackState : null);
+  }, [token, playbackState, onPlaybackStateChange]);
+
+  // Play a backend-requested URI: delay first so Spotify's device list has time to include our device,
+  // then retry once if play() returns false (device not ready).
+  const playBackendUriWithRetry = useCallback(
+    async (uri: string) => {
+      const delayMs = 2000;
+      console.log('[SpotifyPanel] Backend play: waiting', delayMs / 1000, 's then playing', uri);
+      await new Promise((r) => setTimeout(r, delayMs));
+      let ok = await play(uri);
+      if (!ok) {
+        console.log('[SpotifyPanel] Backend play: first attempt failed, retrying in 4s');
+        await new Promise((r) => setTimeout(r, 4000));
+        ok = await play(uri);
+      }
+      if (ok) {
+        console.log('[SpotifyPanel] Backend play: started', uri);
+      } else {
+        console.warn('[SpotifyPanel] Backend play: failed after retry');
+      }
+    },
+    [play]
+  );
+
+  // Backend AI can send play_spotify_track → RealtimeBridge dispatches this event. If the SDK device
+  // isn't ready yet, queue the URI and play when ready (with delay + retry).
+  useEffect(() => {
+    const handleBackendPlay = (e: Event) => {
+      const detail = (e as CustomEvent<{ uri: string; trackName?: string; artists?: string }>).detail;
+      if (!detail?.uri || typeof detail.uri !== 'string' || !detail.uri.startsWith('spotify:track:')) return;
+      console.log('[SpotifyPanel] Backend play event received', detail.uri, 'playerReady=', playerReady);
+      if (pendingBackendPlayTimeoutRef.current) {
+        clearTimeout(pendingBackendPlayTimeoutRef.current);
+        pendingBackendPlayTimeoutRef.current = null;
+      }
+      if (playerReady) {
+        playBackendUriWithRetry(detail.uri);
+      } else {
+        pendingBackendPlayRef.current = { uri: detail.uri };
+        pendingBackendPlayTimeoutRef.current = setTimeout(() => {
+          pendingBackendPlayTimeoutRef.current = null;
+          pendingBackendPlayRef.current = null;
+        }, 25000);
+      }
+    };
+    window.addEventListener('backend-play-spotify-track', handleBackendPlay);
+    return () => {
+      window.removeEventListener('backend-play-spotify-track', handleBackendPlay);
+      if (pendingBackendPlayTimeoutRef.current) {
+        clearTimeout(pendingBackendPlayTimeoutRef.current);
+        pendingBackendPlayTimeoutRef.current = null;
+      }
+    };
+  }, [playBackendUriWithRetry, playerReady]);
+
+  // When the player becomes ready, play any queued backend track (with delay + retry).
+  useEffect(() => {
+    if (!playerReady) return;
+    if (pendingBackendPlayRef.current) {
+      const { uri } = pendingBackendPlayRef.current;
+      pendingBackendPlayRef.current = null;
+      if (pendingBackendPlayTimeoutRef.current) {
+        clearTimeout(pendingBackendPlayTimeoutRef.current);
+        pendingBackendPlayTimeoutRef.current = null;
+      }
+      console.log('[SpotifyPanel] Player ready, playing queued backend URI', uri);
+      playBackendUriWithRetry(uri);
+    }
+  }, [playerReady, playBackendUriWithRetry]);
+
+  // When we're connected (have token) and not handling a callback, clear any stale token-exchange error so it doesn't keep showing.
+  useEffect(() => {
+    if (token && !new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '').get('code')) {
+      setCallbackError(null);
+    }
+  }, [token]);
+
+  // When there's no token and we're not restoring: auto-redirect to Spotify so user doesn't have to click Connect.
+  useEffect(() => {
+    if (token) return;
+    if (restoringSession) return;
+    if (callbackError) return; // avoid redirect loop after a failed callback
+    // Don't redirect if we're handling the OAuth callback (URL has ?code=...)
+    if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('code')) return;
+    const clientId = import.meta.env.VITE_SPOTIFY_CLIENT_ID as string | undefined;
+    if (!clientId) return;
+
+    const t = setTimeout(async () => {
+      const redirectUri = getSpotifyRedirectUri();
+      const { codeVerifier, codeChallenge } = await generatePkce();
+      sessionStorage.setItem(SPOTIFY_CODE_VERIFIER_KEY, codeVerifier);
+      const state = encodeURIComponent(codeVerifier);
+      const url = buildAuthUrl({
+        clientId,
+        redirectUri,
+        codeChallenge,
+        state,
+        scopes: SPOTIFY_PLAYBACK_SCOPES,
+      });
+      window.location.href = url;
+    }, 400);
+
+    return () => clearTimeout(t);
+  }, [token, restoringSession, callbackError]);
+
   const handleConnect = useCallback(async () => {
     const clientId = import.meta.env.VITE_SPOTIFY_CLIENT_ID as string | undefined;
     if (!clientId) {
@@ -225,6 +411,67 @@ export default function SpotifyPanel({ backendUrl }: SpotifyPanelProps) {
     },
     [playbackState, seek]
   );
+
+  const handleStop = useCallback(async () => {
+    onStop?.();
+    try {
+      await pause();
+      await seek(0);
+    } catch {
+      // Face already switched to neutral; ignore playback errors
+    }
+  }, [pause, seek, onStop]);
+
+  const handleRestart = useCallback(async () => {
+    await seek(0);
+    await resume();
+  }, [seek, resume]);
+
+  // Voice commands when Spotify face is active (from RealtimeBridge → spotify-voice-command)
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const { action, seconds } = (e as CustomEvent<{ action: string; seconds?: number }>).detail ?? {};
+      if (!action || typeof action !== 'string') return;
+      const pos = playbackState?.position ?? 0;
+      const dur = playbackState?.duration ?? 0;
+      switch (action) {
+        case 'pause':
+          void pause();
+          break;
+        case 'play':
+          void resume();
+          break;
+        case 'stop':
+          void handleStop();
+          break;
+        case 'restart':
+          void handleRestart();
+          break;
+        case 'rewind':
+          void seek(Math.max(0, pos - (seconds ?? 15) * 1000));
+          break;
+        case 'forward':
+          void seek(Math.min(dur || 999999, pos + (seconds ?? 15) * 1000));
+          break;
+        default:
+          break;
+      }
+    };
+    window.addEventListener('spotify-voice-command', handler);
+    return () => window.removeEventListener('spotify-voice-command', handler);
+  }, [pause, resume, seek, playbackState?.position, playbackState?.duration, handleStop, handleRestart]);
+
+  const handleForward = useCallback(() => {
+    if (!playbackState || playbackState.duration <= 0) return;
+    const ms = Math.min(playbackState.duration, playbackState.position + skipSeconds * 1000);
+    seek(ms);
+  }, [playbackState, skipSeconds, seek]);
+
+  const handleRewind = useCallback(() => {
+    if (!playbackState) return;
+    const ms = Math.max(0, playbackState.position - skipSeconds * 1000);
+    seek(ms);
+  }, [playbackState, skipSeconds, seek]);
 
   const seekPercent =
     playbackState && playbackState.duration > 0
@@ -360,6 +607,59 @@ export default function SpotifyPanel({ backendUrl }: SpotifyPanelProps) {
                     onChange={(e) => setVolume(Number(e.target.value) / 100)}
                   />
                 </label>
+              </div>
+              <div className="spotify-extra-controls">
+                <button
+                  type="button"
+                  className="spotify-transport-btn"
+                  onClick={handleStop}
+                  title="Stop"
+                  aria-label="Stop"
+                >
+                  ⏹ Stop
+                </button>
+                <button
+                  type="button"
+                  className="spotify-transport-btn"
+                  onClick={handleRestart}
+                  title="Restart song"
+                  aria-label="Restart song"
+                >
+                  ↺ Restart
+                </button>
+                <div className="spotify-skip-row">
+                  <label className="spotify-skip-label">
+                    Skip
+                    <input
+                      type="number"
+                      className="spotify-skip-input"
+                      min={1}
+                      max={600}
+                      value={skipSeconds}
+                      onChange={(e) => setSkipSeconds(Math.max(1, Math.min(600, Number(e.target.value) || 1)))}
+                      title="Seconds to skip"
+                    />
+                    s
+                  </label>
+                  <button
+                    type="button"
+                    className="spotify-transport-btn"
+                    onClick={handleRewind}
+                    title={`Rewind ${skipSeconds} s`}
+                    aria-label={`Rewind ${skipSeconds} seconds`}
+                  >
+                    ⏪ −{skipSeconds}s
+                  </button>
+                  <button
+                    type="button"
+                    className="spotify-transport-btn"
+                    onClick={handleForward}
+                    title={`Forward ${skipSeconds} s`}
+                    aria-label={`Forward ${skipSeconds} seconds`}
+                  >
+                    +{skipSeconds}s ⏩
+                  </button>
+                </div>
               </div>
             </div>
           )}

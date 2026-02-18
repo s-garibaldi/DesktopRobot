@@ -21,13 +21,10 @@ export async function POST(req: NextRequest) {
 
     const result = await exchangeSpotifyCode(code, codeVerifier, redirectUri);
 
-    if (!result) {
+    if (!result.ok) {
       return NextResponse.json(
-        {
-          success: false,
-          error: 'Spotify token exchange failed. Check SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET.',
-        },
-        { status: 502 }
+        { success: false, error: result.error },
+        { status: result.error.includes('Backend missing') ? 503 : 502 }
       );
     }
 

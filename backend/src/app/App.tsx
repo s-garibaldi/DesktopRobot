@@ -329,10 +329,41 @@ function App() {
     }
   }, [sessionStatus, sendClientEvent, addTranscriptMessage]);
 
-  const fetchEphemeralKey = async (): Promise<string | null> => {
+  const fetchEphemeralKey = async (retry = true): Promise<string | null> => {
     logClientEvent({ url: "/session" }, "fetch_session_token_request");
     const tokenResponse = await fetch("/api/session");
-    const data = await tokenResponse.json();
+    const contentType = tokenResponse.headers.get("Content-Type") ?? "";
+    const text = await tokenResponse.text();
+
+    if (!tokenResponse.ok) {
+      console.warn("Session request failed:", tokenResponse.status, text.slice(0, 200));
+      setSessionStatus("DISCONNECTED");
+      return null;
+    }
+
+    if (!contentType.includes("application/json") && !text.trim().startsWith("{")) {
+      console.warn("Session response was not JSON (got HTML or other format); skipping parse to avoid disconnect.");
+      if (retry) {
+        await new Promise((r) => setTimeout(r, 1500));
+        return fetchEphemeralKey(false);
+      }
+      setSessionStatus("DISCONNECTED");
+      return null;
+    }
+
+    let data: { client_secret?: { value?: string }; error?: string };
+    try {
+      data = text ? JSON.parse(text) : {};
+    } catch (e) {
+      console.warn("Session response was invalid JSON:", (e as Error).message);
+      if (retry) {
+        await new Promise((r) => setTimeout(r, 1500));
+        return fetchEphemeralKey(false);
+      }
+      setSessionStatus("DISCONNECTED");
+      return null;
+    }
+
     logServerEvent(data, "fetch_session_token_response");
 
     if (!data.client_secret?.value) {

@@ -7,12 +7,15 @@ import MicrophonePanel from './MicrophonePanel';
 import BackingTrackPanel, { type BackingTrackHandlers } from './BackingTrackPanel';
 import MetronomePanel from './metronome/MetronomePanel';
 import SpotifyPanel from './SpotifyPanel';
+import type { PlaybackState } from '../spotify';
 import './RealtimeBridge.css';
 
 interface RealtimeBridgeProps {
   onEmotionChange: (emotion: Emotion) => void;
   currentEmotion: Emotion;
   onGuitarTabDisplayCommand?: (action: 'show' | 'close', description?: string) => void;
+  onSpotifyPlaybackStateChange?: (state: PlaybackState | null) => void;
+  onSpotifyStop?: () => void;
 }
 
 export type ActiveMode = 'backing_track' | 'metronome' | 'backend_mic' | null;
@@ -21,6 +24,8 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
   onEmotionChange, 
   currentEmotion,
   onGuitarTabDisplayCommand,
+  onSpotifyPlaybackStateChange,
+  onSpotifyStop,
 }) => {
   const [isConnected, setIsConnected] = useState(false);
   const [isListening, setIsListening] = useState(false);
@@ -118,6 +123,10 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
   const handleEmotionChange = (emotion: Emotion, source: string = 'unknown', force: boolean = false) => {
     // Chord tab stays on until user says "close display"; ignore backend-driven emotion changes while on guitarTabs
     if (currentEmotion === 'guitarTabs') {
+      return;
+    }
+    // Spotify face stays until user switches; ignore backend-driven emotion changes while on spotify
+    if (currentEmotion === 'spotify') {
       return;
     }
     // Metronome stays on until user says "stop" or "pause"; ignore backend-driven emotion changes while on metronome
@@ -248,17 +257,39 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
     }
   })();
 
+  // Treat localhost and 127.0.0.1 with same port as same origin (avoids dropped messages)
+  const isAcceptedOrigin = (origin: string): boolean => {
+    if (origin === backendOrigin) return true;
+    try {
+      const a = new URL(origin);
+      const b = new URL(backendOrigin);
+      if (a.port !== b.port) return false;
+      const hostA = a.hostname.toLowerCase();
+      const hostB = b.hostname.toLowerCase();
+      const localhostLike = (h: string) => h === 'localhost' || h === '127.0.0.1' || h === '[::1]';
+      if (localhostLike(hostA) && localhostLike(hostB)) return true;
+      return hostA === hostB;
+    } catch {
+      return false;
+    }
+  };
+
   // Listen for messages from the iframe
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
-      console.log('Received message:', event.origin, event.data);
-      
-      // Accept messages from our realtime service (use same origin as iframe URL)
-      if (event.origin !== backendOrigin) {
+      const data = event.data;
+      const isClientAction = data?.type === 'play_spotify_track' || data?.type === 'play_backing_track' || data?.type === 'metronome_set_bpm' || data?.type === 'guitar_tab_display';
+      if (isClientAction) {
+        console.log('[RealtimeBridge] Client action received:', data?.type, 'origin=', event.origin, 'expected~', backendOrigin);
+      }
+
+      if (!isAcceptedOrigin(event.origin)) {
+        if (isClientAction) {
+          console.warn('[RealtimeBridge] Message rejected (origin mismatch):', event.origin, 'vs', backendOrigin);
+        }
         return;
       }
       try {
-        const data = event.data;
           console.log('Processing message from realtime service:', data);
 
           // Backend log bridge events (sanitized, high-volume). We only map selected ones to emotions.
@@ -441,6 +472,25 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
               }
               break;
             }
+
+            case 'play_spotify_track': {
+              const uri = data.uri;
+              if (typeof uri === 'string' && uri.startsWith('spotify:track:')) {
+                console.log('[RealtimeBridge] play_spotify_track from backend (postMessage OK)', uri, data.trackName);
+                onEmotionChange('spotify');
+                lastKnownMicEnabledRef.current = false;
+                sendMessageToIframe({ type: 'set_backend_mic_enabled', enabled: false });
+                window.dispatchEvent(new CustomEvent('backend-play-spotify-track', {
+                  detail: {
+                    uri,
+                    trackName: typeof data.trackName === 'string' ? data.trackName : undefined,
+                    artists: typeof data.artists === 'string' ? data.artists : undefined,
+                  },
+                }));
+              }
+              break;
+            }
+
           }
         } catch (error) {
           console.error('Error handling message from realtime service:', error);
@@ -652,16 +702,32 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
     [onGuitarTabDisplayCommand]
   );
 
+  const handleSpotifyCommand = useCallback((action: 'pause' | 'play' | 'stop' | 'restart' | 'rewind' | 'forward', seconds?: number) => {
+    if (action === 'play') {
+      setActiveModeAndRef(null);
+      lastKnownMicEnabledRef.current = false;
+      sendMessageToIframe({ type: 'set_backend_mic_enabled', enabled: false });
+    }
+    if (action === 'stop') {
+      setActiveModeAndRef('backend_mic');
+      lastKnownMicEnabledRef.current = true;
+      sendMessageToIframe({ type: 'set_backend_mic_enabled', enabled: true });
+    }
+    window.dispatchEvent(new CustomEvent('spotify-voice-command', { detail: { action, seconds } }));
+  }, [setActiveModeAndRef]);
+
   useVoiceCommandMicOnOff(
     micStatus === 'granted' && isConnected && iframeLoaded && !isSpeaking,
     handleMicCommand,
     handleMetronomeCommand,
     handleBackingTrackCommand,
     handleGuitarTabDisplayCommand,
+    handleSpotifyCommand,
     {
       lastMetronomeStartTime: lastMetronomeStartTimeRef,
       lastGuitarTabDisplayFromBackendTime: lastGuitarTabDisplayFromBackendTimeRef,
-    }
+    },
+    currentEmotion === 'spotify'
   );
 
   const handleBackingTrackPlayingStart = useCallback(() => {
@@ -697,13 +763,13 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
         // Do not stop metronome or backing track on idle — they run until user says "stop" or "pause"
         if (mode === 'metronome' || mode === 'backing_track') {
           // Only switch to time display if desired; do not exit mode or restore mic
-          if (currentEmotion !== 'time' && currentEmotion !== 'metronome' && currentEmotion !== 'guitarTabs' && !isTransitioning) {
+          if (currentEmotion !== 'time' && currentEmotion !== 'metronome' && currentEmotion !== 'guitarTabs' && currentEmotion !== 'spotify' && !isTransitioning) {
             setLastEmotionChange(now);
             handleEmotionChange('time', 'idle_timeout', true);
           }
           return;
         }
-        if (currentEmotion !== 'time' && currentEmotion !== 'metronome' && currentEmotion !== 'guitarTabs' && !isTransitioning) {
+        if (currentEmotion !== 'time' && currentEmotion !== 'metronome' && currentEmotion !== 'guitarTabs' && currentEmotion !== 'spotify' && !isTransitioning) {
           console.log('Idle timeout reached, switching to time display');
           setLastEmotionChange(now);
           handleEmotionChange('time', 'idle_timeout', true);
@@ -833,7 +899,7 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
         onStopMetronome={handleStopMetronome}
       />
 
-      <SpotifyPanel backendUrl={realtimeUrl} />
+      <SpotifyPanel backendUrl={realtimeUrl} onPlaybackStateChange={onSpotifyPlaybackStateChange} onStop={onSpotifyStop} />
 
       {micStatus === 'granted' && isConnected && (
         <p className="voice-command-hint">
@@ -842,6 +908,7 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
           <strong> &quot;backing track&quot;</strong> (chime), then say description — or &quot;backing track&quot; + description in one phrase;
           <strong> &quot;eggplant&quot;</strong> (chime), then say chord — or &quot;eggplant&quot; + chord; <strong>&quot;close display&quot;</strong> (back to neutral);
           <strong> &quot;pause&quot;</strong> / <strong>&quot;play&quot;</strong> / <strong>&quot;save&quot;</strong> for backing track.
+          When Spotify is showing: <strong>&quot;pause&quot;</strong> / <strong>&quot;play&quot;</strong> / <strong>&quot;stop&quot;</strong> / <strong>&quot;restart&quot;</strong>; <strong>&quot;rewind X seconds&quot;</strong> / <strong>&quot;fast forward X seconds&quot;</strong>. Ask the AI to &quot;play Song A, Song B, and Song C&quot; for a queue.
         </p>
       )}
 

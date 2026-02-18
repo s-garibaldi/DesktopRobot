@@ -25,13 +25,32 @@ export async function GET() {
         }),
       }
     );
-    const data = await response.json();
-    return NextResponse.json(data);
+
+    const raw = await response.text();
+    let data: unknown;
+    try {
+      data = raw ? JSON.parse(raw) : {};
+    } catch {
+      console.error("Error in /session: OpenAI response was not JSON", raw.slice(0, 200));
+      return NextResponse.json(
+        { error: "Realtime session provider returned invalid response." },
+        { status: 502, headers: { "Content-Type": "application/json" } }
+      );
+    }
+
+    if (!response.ok) {
+      return NextResponse.json(
+        { error: (data as { error?: { message?: string } })?.error?.message ?? "Failed to create session" },
+        { status: response.status >= 400 && response.status < 600 ? response.status : 502, headers: { "Content-Type": "application/json" } }
+      );
+    }
+
+    return NextResponse.json(data, { headers: { "Content-Type": "application/json" } });
   } catch (error) {
     console.error("Error in /session:", error);
     return NextResponse.json(
       { error: "Internal Server Error" },
-      { status: 500 }
+      { status: 500, headers: { "Content-Type": "application/json" } }
     );
   }
 }

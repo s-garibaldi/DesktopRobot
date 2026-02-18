@@ -45,6 +45,10 @@ export async function getSpotifyClientToken(): Promise<string | null> {
   return cachedClientToken.token;
 }
 
+export type ExchangeResult =
+  | { ok: true; access_token: string; refresh_token?: string; expires_in: number }
+  | { ok: false; error: string };
+
 /**
  * Exchange authorization code + code_verifier for access/refresh tokens (PKCE).
  * Call this from your backend when the frontend sends code + code_verifier after user login.
@@ -53,10 +57,12 @@ export async function exchangeSpotifyCode(
   code: string,
   codeVerifier: string,
   redirectUri: string
-): Promise<{ access_token: string; refresh_token?: string; expires_in: number } | null> {
+): Promise<ExchangeResult> {
   const clientId = process.env.SPOTIFY_CLIENT_ID;
   const clientSecret = process.env.SPOTIFY_CLIENT_SECRET;
-  if (!clientId || !clientSecret) return null;
+  if (!clientId || !clientSecret) {
+    return { ok: false, error: 'Backend missing SPOTIFY_CLIENT_ID or SPOTIFY_CLIENT_SECRET.' };
+  }
 
   const res = await fetch(`${SPOTIFY_ACCOUNTS}/api/token`, {
     method: 'POST',
@@ -72,18 +78,27 @@ export async function exchangeSpotifyCode(
     }).toString(),
   });
 
+  const body = await res.text();
   if (!res.ok) {
-    const err = await res.text();
-    console.error('[Spotify] Code exchange error:', res.status, err);
-    return null;
+    let message = `Spotify returned ${res.status}.`;
+    try {
+      const j = JSON.parse(body) as { error?: string; error_description?: string };
+      if (j.error_description) message = j.error_description;
+      else if (j.error) message = j.error;
+    } catch {
+      if (body) message = body.slice(0, 200);
+    }
+    console.error('[Spotify] Code exchange error:', res.status, body);
+    return { ok: false, error: message };
   }
 
-  const data = (await res.json()) as {
+  const data = JSON.parse(body) as {
     access_token: string;
     refresh_token?: string;
     expires_in: number;
   };
   return {
+    ok: true,
     access_token: data.access_token,
     refresh_token: data.refresh_token,
     expires_in: data.expires_in,

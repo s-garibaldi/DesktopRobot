@@ -34,6 +34,8 @@ export type BackingTrackVoiceAction = 'describe' | 'pause' | 'play' | 'save' | '
 
 export type GuitarTabDisplayVoiceAction = 'show' | 'close';
 
+export type SpotifyVoiceAction = 'pause' | 'play' | 'stop' | 'restart' | 'rewind' | 'forward';
+
 const COOLDOWN_MS = 2500;
 const BACKING_DESCRIPTION_TIMEOUT_MS = 5000;
 const DISPLAY_DESCRIPTION_TIMEOUT_MS = 5000;
@@ -141,6 +143,41 @@ function isSaveCommand(transcript: string): boolean {
   return t === 'save' || t.startsWith('save ');
 }
 
+function isRestartCommand(transcript: string): boolean {
+  const t = normalize(transcript);
+  return t === 'restart' || t.startsWith('restart ') || t === 'start over' || t.startsWith('start over ');
+}
+
+/** Parse "rewind 30 seconds", "fast forward 1 minute", "go back 15", "skip forward 45". Returns seconds or null. */
+function parseSpotifySeekSeconds(transcript: string): { direction: 'rewind' | 'forward'; seconds: number } | null {
+  const t = normalize(transcript);
+  const rewindMatch = t.match(/(?:rewind|go back|back)\s+(\d+)\s*(?:second|sec|minute|min)s?/i)
+    || t.match(/(?:rewind|go back|back)\s+(\d+)/i);
+  if (rewindMatch) {
+    const n = parseInt(rewindMatch[1], 10);
+    const seconds = /minute|min/i.test(t) ? n * 60 : n;
+    return { direction: 'rewind', seconds: Math.min(seconds, 3600) };
+  }
+  const forwardMatch = t.match(/(?:fast forward|skip forward|forward)\s+(\d+)\s*(?:second|sec|minute|min)s?/i)
+    || t.match(/(?:fast forward|skip forward|forward)\s+(\d+)/i);
+  if (forwardMatch) {
+    const n = parseInt(forwardMatch[1], 10);
+    const seconds = /minute|min/i.test(t) ? n * 60 : n;
+    return { direction: 'forward', seconds: Math.min(seconds, 3600) };
+  }
+  return null;
+}
+
+function isSpotifyRewindPhrase(transcript: string): boolean {
+  const t = normalize(transcript);
+  return /^(rewind|go back|back)(\s|$)/.test(t) || /(rewind|go back|back)\s+\d+/.test(t);
+}
+
+function isSpotifyForwardPhrase(transcript: string): boolean {
+  const t = normalize(transcript);
+  return /^(fast forward|skip forward|forward)(\s|$)/.test(t) || /(fast forward|skip forward|forward)\s+\d+/.test(t);
+}
+
 /** Extract description after "backing track" for ElevenLabs. */
 function extractBackingTrackDescription(transcript: string): string | null {
   const t = transcript.trim();
@@ -174,6 +211,7 @@ function isCloseDisplayCommand(transcript: string): boolean {
  * - "backing track" + description → onBackingTrackCommand('describe', description)
  * - "pause" / "play" / "save" / "stop" → onBackingTrackCommand
  * - "eggplant" (chime), then say chord — or "eggplant" + chord in one phrase; "close display" → back to neutral
+ * - When Spotify is active: "pause", "play", "stop", "restart", "rewind X seconds", "fast forward X seconds"
  */
 export function useVoiceCommandMicOnOff(
   enabled: boolean,
@@ -181,16 +219,22 @@ export function useVoiceCommandMicOnOff(
   onMetronomeCommand?: (action: MetronomeVoiceAction, bpm?: number) => void,
   onBackingTrackCommand?: (action: BackingTrackVoiceAction, description?: string) => void,
   onGuitarTabDisplayCommand?: (action: GuitarTabDisplayVoiceAction, description?: string) => void,
+  onSpotifyCommand?: (action: SpotifyVoiceAction, seconds?: number) => void,
   voiceCooldownRefs?: {
     lastMetronomeStartTime: MutableRefObject<number>;
     lastGuitarTabDisplayFromBackendTime: MutableRefObject<number>;
-  }
+  },
+  isSpotifyActive?: boolean
 ) {
   const onCommandRef = useRef(onCommand);
   const onMetronomeCommandRef = useRef(onMetronomeCommand);
   const onBackingTrackCommandRef = useRef(onBackingTrackCommand);
   const onGuitarTabDisplayCommandRef = useRef(onGuitarTabDisplayCommand);
+  const onSpotifyCommandRef = useRef(onSpotifyCommand);
+  const isSpotifyActiveRef = useRef(isSpotifyActive ?? false);
   const lastCommandTimeRef = useRef(0);
+  onSpotifyCommandRef.current = onSpotifyCommand;
+  isSpotifyActiveRef.current = isSpotifyActive ?? false;
 
   const lastMetronomeStartTimeRef = voiceCooldownRefs?.lastMetronomeStartTime;
   const lastGuitarTabDisplayFromBackendTimeRef = voiceCooldownRefs?.lastGuitarTabDisplayFromBackendTime;
@@ -470,6 +514,61 @@ export function useVoiceCommandMicOnOff(
         }
 
         if (now - lastCommandTimeRef.current < COOLDOWN_MS) return;
+
+        // When Spotify face is active, handle Spotify transport commands first (frontend only)
+        if (isSpotifyActiveRef.current && onSpotifyCommandRef.current) {
+          const spotify = onSpotifyCommandRef.current;
+          if (isRestartCommand(transcript)) {
+            lastCommandTimeRef.current = now;
+            playChime();
+            spotify('restart');
+            console.log('Voice command: Spotify restart');
+            return;
+          }
+          const seek = parseSpotifySeekSeconds(transcript);
+          if (seek !== null) {
+            lastCommandTimeRef.current = now;
+            playChime();
+            spotify(seek.direction === 'rewind' ? 'rewind' : 'forward', seek.seconds);
+            console.log('Voice command: Spotify', seek.direction, seek.seconds, 'seconds');
+            return;
+          }
+          if (isSpotifyRewindPhrase(transcript)) {
+            lastCommandTimeRef.current = now;
+            playChime();
+            spotify('rewind', 15);
+            console.log('Voice command: Spotify rewind (default 15s)');
+            return;
+          }
+          if (isSpotifyForwardPhrase(transcript)) {
+            lastCommandTimeRef.current = now;
+            playChime();
+            spotify('forward', 15);
+            console.log('Voice command: Spotify forward (default 15s)');
+            return;
+          }
+          if (isPauseCommand(transcript)) {
+            lastCommandTimeRef.current = now;
+            playChimeDown();
+            spotify('pause');
+            console.log('Voice command: Spotify pause');
+            return;
+          }
+          if (isPlayCommand(transcript)) {
+            lastCommandTimeRef.current = now;
+            playChime();
+            spotify('play');
+            console.log('Voice command: Spotify play');
+            return;
+          }
+          if (isStopCommand(transcript)) {
+            lastCommandTimeRef.current = now;
+            playChimeDown();
+            spotify('stop');
+            console.log('Voice command: Spotify stop');
+            return;
+          }
+        }
 
         if (isMicOffCommand(transcript)) {
           lastCommandTimeRef.current = now;
