@@ -2,6 +2,17 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 const SDK_URL = 'https://sdk.scdn.co/spotify-player.js';
 
+/** Chrome 74+ fix: SDK iframe uses display:none which blocks audio. Must be visible (can be off-screen). */
+function fixSpotifyIframeAudio(): void {
+  const iframe = document.querySelector<HTMLIFrameElement>('iframe[src*="sdk.scdn.co"]');
+  if (iframe) {
+    iframe.style.setProperty('display', 'block', 'important');
+    iframe.style.setProperty('position', 'absolute', 'important');
+    iframe.style.setProperty('top', '-9999px', 'important');
+    iframe.style.setProperty('left', '-9999px', 'important');
+  }
+}
+
 declare global {
   interface Window {
     onSpotifyWebPlaybackSDKReady?: () => void;
@@ -166,6 +177,12 @@ export function useSpotifyPlayer(
           setReady(true);
           setError(null);
           updateStateFromPlayer();
+          fixSpotifyIframeAudio();
+          player.setVolume(0.5);
+          setTimeout(() => {
+            fixSpotifyIframeAudio();
+            player.setVolume(0.5);
+          }, 500);
         }
       });
 
@@ -327,6 +344,7 @@ export function useSpotifyPlayer(
       }
       await transferPlayback(tokenToUse, true);
       await new Promise((r) => setTimeout(r, 600));
+      fixSpotifyIframeAudio();
       let ok = await doPlay(tokenToUse);
       for (let retry = 0; !ok && retry < 3; retry++) {
         await new Promise((r) => setTimeout(r, 500));

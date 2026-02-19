@@ -75,21 +75,25 @@ describe('MusicController queue operations', () => {
     expect(q.items.length).toBe(0);
   });
 
-  it('next advances currentIndex and plays', async () => {
+  it('next removes first from queue and plays it', async () => {
     musicController.addToQueue({ title: 'A', artist: 'X', uri: 'spotify:track:1' });
     musicController.addToQueue({ title: 'B', artist: 'X', uri: 'spotify:track:2' });
     const ok = await musicController.next();
     expect(ok).toBe(true);
+    const np = musicController.getNowPlaying();
     const q = musicController.getQueue();
-    expect(q.currentIndex).toBe(0);
+    expect(np?.item.title).toBe('A');
+    expect(q.items.length).toBe(1);
+    expect(q.items[0].title).toBe('B');
   });
 
-  it('previous decrements currentIndex', async () => {
+  it('previous restarts current song', async () => {
     musicController.addToQueue({ title: 'A', artist: 'X', uri: 'spotify:track:1' });
     musicController.addToQueue({ title: 'B', artist: 'X', uri: 'spotify:track:2' });
     await musicController.playIndex(1);
-    await musicController.previous();
-    const q = musicController.getQueue();
-    expect(q.currentIndex).toBe(0);
+    const ok = await musicController.previous();
+    expect(ok).toBe(true);
+    const np = musicController.getNowPlaying();
+    expect(np?.item.title).toBe('B');
   });
 });

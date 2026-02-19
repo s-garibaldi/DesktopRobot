@@ -61,7 +61,7 @@ export function QueuePanel({
         {queue.items.map((item, index) => (
           <li
             key={item.id}
-            className={`queue-item ${index === queue.currentIndex ? 'queue-item-active' : ''} ${draggedIndex === index ? 'queue-item-dragging' : ''}`}
+            className={`queue-item ${draggedIndex === index ? 'queue-item-dragging' : ''}`}
             draggable
             onDragStart={() => handleDragStart(index)}
             onDragOver={handleDragOver}
