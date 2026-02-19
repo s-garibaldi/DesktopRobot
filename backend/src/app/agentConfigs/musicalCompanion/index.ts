@@ -731,15 +731,19 @@ const spotifyQueuePlayTool = tool({
     'Start playing the Spotify queue. Use when the user says "play the queue", "start the queue", or "play" and the queue already has songs but nothing is playing.',
   parameters: { type: 'object', properties: {}, required: [], additionalProperties: false },
   execute: async () => {
-    const { queue, status } = getMusicState();
-    if (queue.length === 0) {
-      return { success: false, message: 'Queue is empty. Add songs first (e.g. "play Song A, Song B").' };
+    const { queue, status, nowPlaying } = getMusicState();
+    if (status === 'playing') {
+      return { success: true, message: 'Already playing.' };
     }
-    if (status !== 'playing') {
+    if (queue.length > 0) {
       postClientAction('music_play_index', { index: 0 });
       return { success: true, message: 'Playing from the queue.' };
     }
-    return { success: true, message: 'Already playing.' };
+    if (status === 'paused' && nowPlaying) {
+      postClientAction('music_resume');
+      return { success: true, message: 'Resuming playback.' };
+    }
+    return { success: false, message: 'Queue is empty. Add songs first (e.g. "play Song A, Song B").' };
   },
 });
 

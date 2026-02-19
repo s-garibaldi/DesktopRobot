@@ -175,8 +175,17 @@ class MusicControllerImpl {
   }
 
   async playIndex(index: number): Promise<boolean> {
-    if (index < 0 || index >= this.items.length) return false;
+    if (index < 0) return false;
     if (!this.adapter) return false;
+    if (index >= this.items.length) {
+      if (index === 0 && this.nowPlayingItem && this.playbackStatus === 'paused') {
+        this.playbackStatus = 'playing';
+        this.notifyNowPlaying();
+        await this.adapter.resume();
+        return true;
+      }
+      return false;
+    }
     const item = this.items[index];
     this.items.splice(index, 1);
     this.nowPlayingItem = item;
@@ -185,7 +194,10 @@ class MusicControllerImpl {
     this.notifyNowPlaying();
     const ok = await this.adapter.playUri(item.uri, 0);
     if (!ok) {
+      this.items.splice(index, 0, item);
+      this.nowPlayingItem = null;
       this.playbackStatus = 'stopped';
+      this.notifyQueue();
       this.notifyNowPlaying();
       return false;
     }

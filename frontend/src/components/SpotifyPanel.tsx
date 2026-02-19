@@ -134,11 +134,13 @@ export default function SpotifyPanel({ backendUrl, onPlaybackStateChange, onStop
   // MusicController + Spotify adapter
   const playWithRetry = useCallback(
     async (uri: string) => {
-      const delayMs = 800;
-      await new Promise((r) => setTimeout(r, delayMs));
       let ok = await play(uri);
       if (!ok) {
-        await new Promise((r) => setTimeout(r, 2000));
+        await new Promise((r) => setTimeout(r, 600));
+        ok = await play(uri);
+      }
+      if (!ok) {
+        await new Promise((r) => setTimeout(r, 1500));
         ok = await play(uri);
       }
       return ok;

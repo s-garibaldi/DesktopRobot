@@ -544,7 +544,11 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
             case 'music_play_index': {
               const idx = data.index;
               if (typeof idx === 'number' && idx >= 0) {
-                musicController.playIndex(idx);
+                musicController.playIndex(idx).then((ok) => {
+                  if (!ok && idx === 0) {
+                    musicController.resume();
+                  }
+                });
               }
               break;
             }
@@ -595,23 +599,27 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
     } catch {
       // ignore
     }
+    const sendState = () => {
+      const q = musicController.getQueue();
+      const np = musicController.getNowPlaying();
+      const status = musicController.getPlaybackStatus();
+      if (iframeRef.current?.contentWindow) {
+        iframeRef.current.contentWindow.postMessage(
+          {
+            type: 'music_state_update',
+            queue: q.items,
+            currentIndex: q.currentIndex,
+            nowPlaying: np ? { title: np.item.title, artist: np.item.artist } : null,
+            status,
+          },
+          origin
+        );
+      }
+    };
+    sendState();
     const unsub = musicController.subscribe((event) => {
       if (event.type === 'QUEUE_UPDATED' || event.type === 'NOW_PLAYING') {
-        const q = musicController.getQueue();
-        const np = musicController.getNowPlaying();
-        const status = musicController.getPlaybackStatus();
-        if (iframeRef.current?.contentWindow) {
-          iframeRef.current.contentWindow.postMessage(
-            {
-              type: 'music_state_update',
-              queue: q.items,
-              currentIndex: q.currentIndex,
-              nowPlaying: np ? { title: np.item.title, artist: np.item.artist } : null,
-              status,
-            },
-            origin
-          );
-        }
+        sendState();
       }
     });
     return unsub;
