@@ -159,8 +159,9 @@ export function useSpotifyPlayer(
         volume: 0.5,
       });
 
-      player.addListener('ready', ({ device_id }: { device_id: string }) => {
-        if (!cancelled) {
+      player.addListener('ready', (state?: unknown) => {
+        const { device_id } = (state ?? {}) as { device_id?: string };
+        if (!cancelled && device_id) {
           setDeviceId(device_id);
           setReady(true);
           setError(null);
@@ -176,19 +177,20 @@ export function useSpotifyPlayer(
         if (!cancelled) updateStateFromPlayer();
       });
 
-      player.addListener('initialization_error', ({ message }: { message: string }) => {
-        if (!cancelled) setError(message);
+      player.addListener('initialization_error', (state?: unknown) => {
+        if (!cancelled) setError((state as { message?: string })?.message ?? 'Unknown error');
       });
 
-      player.addListener('authentication_error', ({ message }: { message: string }) => {
+      player.addListener('authentication_error', (state?: unknown) => {
         if (!cancelled) {
-          setError(message);
+          const msg = (state as { message?: string })?.message ?? 'Auth error';
+          setError(msg);
           onAuthErrorRef.current?.();
         }
       });
 
-      player.addListener('playback_error', ({ message }: { message: string }) => {
-        if (!cancelled) setError(message);
+      player.addListener('playback_error', (state?: unknown) => {
+        if (!cancelled) setError((state as { message?: string })?.message ?? 'Playback error');
       });
 
       player.connect();

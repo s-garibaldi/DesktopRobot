@@ -10,18 +10,8 @@ import {
   CHORD_FORMULAS,
 } from '../../lib/musicKnowledge';
 import { postClientAction } from '../../lib/bridge';
-import {
-  addToQueue,
-  removeFromQueue,
-  reorderQueue,
-  clearQueue,
-  playNextFromQueue,
-  getIsSpotifyPlaying,
-  getQueue,
-  searchSpotifyTrack,
-  setIsSpotifyPlaying,
-  type QueueItem,
-} from '../../lib/spotifyQueue';
+import { searchSpotifyTrack } from '../../lib/spotifySearch';
+import { getMusicState } from '../../lib/musicState';
 import { webSearchTool } from '../../lib/webSearchTool';
 
 // Common open-position fingerings (optional; theory works for any chord)
@@ -494,33 +484,26 @@ const playSpotifyTrackTool = tool({
       return { success: false, message: 'Please specify a song or artist to play (e.g. "Bohemian Rhapsody" or "Blinding Lights The Weeknd").' };
     }
     try {
-      const base = typeof window !== 'undefined' ? window.location.origin : '';
-      const res = await fetch(
-        `${base}/api/spotify/search?q=${encodeURIComponent(q)}&type=track&limit=5`,
-        { mode: 'cors' }
-      );
-      const data = await res.json();
-      if (!data?.success || !data?.tracks?.items?.length) {
+      const result = await searchSpotifyTrack(q);
+      if (!result) {
         return {
           success: false,
-          message: data?.error ?? 'No tracks found. Try a different search or check that Spotify is configured on the server.',
+          message: 'No tracks found. Try a different search or check that Spotify is configured.',
           query: q,
         };
       }
-      const track = data.tracks.items[0];
-      const uri = `spotify:track:${track.id}`;
-      const trackName = track.name ?? '';
-      const artists = Array.isArray(track.artists) ? track.artists.map((a: { name?: string }) => a.name).filter(Boolean).join(', ') : '';
-      clearQueue();
-      addToQueue([{ name: trackName, artist: artists }]);
-      setIsSpotifyPlaying(true);
-      postClientAction('play_spotify_track', { uri, trackName, artists });
+      postClientAction('music_play_track', {
+        uri: result.uri,
+        trackName: result.trackName,
+        artists: result.artists,
+        albumArtUrl: result.albumArtUrl,
+      });
       return {
         success: true,
-        uri,
-        trackName,
-        artists,
-        message: artists ? `Playing "${trackName}" by ${artists}.` : `Playing "${trackName}".`,
+        uri: result.uri,
+        trackName: result.trackName,
+        artists: result.artists,
+        message: result.artists ? `Playing "${result.trackName}" by ${result.artists}.` : `Playing "${result.trackName}".`,
       };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -543,18 +526,19 @@ function parseQueueQueries(input: string): string[] {
     .filter(Boolean);
 }
 
-/** Search and get track with URI for queue add (store URI so playback doesn't need to re-search). */
-async function searchAndGetQueueItem(query: string): Promise<QueueItem | null> {
+/** Search and get track with URI for queue add. */
+async function searchAndGetQueueItem(query: string): Promise<{ uri: string; title: string; artist: string; albumArtUrl?: string } | null> {
   const result = await searchSpotifyTrack(query);
   if (!result?.trackName) return null;
   return {
-    name: result.trackName,
-    artist: result.artists,
     uri: result.uri,
+    title: result.trackName,
+    artist: result.artists,
+    albumArtUrl: result.albumArtUrl,
   };
 }
 
-// Add one or more songs to the queue; starts playback if nothing is playing.
+// Add one or more songs to the queue; frontend MusicController starts playback if nothing is playing.
 const spotifyQueueAddTool = tool({
   name: 'spotify_queue_add',
   description:
@@ -577,7 +561,7 @@ const spotifyQueueAddTool = tool({
     if (list.length === 0) {
       return { success: false, message: 'Specify at least one song to add (e.g. "Blinding Lights" or "Song A, Song B").' };
     }
-    const items: QueueItem[] = [];
+    const items: { uri: string; title: string; artist: string; albumArtUrl?: string }[] = [];
     for (const q of list) {
       const item = await searchAndGetQueueItem(q);
       if (item) items.push(item);
@@ -585,55 +569,50 @@ const spotifyQueueAddTool = tool({
     if (items.length === 0) {
       return { success: false, message: 'No tracks found. Try different song names.' };
     }
-    addToQueue(items);
-    const wasIdle = !getIsSpotifyPlaying();
-    let started = wasIdle ? await playNextFromQueue() : false;
-    // Safety net: if we didn't start (something was playing) but the track ends right as we add,
-    // onTrackEnded may run before our add completes. Schedule a delayed check to start playback
-    // if we have items but nothing is playing (catches the race).
-    if (!started && typeof window !== 'undefined') {
-      setTimeout(() => {
-        if (getQueue().length > 0 && !getIsSpotifyPlaying()) {
-          void playNextFromQueue();
-        }
-      }, 1500);
-    }
+    postClientAction('music_add_to_queue', {
+      items: items.map((it) => ({
+        uri: it.uri,
+        title: it.title,
+        artist: it.artist,
+        albumArtUrl: it.albumArtUrl,
+      })),
+    });
     return {
       success: true,
       added: items.length,
-      message: started
-        ? `Added ${items.length} song(s) and started playing.`
-        : `Added ${items.length} song(s) to the queue.`,
+      message: `Added ${items.length} song(s) to the queue.`,
     };
   },
 });
 
-// Get the current queue (read-only) for questions like "what's in the queue?" or "what's next?"
+// Get the current queue (read-only, from frontend MusicController shadow state).
 const spotifyQueueGetTool = tool({
   name: 'spotify_queue_get',
   description:
     'Get the current Spotify queue. Use when the user asks what is in the queue, what song is next, what is coming up, list the queue, show me the queue, or similar questions about what songs are queued.',
   parameters: { type: 'object', properties: {}, required: [], additionalProperties: false },
   execute: async () => {
-    const items = getQueue();
-    const isPlaying = getIsSpotifyPlaying();
-    const queue = items.map((item, i) => ({
+    const { queue, currentIndex, nowPlaying, status } = getMusicState();
+    const isPlaying = status === 'playing';
+    const list = queue.map((item, i) => ({
       position: i + 1,
-      name: item.name,
+      name: item.title,
       artist: item.artist || undefined,
     }));
+    const nextUp = list.length > 0 ? { name: list[0].name, artist: list[0].artist } : null;
     return {
       success: true,
       isPlaying,
-      count: queue.length,
-      queue,
-      nextUp: queue.length > 0 ? { name: queue[0].name, artist: queue[0].artist } : null,
+      count: list.length,
+      queue: list,
+      nextUp,
+      nowPlaying: nowPlaying ? `${nowPlaying.title}${nowPlaying.artist ? ` by ${nowPlaying.artist}` : ''}` : null,
       message:
-        queue.length === 0
+        list.length === 0
           ? 'The queue is empty.'
           : isPlaying
-            ? `Playing. ${queue.length} song(s) queued. Next up: "${queue[0].name}"${queue[0].artist ? ` by ${queue[0].artist}` : ''}.`
-            : `${queue.length} song(s) in queue. Next up: "${queue[0].name}"${queue[0].artist ? ` by ${queue[0].artist}` : ''}.`,
+            ? `Playing. ${list.length} song(s) queued. Next up: "${list[0].name}"${list[0].artist ? ` by ${list[0].artist}` : ''}.`
+            : `${list.length} song(s) in queue. Next up: "${list[0].name}"${list[0].artist ? ` by ${list[0].artist}` : ''}.`,
     };
   },
 });
@@ -653,13 +632,27 @@ const spotifyQueueRemoveTool = tool({
   },
   execute: async (input: any) => {
     const { position, track_name } = input as { position?: number; track_name?: string };
+    const { queue } = getMusicState();
     if (position != null && position >= 1) {
-      const ok = removeFromQueue(position);
-      return { success: ok, message: ok ? `Removed song at position ${position}.` : 'Position out of range.' };
+      const index = position - 1;
+      if (index >= 0 && index < queue.length) {
+        postClientAction('music_remove_at', { index });
+        return { success: true, message: `Removed song at position ${position}.` };
+      }
+      return { success: false, message: 'Position out of range.' };
     }
     if (track_name && String(track_name).trim()) {
-      const ok = removeFromQueue(String(track_name).trim());
-      return { success: ok, message: ok ? `Removed "${track_name}" from the queue.` : `"${track_name}" not found in queue.` };
+      const q = (track_name as string).trim().toLowerCase();
+      const idx = queue.findIndex(
+        (item) =>
+          item.title.toLowerCase().includes(q) ||
+          item.artist.toLowerCase().includes(q)
+      );
+      if (idx >= 0) {
+        postClientAction('music_remove_at', { index: idx });
+        return { success: true, message: `Removed "${track_name}" from the queue.` };
+      }
+      return { success: false, message: `"${track_name}" not found in queue.` };
     }
     return { success: false, message: 'Specify position or track name to remove.' };
   },
@@ -696,17 +689,25 @@ const spotifyQueueReorderTool = tool({
       swap?: [number, number];
       new_order?: number[];
     };
-    if (move_to_front != null) {
-      const ok = reorderQueue('move_to_front', move_to_front);
-      return { success: ok, message: ok ? `Moved position ${move_to_front} to front.` : 'Invalid position.' };
+    const { queue } = getMusicState();
+    if (move_to_front != null && move_to_front >= 1 && move_to_front <= queue.length) {
+      const fromIdx = move_to_front - 1;
+      postClientAction('music_move', { from: fromIdx, to: 0 });
+      return { success: true, message: `Moved position ${move_to_front} to front.` };
     }
-    if (Array.isArray(swap) && swap.length === 2) {
-      const ok = reorderQueue('swap', swap[0], swap[1]);
-      return { success: ok, message: ok ? `Swapped positions ${swap[0]} and ${swap[1]}.` : 'Invalid positions.' };
+    if (Array.isArray(swap) && swap.length === 2 && swap[0] >= 1 && swap[1] >= 1 && swap[0] <= queue.length && swap[1] <= queue.length) {
+      postClientAction('music_move', { from: swap[0] - 1, to: swap[1] - 1 });
+      return { success: true, message: `Swapped positions ${swap[0]} and ${swap[1]}.` };
     }
-    if (Array.isArray(new_order) && new_order.length > 0) {
-      const ok = reorderQueue('new_order', 0, 0, new_order);
-      return { success: ok, message: ok ? 'Queue reordered.' : 'Invalid order.' };
+    if (Array.isArray(new_order) && new_order.length === queue.length) {
+      for (let i = 0; i < new_order.length; i++) {
+        const to = new_order[i] - 1;
+        if (to !== i) {
+          postClientAction('music_move', { from: i, to });
+          break;
+        }
+      }
+      return { success: true, message: 'Queue reordered.' };
     }
     return { success: false, message: 'Specify move_to_front, swap, or new_order.' };
   },
@@ -718,7 +719,7 @@ const spotifyQueueClearTool = tool({
   description: 'Clear the Spotify queue. Current song keeps playing; when it ends, Spotify stops.',
   parameters: { type: 'object', properties: {}, required: [], additionalProperties: false },
   execute: async () => {
-    clearQueue();
+    postClientAction('music_clear');
     return { success: true, message: 'Queue cleared.' };
   },
 });
@@ -730,11 +731,15 @@ const spotifyQueuePlayTool = tool({
     'Start playing the Spotify queue. Use when the user says "play the queue", "start the queue", or "play" and the queue already has songs but nothing is playing.',
   parameters: { type: 'object', properties: {}, required: [], additionalProperties: false },
   execute: async () => {
-    const started = await playNextFromQueue();
-    return {
-      success: started,
-      message: started ? 'Playing from the queue.' : 'Queue is empty. Add songs first (e.g. "play Song A, Song B").',
-    };
+    const { queue, status } = getMusicState();
+    if (queue.length === 0) {
+      return { success: false, message: 'Queue is empty. Add songs first (e.g. "play Song A, Song B").' };
+    }
+    if (status !== 'playing') {
+      postClientAction('music_play_index', { index: 0 });
+      return { success: true, message: 'Playing from the queue.' };
+    }
+    return { success: true, message: 'Already playing.' };
   },
 });
 

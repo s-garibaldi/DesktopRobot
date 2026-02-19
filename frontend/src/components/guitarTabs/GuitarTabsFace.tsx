@@ -3,7 +3,6 @@ import {
   getChordOrScale,
   getChordVoicings,
   getScaleVoicings,
-  STRING_NAMES,
   ChordShape,
   ScaleShape,
 } from './chordData';

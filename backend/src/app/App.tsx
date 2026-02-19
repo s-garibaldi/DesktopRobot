@@ -34,7 +34,7 @@ import { useHandleSessionHistory } from "./hooks/useHandleSessionHistory";
 import { useVoiceCommandDetection } from "./hooks/useVoiceCommandDetection";
 import { useMemoryExtraction } from "./hooks/useMemoryExtraction";
 import { getMemoriesForAgent, formatMemoriesAsContext } from "./lib/memoryStorage";
-import { onTrackStarted, onTrackEnded } from "./lib/spotifyQueue";
+import { setMusicState } from "./lib/musicState";
 
 function App() {
   const searchParams = useSearchParams()!;
@@ -259,12 +259,13 @@ function App() {
         setBackendMicEnabledByVoice(data.enabled);
         return;
       }
-      if (data?.type === 'spotify_track_started' && (data.trackName != null || data.artists != null)) {
-        onTrackStarted(data.trackName ?? '', data.artists ?? '');
-        return;
-      }
-      if (data?.type === 'spotify_track_ended') {
-        await onTrackEnded();
+      if (data?.type === 'music_state_update') {
+        setMusicState({
+          queue: data.queue ?? [],
+          currentIndex: data.currentIndex ?? -1,
+          nowPlaying: data.nowPlaying ?? null,
+          status: data.status ?? 'stopped',
+        });
         return;
       }
     };

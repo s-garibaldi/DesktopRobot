@@ -7,6 +7,7 @@ import MicrophonePanel from './MicrophonePanel';
 import BackingTrackPanel, { type BackingTrackHandlers } from './BackingTrackPanel';
 import MetronomePanel from './metronome/MetronomePanel';
 import SpotifyPanel from './SpotifyPanel';
+import { musicController } from '../music';
 import type { PlaybackState } from '../spotify';
 import './RealtimeBridge.css';
 
@@ -278,7 +279,7 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
       const data = event.data;
-      const isClientAction = data?.type === 'play_spotify_track' || data?.type === 'spotify_stop' || data?.type === 'play_backing_track' || data?.type === 'metronome_set_bpm' || data?.type === 'guitar_tab_display';
+      const isClientAction = data?.type === 'play_spotify_track' || data?.type === 'spotify_stop' || data?.type === 'music_play_track' || data?.type === 'music_add_to_queue' || data?.type === 'music_next' || data?.type === 'music_previous' || data?.type === 'music_pause' || data?.type === 'music_resume' || data?.type === 'music_clear' || data?.type === 'music_play_index' || data?.type === 'music_remove_at' || data?.type === 'music_move' || data?.type === 'play_backing_track' || data?.type === 'metronome_set_bpm' || data?.type === 'guitar_tab_display';
       if (isClientAction) {
         console.log('[RealtimeBridge] Client action received:', data?.type, 'origin=', event.origin, 'expected~', backendOrigin);
       }
@@ -475,20 +476,92 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
               break;
             }
 
-            case 'play_spotify_track': {
+            case 'play_spotify_track':
+            case 'music_play_track': {
               const uri = data.uri;
               if (typeof uri === 'string' && uri.startsWith('spotify:track:')) {
-                console.log('[RealtimeBridge] play_spotify_track from backend (postMessage OK)', uri, data.trackName);
+                console.log('[RealtimeBridge] music_play_track from backend', uri, data.trackName);
                 onEmotionChange('spotify');
                 lastKnownMicEnabledRef.current = false;
                 sendMessageToIframe({ type: 'set_backend_mic_enabled', enabled: false });
-                window.dispatchEvent(new CustomEvent('backend-play-spotify-track', {
-                  detail: {
-                    uri,
-                    trackName: typeof data.trackName === 'string' ? data.trackName : undefined,
-                    artists: typeof data.artists === 'string' ? data.artists : undefined,
-                  },
-                }));
+                musicController.playUri(uri, {
+                  title: typeof data.trackName === 'string' ? data.trackName : 'Unknown',
+                  artist: typeof data.artists === 'string' ? data.artists : '',
+                  albumArtUrl: typeof data.albumArtUrl === 'string' ? data.albumArtUrl : undefined,
+                });
+              }
+              break;
+            }
+
+            case 'music_add_to_queue': {
+              const items = data.items;
+              if (Array.isArray(items) && items.length > 0) {
+                const valid = items.filter(
+                  (it: unknown) =>
+                    it &&
+                    typeof it === 'object' &&
+                    typeof (it as { uri?: unknown }).uri === 'string' &&
+                    (it as { uri: string }).uri.startsWith('spotify:track:')
+                );
+                if (valid.length > 0) {
+                  onEmotionChange('spotify');
+                  lastKnownMicEnabledRef.current = false;
+                  sendMessageToIframe({ type: 'set_backend_mic_enabled', enabled: false });
+                  musicController.addToQueueAndStartIfIdle(
+                    valid.map((it: { uri: string; title?: string; artist?: string; albumArtUrl?: string }) => ({
+                      id: `q-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+                      uri: it.uri,
+                      title: it.title ?? 'Unknown',
+                      artist: it.artist ?? '',
+                      albumArtUrl: it.albumArtUrl,
+                    }))
+                  );
+                }
+              }
+              break;
+            }
+
+            case 'music_next':
+              musicController.next();
+              break;
+
+            case 'music_previous':
+              musicController.previous();
+              break;
+
+            case 'music_pause':
+              musicController.pause();
+              break;
+
+            case 'music_resume':
+              musicController.resume();
+              break;
+
+            case 'music_clear':
+              musicController.clear();
+              break;
+
+            case 'music_play_index': {
+              const idx = data.index;
+              if (typeof idx === 'number' && idx >= 0) {
+                musicController.playIndex(idx);
+              }
+              break;
+            }
+
+            case 'music_remove_at': {
+              const idx = data.index;
+              if (typeof idx === 'number' && idx >= 0) {
+                musicController.removeAt(idx);
+              }
+              break;
+            }
+
+            case 'music_move': {
+              const from = data.from;
+              const to = data.to;
+              if (typeof from === 'number' && typeof to === 'number' && from >= 0 && to >= 0) {
+                musicController.move(from, to);
               }
               break;
             }
@@ -513,6 +586,47 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
   }, [backendOrigin, onEmotionChange, currentEmotion, lastEmotionChange, onSpotifyStop]);
   // Note: We use refs (isListeningRef, isSpeakingRef, isCallingToolRef) instead of state
   // variables in the dependency array to avoid infinite re-render loops
+
+  // Forward MusicController state to backend so spotify_queue_get can answer "what's in the queue"
+  useEffect(() => {
+    let origin = '*';
+    try {
+      origin = new URL(realtimeUrl).origin;
+    } catch {
+      // ignore
+    }
+    const unsub = musicController.subscribe((event) => {
+      if (event.type === 'QUEUE_UPDATED' || event.type === 'NOW_PLAYING') {
+        const q = musicController.getQueue();
+        const np = musicController.getNowPlaying();
+        const status = musicController.getPlaybackStatus();
+        if (iframeRef.current?.contentWindow) {
+          iframeRef.current.contentWindow.postMessage(
+            {
+              type: 'music_state_update',
+              queue: q.items,
+              currentIndex: q.currentIndex,
+              nowPlaying: np ? { title: np.item.title, artist: np.item.artist } : null,
+              status,
+            },
+            origin
+          );
+        }
+      }
+    });
+    return unsub;
+  }, [realtimeUrl]);
+
+  // FACE_EVENT from MusicController - stable events for face state (GROOVING when playing, NEUTRAL when stopped)
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const state = (e as CustomEvent<{ state: 'GROOVING' | 'NEUTRAL' }>).detail?.state;
+      if (state === 'GROOVING') onEmotionChange('spotify');
+      if (state === 'NEUTRAL' && currentEmotion === 'spotify') onEmotionChange('neutral');
+    };
+    window.addEventListener('FACE_EVENT', handler);
+    return () => window.removeEventListener('FACE_EVENT', handler);
+  }, [onEmotionChange, currentEmotion]);
 
   // Check service availability on mount and periodically
   useEffect(() => {

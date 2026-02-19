@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   useSpotifyMetadata,
   useSpotifyPlayer,
@@ -7,6 +7,8 @@ import {
   SPOTIFY_PLAYBACK_SCOPES,
 } from '../spotify';
 import type { PlaybackState, SpotifyTrack } from '../spotify';
+import { useMusicController, NowPlayingPanel, QueuePanel } from '../music';
+import '../music/music.css';
 
 const SPOTIFY_TOKEN_KEY = 'spotify_access_token';
 const SPOTIFY_REFRESH_KEY = 'spotify_refresh_token';
@@ -125,21 +127,39 @@ export default function SpotifyPanel({ backendUrl, onPlaybackStateChange, onStop
     play,
     pause,
     resume,
-    togglePlay,
     setVolume,
     seek,
-    skipNext,
-    skipPrevious,
   } = useSpotifyPlayer(token, { getValidToken, onAuthenticationError });
 
-  /** When backend sends play_spotify_track before the SDK device is listed, queue and play once ready. */
-  const pendingBackendPlayRef = useRef<{ uri: string } | null>(null);
-  const pendingBackendPlayTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const lastTrackStartedUriRef = useRef<string | null>(null);
-  const trackEndedScheduledRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const isBackendQueueModeRef = useRef(false);
-  const playerReadyRef = useRef(playerReady);
-  playerReadyRef.current = playerReady;
+  // MusicController + Spotify adapter
+  const playWithRetry = useCallback(
+    async (uri: string) => {
+      const delayMs = 800;
+      await new Promise((r) => setTimeout(r, delayMs));
+      let ok = await play(uri);
+      if (!ok) {
+        await new Promise((r) => setTimeout(r, 2000));
+        ok = await play(uri);
+      }
+      return ok;
+    },
+    [play]
+  );
+
+  const music = useMusicController({
+    play: playWithRetry,
+    pause,
+    resume,
+    seek,
+    playbackState: playbackState
+      ? {
+          trackUri: playbackState.trackUri,
+          position: playbackState.position,
+          duration: playbackState.duration,
+          paused: playbackState.paused,
+        }
+      : null,
+  });
 
   // Handle redirect from Spotify (callback with ?code=...)
   useEffect(() => {
@@ -244,136 +264,6 @@ export default function SpotifyPanel({ backendUrl, onPlaybackStateChange, onStop
     onPlaybackStateChange?.(token ? playbackState : null);
   }, [token, playbackState, onPlaybackStateChange]);
 
-  // Play a backend-requested URI: delay first so Spotify's device list has time to include our device,
-  // then retry once if play() returns false (device not ready).
-  const playBackendUriWithRetry = useCallback(
-    async (uri: string) => {
-      const delayMs = 2000;
-      console.log('[SpotifyPanel] Backend play: waiting', delayMs / 1000, 's then playing', uri);
-      await new Promise((r) => setTimeout(r, delayMs));
-      let ok = await play(uri);
-      if (!ok) {
-        console.log('[SpotifyPanel] Backend play: first attempt failed, retrying in 4s');
-        await new Promise((r) => setTimeout(r, 4000));
-        ok = await play(uri);
-      }
-      if (ok) {
-        console.log('[SpotifyPanel] Backend play: started', uri);
-      } else {
-        console.warn('[SpotifyPanel] Backend play: failed after retry');
-      }
-    },
-    [play]
-  );
-
-  // Backend AI can send play_spotify_track → RealtimeBridge dispatches this event. If the SDK device
-  // isn't ready yet, queue the URI and play when ready (with delay + retry).
-  useEffect(() => {
-    const handleBackendPlay = (e: Event) => {
-      const detail = (e as CustomEvent<{ uri: string; trackName?: string; artists?: string }>).detail;
-      if (!detail?.uri || typeof detail.uri !== 'string' || !detail.uri.startsWith('spotify:track:')) return;
-      isBackendQueueModeRef.current = true;
-      const ready = playerReadyRef.current;
-      console.log('[SpotifyPanel] Backend play event received', detail.uri, 'playerReady=', ready);
-      if (pendingBackendPlayTimeoutRef.current) {
-        clearTimeout(pendingBackendPlayTimeoutRef.current);
-        pendingBackendPlayTimeoutRef.current = null;
-      }
-      if (ready) {
-        playBackendUriWithRetry(detail.uri);
-      } else {
-        pendingBackendPlayRef.current = { uri: detail.uri };
-        pendingBackendPlayTimeoutRef.current = setTimeout(() => {
-          pendingBackendPlayTimeoutRef.current = null;
-          pendingBackendPlayRef.current = null;
-        }, 25000);
-      }
-    };
-    window.addEventListener('backend-play-spotify-track', handleBackendPlay);
-    return () => {
-      window.removeEventListener('backend-play-spotify-track', handleBackendPlay);
-      if (pendingBackendPlayTimeoutRef.current) {
-        clearTimeout(pendingBackendPlayTimeoutRef.current);
-        pendingBackendPlayTimeoutRef.current = null;
-      }
-    };
-  }, [playBackendUriWithRetry]);
-
-  // When the player becomes ready, play any queued backend track (with delay + retry).
-  useEffect(() => {
-    if (!playerReady) return;
-    if (pendingBackendPlayRef.current) {
-      const { uri } = pendingBackendPlayRef.current;
-      pendingBackendPlayRef.current = null;
-      if (pendingBackendPlayTimeoutRef.current) {
-        clearTimeout(pendingBackendPlayTimeoutRef.current);
-        pendingBackendPlayTimeoutRef.current = null;
-      }
-      console.log('[SpotifyPanel] Player ready, playing queued backend URI', uri);
-      playBackendUriWithRetry(uri);
-    }
-  }, [playerReady, playBackendUriWithRetry]);
-
-  useEffect(() => {
-    const handleQueueStopped = () => {
-      isBackendQueueModeRef.current = false;
-    };
-    window.addEventListener('spotify-queue-stopped', handleQueueStopped);
-    return () => window.removeEventListener('spotify-queue-stopped', handleQueueStopped);
-  }, []);
-
-  // Notify backend queue controller when a track starts or ends (for automatic queue advancement).
-  const prevUriRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (!isBackendQueueModeRef.current) return;
-    const uri = playbackState?.trackUri ?? null;
-    const name = playbackState?.trackName ?? '';
-    const artists = playbackState?.artistNames ?? '';
-    const position = playbackState?.position ?? 0;
-    const duration = playbackState?.duration ?? 0;
-
-    if (uri && uri !== lastTrackStartedUriRef.current) {
-      lastTrackStartedUriRef.current = uri;
-      if (name) {
-        window.dispatchEvent(new CustomEvent('spotify-track-started', { detail: { trackName: name, artists } }));
-      }
-    }
-
-    // Detect track end: uri went from non-null to null (SDK reports no playback when track finishes).
-    if (prevUriRef.current && !uri) {
-      if (trackEndedScheduledRef.current) {
-        clearTimeout(trackEndedScheduledRef.current);
-        trackEndedScheduledRef.current = null;
-      }
-      lastTrackStartedUriRef.current = null;
-      prevUriRef.current = null;
-      window.dispatchEvent(new CustomEvent('spotify-track-ended'));
-    } else {
-      prevUriRef.current = uri;
-    }
-
-    // Fallback: near end of track (in case SDK doesn't clear uri immediately).
-    if (uri && duration > 0 && position >= duration - 1500) {
-      if (trackEndedScheduledRef.current) return;
-      const timeoutMs = Math.max(500, duration - position + 500);
-      trackEndedScheduledRef.current = setTimeout(() => {
-        trackEndedScheduledRef.current = null;
-        if (isBackendQueueModeRef.current) {
-          lastTrackStartedUriRef.current = null;
-          prevUriRef.current = null;
-          window.dispatchEvent(new CustomEvent('spotify-track-ended'));
-        }
-      }, timeoutMs);
-    }
-
-    return () => {
-      if (trackEndedScheduledRef.current) {
-        clearTimeout(trackEndedScheduledRef.current);
-        trackEndedScheduledRef.current = null;
-      }
-    };
-  }, [playbackState?.trackUri, playbackState?.trackName, playbackState?.artistNames, playbackState?.position, playbackState?.duration]);
-
   // When we're connected (have token) and not handling a callback, clear any stale token-exchange error so it doesn't keep showing.
   useEffect(() => {
     if (token && !new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '').get('code')) {
@@ -447,11 +337,18 @@ export default function SpotifyPanel({ backendUrl, onPlaybackStateChange, onStop
   }, [searchQuery, searchTracks]);
 
   const playTrack = useCallback(
-    async (track: SpotifyTrack) => {
+    (track: SpotifyTrack) => {
       const uri = `spotify:track:${track.id}`;
-      await play(uri);
+      const item = {
+        id: `q-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+        title: track.name,
+        artist: track.artists?.join(', ') ?? '',
+        uri,
+        albumArtUrl: track.album?.images?.[0]?.url,
+      };
+      music.addAndPlay([item]);
     },
-    [play]
+    [music]
   );
 
   const formatDuration = (ms: number) => {
@@ -473,13 +370,14 @@ export default function SpotifyPanel({ backendUrl, onPlaybackStateChange, onStop
 
   const handleStop = useCallback(async () => {
     onStop?.();
+    music.clear();
     try {
       await pause();
       await seek(0);
     } catch {
       // Face already switched to neutral; ignore playback errors
     }
-  }, [pause, seek, onStop]);
+  }, [pause, seek, onStop, music]);
 
   const handleRestart = useCallback(async () => {
     await seek(0);
@@ -495,10 +393,10 @@ export default function SpotifyPanel({ backendUrl, onPlaybackStateChange, onStop
       const dur = playbackState?.duration ?? 0;
       switch (action) {
         case 'pause':
-          void pause();
+          void music.togglePause();
           break;
         case 'play':
-          void resume();
+          void music.resume();
           break;
         case 'stop':
           void handleStop();
@@ -507,10 +405,10 @@ export default function SpotifyPanel({ backendUrl, onPlaybackStateChange, onStop
           void handleRestart();
           break;
         case 'rewind':
-          void seek(Math.max(0, pos - (seconds ?? 15) * 1000));
+          music.seekTo(Math.max(0, pos - (seconds ?? 15) * 1000));
           break;
         case 'forward':
-          void seek(Math.min(dur || 999999, pos + (seconds ?? 15) * 1000));
+          music.seekTo(Math.min(dur || 999999, pos + (seconds ?? 15) * 1000));
           break;
         default:
           break;
@@ -518,7 +416,7 @@ export default function SpotifyPanel({ backendUrl, onPlaybackStateChange, onStop
     };
     window.addEventListener('spotify-voice-command', handler);
     return () => window.removeEventListener('spotify-voice-command', handler);
-  }, [pause, resume, seek, playbackState?.position, playbackState?.duration, handleStop, handleRestart]);
+  }, [music, playbackState?.position, playbackState?.duration, handleStop, handleRestart]);
 
   const handleForward = useCallback(() => {
     if (!playbackState || playbackState.duration <= 0) return;
@@ -569,6 +467,23 @@ export default function SpotifyPanel({ backendUrl, onPlaybackStateChange, onStop
           Disconnect
         </button>
       </div>
+
+      <NowPlayingPanel
+        nowPlaying={music.nowPlaying}
+        status={music.status}
+        onPlayPause={music.togglePause}
+        onNext={music.next}
+        onPrevious={music.previous}
+        onSeek={music.seekTo}
+      />
+
+      <QueuePanel
+        queue={music.queue}
+        onRemoveAt={music.removeAt}
+        onMove={music.move}
+        onClear={music.clear}
+        onPlayIndex={music.playIndex}
+      />
 
       {restoringSession && (
         <p className="spotify-panel-hint">Restoring session…</p>
@@ -632,7 +547,7 @@ export default function SpotifyPanel({ backendUrl, onPlaybackStateChange, onStop
                 <button
                   type="button"
                   className="spotify-transport-btn"
-                  onClick={skipPrevious}
+                  onClick={() => music.previous()}
                   title="Previous"
                   aria-label="Previous"
                 >
@@ -641,7 +556,7 @@ export default function SpotifyPanel({ backendUrl, onPlaybackStateChange, onStop
                 <button
                   type="button"
                   className="spotify-transport-btn spotify-play-pause"
-                  onClick={togglePlay}
+                  onClick={() => music.togglePause()}
                   title={playbackState?.paused ? 'Play' : 'Pause'}
                   aria-label={playbackState?.paused ? 'Play' : 'Pause'}
                 >
@@ -650,7 +565,7 @@ export default function SpotifyPanel({ backendUrl, onPlaybackStateChange, onStop
                 <button
                   type="button"
                   className="spotify-transport-btn"
-                  onClick={skipNext}
+                  onClick={() => music.next()}
                   title="Next"
                   aria-label="Next"
                 >

@@ -91,7 +91,7 @@ export default function BackingTrackPanel({
   const [selectedSavedId, setSelectedSavedId] = useState('');
   const [hasTrackToSave, setHasTrackToSave] = useState(false);
   const [importing, setImporting] = useState(false);
-  const [pendingImportFiles, setPendingImportFiles] = useState<File[] | null>(null);
+  const [, _setPendingImportFiles] = useState<File[] | null>(null);
   const [trackJustUploaded, setTrackJustUploaded] = useState<{ filename: string } | null>(null);
   const [editingTrack, setEditingTrack] = useState<ProjectTrack | null>(null);
   const [importKey, setImportKey] = useState('');
@@ -105,7 +105,7 @@ export default function BackingTrackPanel({
   const currentBufferRef = useRef<ArrayBuffer | null>(null);
   const currentSpecRef = useRef<{ chords?: string[]; bpm?: number; style?: string } | null>(null);
 
-  const { error: playbackError, isPaused, play, stop, pause, resume } = useBackingTrackPlayback();
+  const { error: playbackError, play, stop, pause, resume } = useBackingTrackPlayback();
 
   const refreshProjectTracks = useCallback(async () => {
     if (!backendUrl) return;
