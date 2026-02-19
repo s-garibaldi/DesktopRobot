@@ -278,12 +278,14 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
       const data = event.data;
-      const isClientAction = data?.type === 'play_spotify_track' || data?.type === 'play_backing_track' || data?.type === 'metronome_set_bpm' || data?.type === 'guitar_tab_display';
+      const isClientAction = data?.type === 'play_spotify_track' || data?.type === 'spotify_stop' || data?.type === 'play_backing_track' || data?.type === 'metronome_set_bpm' || data?.type === 'guitar_tab_display';
       if (isClientAction) {
         console.log('[RealtimeBridge] Client action received:', data?.type, 'origin=', event.origin, 'expected~', backendOrigin);
       }
 
-      if (!isAcceptedOrigin(event.origin)) {
+      const fromLocalhost = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/.test(String(event.origin || ''));
+      const accept = isAcceptedOrigin(event.origin) || (isClientAction && fromLocalhost);
+      if (!accept) {
         if (isClientAction) {
           console.warn('[RealtimeBridge] Message rejected (origin mismatch):', event.origin, 'vs', backendOrigin);
         }
@@ -491,6 +493,15 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
               break;
             }
 
+            case 'spotify_stop': {
+              console.log('[RealtimeBridge] spotify_stop from backend (queue empty)');
+              window.dispatchEvent(new CustomEvent('spotify-queue-stopped'));
+              onSpotifyStop?.();
+              lastKnownMicEnabledRef.current = true;
+              sendMessageToIframe({ type: 'set_backend_mic_enabled', enabled: true });
+              break;
+            }
+
           }
         } catch (error) {
           console.error('Error handling message from realtime service:', error);
@@ -499,7 +510,7 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
 
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
-  }, [backendOrigin, onEmotionChange, currentEmotion, lastEmotionChange]);
+  }, [backendOrigin, onEmotionChange, currentEmotion, lastEmotionChange, onSpotifyStop]);
   // Note: We use refs (isListeningRef, isSpeakingRef, isCallingToolRef) instead of state
   // variables in the dependency array to avoid infinite re-render loops
 
@@ -524,6 +535,33 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
       iframeRef.current.contentWindow.postMessage(message, iframeOrigin);
     }
   };
+
+  // Forward Spotify track events from frontend to backend iframe (for queue controller).
+  useEffect(() => {
+    const origin = (() => {
+      try {
+        return new URL(realtimeUrl).origin;
+      } catch {
+        return '*';
+      }
+    })();
+    const forwardToIframe = (message: object) => {
+      if (iframeRef.current?.contentWindow) {
+        iframeRef.current.contentWindow.postMessage(message, origin);
+      }
+    };
+    const onTrackStarted = (e: Event) => {
+      const d = (e as CustomEvent<{ trackName?: string; artists?: string }>).detail;
+      forwardToIframe({ type: 'spotify_track_started', trackName: d?.trackName ?? '', artists: d?.artists ?? '' });
+    };
+    const onTrackEnded = () => forwardToIframe({ type: 'spotify_track_ended' });
+    window.addEventListener('spotify-track-started', onTrackStarted);
+    window.addEventListener('spotify-track-ended', onTrackEnded);
+    return () => {
+      window.removeEventListener('spotify-track-started', onTrackStarted);
+      window.removeEventListener('spotify-track-ended', onTrackEnded);
+    };
+  }, [realtimeUrl]);
 
   const lastKnownMicEnabledRef = useRef(true);
   const savedMicBeforeBackingTrackRef = useRef(true);

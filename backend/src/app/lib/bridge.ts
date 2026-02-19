@@ -26,11 +26,13 @@ export type BridgeLogEvent = {
 
 function safeParentOrigin(): string {
   // Prefer referrer origin when available; otherwise fall back to '*'
+  // Use '*' for Tauri/custom schemes where referrer may be tauri:// or asset://
   try {
     if (typeof document === "undefined") return "*";
     if (!document.referrer) return "*";
     const origin = new URL(document.referrer).origin;
-    return origin && origin !== "null" ? origin : "*";
+    if (!origin || origin === "null" || origin.startsWith("tauri:") || origin.startsWith("asset:")) return "*";
+    return origin;
   } catch {
     return "*";
   }
@@ -48,6 +50,7 @@ export function postBridgeMessage(message: BridgeLogEvent) {
 /**
  * Send a client action to the parent window (e.g. start_metronome).
  * Used by agent tools to trigger frontend behavior (metronome, etc.).
+ * Uses targetOrigin '*' to avoid delivery failures from localhost vs 127.0.0.1 mismatch.
  */
 export function postClientAction(type: string, payload?: Record<string, unknown>) {
   if (typeof window === "undefined") {
@@ -59,9 +62,16 @@ export function postClientAction(type: string, payload?: Record<string, unknown>
     return;
   }
 
-  const origin = safeParentOrigin();
   const message = { type, ...payload };
-  window.parent.postMessage(message, origin);
-  console.log("[bridge] postClientAction sent:", type, payload, "targetOrigin:", origin);
+  window.parent.postMessage(message, '*');
+  console.log("[bridge] postClientAction sent:", type, payload);
+}
+
+/**
+ * Send play_spotify_track to the parent (Tauri/frontend). Used by both single-song play and queue.
+ * Ensures identical message format so the frontend handles both the same way.
+ */
+export function postPlaySpotifyTrack(payload: { uri: string; trackName: string; artists: string }) {
+  postClientAction('play_spotify_track', payload);
 }
 

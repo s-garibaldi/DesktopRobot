@@ -135,6 +135,11 @@ export default function SpotifyPanel({ backendUrl, onPlaybackStateChange, onStop
   /** When backend sends play_spotify_track before the SDK device is listed, queue and play once ready. */
   const pendingBackendPlayRef = useRef<{ uri: string } | null>(null);
   const pendingBackendPlayTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastTrackStartedUriRef = useRef<string | null>(null);
+  const trackEndedScheduledRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isBackendQueueModeRef = useRef(false);
+  const playerReadyRef = useRef(playerReady);
+  playerReadyRef.current = playerReady;
 
   // Handle redirect from Spotify (callback with ?code=...)
   useEffect(() => {
@@ -267,12 +272,14 @@ export default function SpotifyPanel({ backendUrl, onPlaybackStateChange, onStop
     const handleBackendPlay = (e: Event) => {
       const detail = (e as CustomEvent<{ uri: string; trackName?: string; artists?: string }>).detail;
       if (!detail?.uri || typeof detail.uri !== 'string' || !detail.uri.startsWith('spotify:track:')) return;
-      console.log('[SpotifyPanel] Backend play event received', detail.uri, 'playerReady=', playerReady);
+      isBackendQueueModeRef.current = true;
+      const ready = playerReadyRef.current;
+      console.log('[SpotifyPanel] Backend play event received', detail.uri, 'playerReady=', ready);
       if (pendingBackendPlayTimeoutRef.current) {
         clearTimeout(pendingBackendPlayTimeoutRef.current);
         pendingBackendPlayTimeoutRef.current = null;
       }
-      if (playerReady) {
+      if (ready) {
         playBackendUriWithRetry(detail.uri);
       } else {
         pendingBackendPlayRef.current = { uri: detail.uri };
@@ -290,7 +297,7 @@ export default function SpotifyPanel({ backendUrl, onPlaybackStateChange, onStop
         pendingBackendPlayTimeoutRef.current = null;
       }
     };
-  }, [playBackendUriWithRetry, playerReady]);
+  }, [playBackendUriWithRetry]);
 
   // When the player becomes ready, play any queued backend track (with delay + retry).
   useEffect(() => {
@@ -306,6 +313,66 @@ export default function SpotifyPanel({ backendUrl, onPlaybackStateChange, onStop
       playBackendUriWithRetry(uri);
     }
   }, [playerReady, playBackendUriWithRetry]);
+
+  useEffect(() => {
+    const handleQueueStopped = () => {
+      isBackendQueueModeRef.current = false;
+    };
+    window.addEventListener('spotify-queue-stopped', handleQueueStopped);
+    return () => window.removeEventListener('spotify-queue-stopped', handleQueueStopped);
+  }, []);
+
+  // Notify backend queue controller when a track starts or ends (for automatic queue advancement).
+  const prevUriRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!isBackendQueueModeRef.current) return;
+    const uri = playbackState?.trackUri ?? null;
+    const name = playbackState?.trackName ?? '';
+    const artists = playbackState?.artistNames ?? '';
+    const position = playbackState?.position ?? 0;
+    const duration = playbackState?.duration ?? 0;
+
+    if (uri && uri !== lastTrackStartedUriRef.current) {
+      lastTrackStartedUriRef.current = uri;
+      if (name) {
+        window.dispatchEvent(new CustomEvent('spotify-track-started', { detail: { trackName: name, artists } }));
+      }
+    }
+
+    // Detect track end: uri went from non-null to null (SDK reports no playback when track finishes).
+    if (prevUriRef.current && !uri) {
+      if (trackEndedScheduledRef.current) {
+        clearTimeout(trackEndedScheduledRef.current);
+        trackEndedScheduledRef.current = null;
+      }
+      lastTrackStartedUriRef.current = null;
+      prevUriRef.current = null;
+      window.dispatchEvent(new CustomEvent('spotify-track-ended'));
+    } else {
+      prevUriRef.current = uri;
+    }
+
+    // Fallback: near end of track (in case SDK doesn't clear uri immediately).
+    if (uri && duration > 0 && position >= duration - 1500) {
+      if (trackEndedScheduledRef.current) return;
+      const timeoutMs = Math.max(500, duration - position + 500);
+      trackEndedScheduledRef.current = setTimeout(() => {
+        trackEndedScheduledRef.current = null;
+        if (isBackendQueueModeRef.current) {
+          lastTrackStartedUriRef.current = null;
+          prevUriRef.current = null;
+          window.dispatchEvent(new CustomEvent('spotify-track-ended'));
+        }
+      }, timeoutMs);
+    }
+
+    return () => {
+      if (trackEndedScheduledRef.current) {
+        clearTimeout(trackEndedScheduledRef.current);
+        trackEndedScheduledRef.current = null;
+      }
+    };
+  }, [playbackState?.trackUri, playbackState?.trackName, playbackState?.artistNames, playbackState?.position, playbackState?.duration]);
 
   // When we're connected (have token) and not handling a callback, clear any stale token-exchange error so it doesn't keep showing.
   useEffect(() => {
@@ -386,14 +453,6 @@ export default function SpotifyPanel({ backendUrl, onPlaybackStateChange, onStop
     },
     [play]
   );
-
-  const handlePause = useCallback(async () => {
-    await pause();
-  }, [pause]);
-
-  const handleResume = useCallback(async () => {
-    await resume();
-  }, [resume]);
 
   const formatDuration = (ms: number) => {
     const s = Math.floor(ms / 1000);

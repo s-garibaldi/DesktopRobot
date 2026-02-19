@@ -10,6 +10,18 @@ import {
   CHORD_FORMULAS,
 } from '../../lib/musicKnowledge';
 import { postClientAction } from '../../lib/bridge';
+import {
+  addToQueue,
+  removeFromQueue,
+  reorderQueue,
+  clearQueue,
+  playNextFromQueue,
+  getIsSpotifyPlaying,
+  getQueue,
+  searchSpotifyTrack,
+  setIsSpotifyPlaying,
+  type QueueItem,
+} from '../../lib/spotifyQueue';
 import { webSearchTool } from '../../lib/webSearchTool';
 
 // Common open-position fingerings (optional; theory works for any chord)
@@ -499,6 +511,9 @@ const playSpotifyTrackTool = tool({
       const uri = `spotify:track:${track.id}`;
       const trackName = track.name ?? '';
       const artists = Array.isArray(track.artists) ? track.artists.map((a: { name?: string }) => a.name).filter(Boolean).join(', ') : '';
+      clearQueue();
+      addToQueue([{ name: trackName, artist: artists }]);
+      setIsSpotifyPlaying(true);
       postClientAction('play_spotify_track', { uri, trackName, artists });
       return {
         success: true,
@@ -515,6 +530,211 @@ const playSpotifyTrackTool = tool({
         query: q,
       };
     }
+  },
+});
+
+/** Split queries by comma, " and ", or " then ". */
+function parseQueueQueries(input: string): string[] {
+  return input
+    .replace(/\s+and\s+/gi, '|')
+    .replace(/\s+then\s+/gi, '|')
+    .split(/[|,]/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+/** Search and get track with URI for queue add (store URI so playback doesn't need to re-search). */
+async function searchAndGetQueueItem(query: string): Promise<QueueItem | null> {
+  const result = await searchSpotifyTrack(query);
+  if (!result?.trackName) return null;
+  return {
+    name: result.trackName,
+    artist: result.artists,
+    uri: result.uri,
+  };
+}
+
+// Add one or more songs to the queue; starts playback if nothing is playing.
+const spotifyQueueAddTool = tool({
+  name: 'spotify_queue_add',
+  description:
+    'Add songs to the Spotify queue and start playing. Use when the user asks to play multiple songs (e.g. "play A, B, and C", "play Song A then Song B", "queue these: X, Y, Z") or add to queue ("add X to the queue", "queue X", "play X next"). Each song goes in as a separate query. If nothing is playing, playback starts immediately with the first song.',
+  parameters: {
+    type: 'object',
+    properties: {
+      queries: {
+        type: 'string',
+        description:
+          'One or more song/artist queries, separated by commas or "and" (e.g. "Blinding Lights", "Shape of You Ed Sheeran", "Song A and Song B").',
+      },
+    },
+    required: ['queries'],
+    additionalProperties: false,
+  },
+  execute: async (input: any) => {
+    const { queries } = input as { queries: string };
+    const list = parseQueueQueries((queries ?? '').trim());
+    if (list.length === 0) {
+      return { success: false, message: 'Specify at least one song to add (e.g. "Blinding Lights" or "Song A, Song B").' };
+    }
+    const items: QueueItem[] = [];
+    for (const q of list) {
+      const item = await searchAndGetQueueItem(q);
+      if (item) items.push(item);
+    }
+    if (items.length === 0) {
+      return { success: false, message: 'No tracks found. Try different song names.' };
+    }
+    addToQueue(items);
+    const wasIdle = !getIsSpotifyPlaying();
+    let started = wasIdle ? await playNextFromQueue() : false;
+    // Safety net: if we didn't start (something was playing) but the track ends right as we add,
+    // onTrackEnded may run before our add completes. Schedule a delayed check to start playback
+    // if we have items but nothing is playing (catches the race).
+    if (!started && typeof window !== 'undefined') {
+      setTimeout(() => {
+        if (getQueue().length > 0 && !getIsSpotifyPlaying()) {
+          void playNextFromQueue();
+        }
+      }, 1500);
+    }
+    return {
+      success: true,
+      added: items.length,
+      message: started
+        ? `Added ${items.length} song(s) and started playing.`
+        : `Added ${items.length} song(s) to the queue.`,
+    };
+  },
+});
+
+// Get the current queue (read-only) for questions like "what's in the queue?" or "what's next?"
+const spotifyQueueGetTool = tool({
+  name: 'spotify_queue_get',
+  description:
+    'Get the current Spotify queue. Use when the user asks what is in the queue, what song is next, what is coming up, list the queue, show me the queue, or similar questions about what songs are queued.',
+  parameters: { type: 'object', properties: {}, required: [], additionalProperties: false },
+  execute: async () => {
+    const items = getQueue();
+    const isPlaying = getIsSpotifyPlaying();
+    const queue = items.map((item, i) => ({
+      position: i + 1,
+      name: item.name,
+      artist: item.artist || undefined,
+    }));
+    return {
+      success: true,
+      isPlaying,
+      count: queue.length,
+      queue,
+      nextUp: queue.length > 0 ? { name: queue[0].name, artist: queue[0].artist } : null,
+      message:
+        queue.length === 0
+          ? 'The queue is empty.'
+          : isPlaying
+            ? `Playing. ${queue.length} song(s) queued. Next up: "${queue[0].name}"${queue[0].artist ? ` by ${queue[0].artist}` : ''}.`
+            : `${queue.length} song(s) in queue. Next up: "${queue[0].name}"${queue[0].artist ? ` by ${queue[0].artist}` : ''}.`,
+    };
+  },
+});
+
+// Remove a song from the queue by position or name.
+const spotifyQueueRemoveTool = tool({
+  name: 'spotify_queue_remove',
+  description: 'Remove a song from the queue. Identify by 1-based position (e.g. "remove the second song") or by name (e.g. "remove Blinding Lights").',
+  parameters: {
+    type: 'object',
+    properties: {
+      position: { type: 'number', description: '1-based position in queue (1 = next song).' },
+      track_name: { type: 'string', description: 'Track name or partial name to remove.' },
+    },
+    required: [],
+    additionalProperties: false,
+  },
+  execute: async (input: any) => {
+    const { position, track_name } = input as { position?: number; track_name?: string };
+    if (position != null && position >= 1) {
+      const ok = removeFromQueue(position);
+      return { success: ok, message: ok ? `Removed song at position ${position}.` : 'Position out of range.' };
+    }
+    if (track_name && String(track_name).trim()) {
+      const ok = removeFromQueue(String(track_name).trim());
+      return { success: ok, message: ok ? `Removed "${track_name}" from the queue.` : `"${track_name}" not found in queue.` };
+    }
+    return { success: false, message: 'Specify position or track name to remove.' };
+  },
+});
+
+// Reorder the queue.
+const spotifyQueueReorderTool = tool({
+  name: 'spotify_queue_reorder',
+  description:
+    'Reorder the queue. Use move_to_front (1-based index to move to next), swap (two 1-based indices), or new_order (array of 1-based indices).',
+  parameters: {
+    type: 'object',
+    properties: {
+      move_to_front: { type: 'number', description: '1-based index of song to move to play next.' },
+      swap: {
+        type: 'array',
+        items: { type: 'number' },
+        minItems: 2,
+        maxItems: 2,
+        description: 'Two 1-based indices to swap.',
+      },
+      new_order: {
+        type: 'array',
+        items: { type: 'number' },
+        description: '1-based indices in new order.',
+      },
+    },
+    required: [],
+    additionalProperties: false,
+  },
+  execute: async (input: any) => {
+    const { move_to_front, swap, new_order } = input as {
+      move_to_front?: number;
+      swap?: [number, number];
+      new_order?: number[];
+    };
+    if (move_to_front != null) {
+      const ok = reorderQueue('move_to_front', move_to_front);
+      return { success: ok, message: ok ? `Moved position ${move_to_front} to front.` : 'Invalid position.' };
+    }
+    if (Array.isArray(swap) && swap.length === 2) {
+      const ok = reorderQueue('swap', swap[0], swap[1]);
+      return { success: ok, message: ok ? `Swapped positions ${swap[0]} and ${swap[1]}.` : 'Invalid positions.' };
+    }
+    if (Array.isArray(new_order) && new_order.length > 0) {
+      const ok = reorderQueue('new_order', 0, 0, new_order);
+      return { success: ok, message: ok ? 'Queue reordered.' : 'Invalid order.' };
+    }
+    return { success: false, message: 'Specify move_to_front, swap, or new_order.' };
+  },
+});
+
+// Clear the entire queue.
+const spotifyQueueClearTool = tool({
+  name: 'spotify_queue_clear',
+  description: 'Clear the Spotify queue. Current song keeps playing; when it ends, Spotify stops.',
+  parameters: { type: 'object', properties: {}, required: [], additionalProperties: false },
+  execute: async () => {
+    clearQueue();
+    return { success: true, message: 'Queue cleared.' };
+  },
+});
+
+// Start playing from the queue (when queue has items but nothing is playing).
+const spotifyQueuePlayTool = tool({
+  name: 'spotify_queue_play',
+  description:
+    'Start playing the Spotify queue. Use when the user says "play the queue", "start the queue", or "play" and the queue already has songs but nothing is playing.',
+  parameters: { type: 'object', properties: {}, required: [], additionalProperties: false },
+  execute: async () => {
+    const started = await playNextFromQueue();
+    return {
+      success: started,
+      message: started ? 'Playing from the queue.' : 'Queue is empty. Add songs first (e.g. "play Song A, Song B").',
+    };
   },
 });
 
@@ -603,7 +823,7 @@ When the user asks to see or display a chord (e.g. "show me G minor", "display A
 - Use songwriting_suggestion for creative songwriting help (structure, lyrics themes, tempo)
 - Use music_theory_help for theory explanations (scales, intervals, harmony, chord construction, circle of fifths)
 - Use set_metronome_bpm when the user asks for a metronome: pass a genre (e.g. "rumba", "salsa", "waltz", "bossa nova", "ballad") or a specific bpm (40–240). You send the BPM to the frontend; the metronome starts automatically. Do NOT say the words "stop" or "pause" in your reply (the frontend hears the agent and would stop the metronome); say they can control it with voice instead.
-- Use play_spotify_track when the user asks to play a song on Spotify (e.g. "play Bohemian Rhapsody", "play Blinding Lights"). The user must have connected Spotify (Premium required).
+- Use play_spotify_track when the user asks to play ONE song (e.g. "play Bohemian Rhapsody"). Use spotify_queue_add when the user asks to play MULTIPLE songs (e.g. "play A, B, and C", "play Song A then Song B", "queue X, Y, Z")—pass each song as a separate query in one string. Use spotify_queue_get when the user asks what is in the queue, what song is next, what is coming up, or to list the queue. Use spotify_queue_play when the user says "play the queue" or "start the queue" and the queue has items. Use spotify_queue_remove, spotify_queue_reorder, and spotify_queue_clear for queue management. The user must have connected Spotify in the app (Premium required).
 - Use play_backing_track when the user asks to play a backing track for practice, jamming, or soloing. Pass a natural language command describing what they want (e.g. "blues in A minor around 90 bpm", "rock track in E", "jazz at 120"). The tool searches the library, finds the best match, and starts playing automatically. The backing track loops until they say "stop" or use voice controls.
 - Use search_web to find current information, recent music news, new songs, artist information, or any up-to-date content
 - Use store_memory to save user preferences, favorite chords, musical interests, or skill level
@@ -624,7 +844,7 @@ When the user asks to see or display a chord (e.g. "show me G minor", "display A
 - "Explain major scales" / "Circle of fifths" → Use music_theory_help; give a one-sentence summary first, then ask "Want me to go deeper on that?"
 - "What chords go well with Am?" → Use recognize_guitar_chord for Am, then suggest_chord_progression in A minor or related key
 - "Play a metronome for a rumba" / "Metronome at 120" / "Set metronome for waltz" → Use set_metronome_bpm with genre or bpm
-- "Play Bohemian Rhapsody" / "Play Blinding Lights" → Use play_spotify_track.
+- "Play Bohemian Rhapsody" (one song) → play_spotify_track. "Play A, B, and C" / "Play Song A then Song B" / "Queue these: X, Y, Z" → spotify_queue_add with queries "A, B, C" (or "Song A, Song B" etc). "What's in the queue?" / "What song is next?" / "What's coming up?" → spotify_queue_get. "Play the queue" → spotify_queue_play. "Remove the second song" / "Clear the queue" → spotify_queue_remove / spotify_queue_clear.
 - "Play a blues backing track" / "I want to jam in A minor" / "Backing track in E around 90 bpm" / "Play something for rock soloing" → Use play_backing_track with a command describing the desired track
 - User says "I love jazz" → Use store_memory to save this preference
 - User asks "What's my favorite genre?" → Use retrieve_memories to recall
@@ -636,7 +856,7 @@ When the user asks to see or display a chord (e.g. "show me G minor", "display A
 - Be enthusiastic and encouraging. Use musical terminology when it helps, but keep the main reply concise.
 - Suggest creative ideas and next steps in a sentence or two; don't over-explain unless asked.
 `,
-  tools: [recognizeChordTool, suggestChordProgressionTool, songwritingSuggestionTool, musicTheoryTool, setMetronomeBpmTool, displayGuitarChordTool, playSpotifyTrackTool, playBackingTrackTool, webSearchTool, ...createMemoryTools('musicalCompanion')],
+  tools: [recognizeChordTool, suggestChordProgressionTool, songwritingSuggestionTool, musicTheoryTool, setMetronomeBpmTool, displayGuitarChordTool, playSpotifyTrackTool, spotifyQueueAddTool, spotifyQueueGetTool, spotifyQueuePlayTool, spotifyQueueRemoveTool, spotifyQueueReorderTool, spotifyQueueClearTool, playBackingTrackTool, webSearchTool, ...createMemoryTools('musicalCompanion')],
   handoffs: [],
   handoffDescription: 'Musical companion AI for guitar, songwriting, and music theory',
 });

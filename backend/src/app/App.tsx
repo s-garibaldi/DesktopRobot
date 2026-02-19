@@ -34,6 +34,7 @@ import { useHandleSessionHistory } from "./hooks/useHandleSessionHistory";
 import { useVoiceCommandDetection } from "./hooks/useVoiceCommandDetection";
 import { useMemoryExtraction } from "./hooks/useMemoryExtraction";
 import { getMemoriesForAgent, formatMemoriesAsContext } from "./lib/memoryStorage";
+import { onTrackStarted, onTrackEnded } from "./lib/spotifyQueue";
 
 function App() {
   const searchParams = useSearchParams()!;
@@ -250,11 +251,22 @@ function App() {
   }, [isPTTActive]);
 
   // Listen for voice commands from Tauri frontend: "microphone off" / "microphone on"
+  // Also listen for Spotify track events for queue controller
   useEffect(() => {
-    const handleParentMessage = (event: MessageEvent) => {
+    const handleParentMessage = async (event: MessageEvent) => {
       const data = event.data;
-      if (data?.type !== 'set_backend_mic_enabled' || typeof data.enabled !== 'boolean') return;
-      setBackendMicEnabledByVoice(data.enabled);
+      if (data?.type === 'set_backend_mic_enabled' && typeof data.enabled === 'boolean') {
+        setBackendMicEnabledByVoice(data.enabled);
+        return;
+      }
+      if (data?.type === 'spotify_track_started' && (data.trackName != null || data.artists != null)) {
+        onTrackStarted(data.trackName ?? '', data.artists ?? '');
+        return;
+      }
+      if (data?.type === 'spotify_track_ended') {
+        await onTrackEnded();
+        return;
+      }
     };
     window.addEventListener('message', handleParentMessage);
     return () => window.removeEventListener('message', handleParentMessage);
