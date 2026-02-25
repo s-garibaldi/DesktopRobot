@@ -102,20 +102,34 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
           'Content-Type': 'application/json',
         }
       });
-      
+
       console.log('Service response status:', response.status);
-      
+
       if (response.ok) {
         setIsConnected(true);
         setError(null);
         console.log('Realtime service is available');
       } else {
-        throw new Error(`Service responded with status: ${response.status}`);
+        let msg = `Backend responded with status ${response.status}`;
+        try {
+          const data = await response.json();
+          if (data?.error) msg = data.error;
+        } catch {
+          // ignore parse errors
+        }
+        throw new Error(msg);
       }
     } catch (error) {
       console.error('Realtime service check failed:', error);
       setIsConnected(false);
-      setError(`Cannot connect to realtime service: ${error}`);
+      const err = error instanceof Error ? error : new Error(String(error));
+      const msg = err.message;
+      // Friendly message for common "backend not running" case
+      if (/Failed to fetch|NetworkError|Load failed/i.test(msg) || msg.includes('Network request failed')) {
+        setError(`Backend load failed: cannot reach ${realtimeUrl}. Make sure the backend is running (cd backend && npm run dev).`);
+      } else {
+        setError(`Backend load failed: ${msg}`);
+      }
     }
   };
 
@@ -618,6 +632,7 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
   // variables in the dependency array to avoid infinite re-render loops
 
   // Forward MusicController state to backend so spotify_queue_get can answer "what's in the queue"
+  // Re-run when iframe loads so backend gets current state after reconnect/reload
   useEffect(() => {
     let origin = '*';
     try {
@@ -649,7 +664,7 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
       }
     });
     return unsub;
-  }, [realtimeUrl]);
+  }, [realtimeUrl, iframeLoaded]);
 
   // FACE_EVENT from MusicController - stable events for face state (GROOVING when playing, NEUTRAL when stopped)
   useEffect(() => {
@@ -711,7 +726,7 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
     };
   }, [realtimeUrl]);
 
-  const lastKnownMicEnabledRef = useRef(true);
+  const lastKnownMicEnabledRef = useRef(true); // true = mic on by default so AI can hear
   const savedMicBeforeBackingTrackRef = useRef(true);
   const savedMicBeforeMetronomeRef = useRef(true);
   const metronomeStartTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -727,8 +742,15 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
   const handleMicCommand = useCallback((payload: { type: 'set_backend_mic_enabled'; enabled: boolean }) => {
     const mode = activeModeRef.current;
     if (payload.enabled) {
-      // "hey bot" — only enter backend_mic mode when not in backing_track or metronome (or already in backend_mic)
-      if (mode === 'backing_track' || mode === 'metronome') return;
+      // "microphone on" — only enter backend_mic mode when not in backing_track or metronome (or already in backend_mic)
+      if (mode === 'backing_track' || mode === 'metronome') {
+        console.log('[microphone on] Skipping — in mode:', mode, '(say "stop" first to exit)');
+        return;
+      }
+      if (!iframeRef.current?.contentWindow) {
+        console.warn('[microphone on] Cannot send to backend — iframe not ready');
+        return;
+      }
       setActiveModeAndRef('backend_mic');
       backingTrackHandlersRef.current?.stop();
       if (metronomeStartTimeoutRef.current) {
@@ -1008,7 +1030,9 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
   const handleIframeLoad = () => {
     console.log('Realtime iframe loaded');
     setIframeLoaded(true);
-    
+    // Notify components (e.g. SpotifyPanel) to re-send token and sync state after backend reload
+    window.dispatchEvent(new CustomEvent('backend-iframe-loaded'));
+
     // Wait a bit for the iframe to fully initialize
     setTimeout(() => {
       // Send initial configuration to the iframe
@@ -1016,9 +1040,9 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
         type: 'bridge_ready',
         emotionIntegration: true
       });
-      // Start with backend mic off; user must say "hey bot" or click Enable to turn it on
-      lastKnownMicEnabledRef.current = false;
-      sendMessageToIframe({ type: 'set_backend_mic_enabled', enabled: false });
+      // Start with backend mic ON so the AI can hear and respond (e.g. chord display, queue add)
+      lastKnownMicEnabledRef.current = true;
+      sendMessageToIframe({ type: 'set_backend_mic_enabled', enabled: true });
     }, 1000);
   };
 
@@ -1095,7 +1119,7 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
 
       {micStatus === 'granted' && isConnected && (
         <p className="voice-command-hint">
-          Voice: <strong>&quot;microphone off&quot;</strong> / <strong>&quot;hey bot&quot;</strong>;
+          Voice: <strong>&quot;microphone off&quot;</strong> / <strong>&quot;microphone on&quot;</strong>;
           <strong> &quot;apple&quot;</strong> (chime), then say BPM — or &quot;apple&quot; + number; <strong>&quot;stop&quot;</strong> (apple + carrot);
           <strong> &quot;carrot&quot;</strong> (chime), then say description — or &quot;carrot&quot; + description in one phrase;
           <strong> &quot;eggplant&quot;</strong> (chime), then say chord — or &quot;eggplant&quot; + chord; <strong>&quot;close display&quot;</strong> (back to neutral);

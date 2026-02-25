@@ -31,9 +31,14 @@ export async function GET() {
     try {
       data = raw ? JSON.parse(raw) : {};
     } catch {
-      console.error("Error in /session: OpenAI response was not JSON", raw.slice(0, 200));
+      const preview = raw.slice(0, 200);
+      console.error("Error in /session: OpenAI response was not JSON", preview);
+      const isHtml = /^\s*<(!DOCTYPE|html|xml)/i.test(raw.trim());
+      const hint = isHtml
+        ? "OpenAI returned an HTML page instead of JSON. This often means: (1) Cloudflare or a proxy blocked the request, (2) API key is invalid or expired, (3) rate limiting, or (4) a VPN/firewall is interfering. Try a different network, disable VPN, or verify OPENAI_API_KEY."
+        : "OpenAI returned unexpected content.";
       return NextResponse.json(
-        { error: "Realtime session provider returned invalid response." },
+        { error: `OpenAI API error: ${hint}` },
         { status: 502, headers: { "Content-Type": "application/json" } }
       );
     }

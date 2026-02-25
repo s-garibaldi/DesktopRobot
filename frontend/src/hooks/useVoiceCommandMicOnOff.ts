@@ -47,13 +47,13 @@ const METRONOME_START_COOLDOWN_MS = 6000;
 /** Ignore "close display" for this long after chord was shown from backend (avoids agent saying "say close display to go back" triggering close). */
 const GUITAR_TAB_CLOSE_COOLDOWN_MS = 6000;
 const PHRASE_OFF = 'microphone off';
-const PHRASE_ON = 'hey bot';
+const PHRASE_ON = 'microphone on';
 const PHRASE_BACKING_TRACK = 'carrot';
 const PHRASE_DISPLAY = 'eggplant';
 const PHRASE_CLOSE_DISPLAY = 'close display';
 const PHRASE_METRONOME = 'apple';
 
-/** Play a short ascending chime (C5 → E5) to acknowledge e.g. "carrot", "apple", "hey bot". */
+/** Play a short ascending chime (C5 → E5) to acknowledge e.g. "carrot", "apple", "microphone on". */
 function playChime(): void {
   if (typeof window === 'undefined') return;
   try {
@@ -120,7 +120,7 @@ function isMicOffCommand(transcript: string): boolean {
   return t === PHRASE_OFF || t.endsWith(PHRASE_OFF);
 }
 
-/** Stricter check for "hey bot" to reduce false positives (e.g. AI echo). */
+/** Same structure as isMicOffCommand for consistent behavior. */
 function isMicOnCommand(transcript: string): boolean {
   const t = normalize(transcript);
   return t === PHRASE_ON || t.endsWith(PHRASE_ON);
@@ -214,7 +214,7 @@ function isCloseDisplayCommand(transcript: string): boolean {
 
 /**
  * Listens for vocal commands via Web Speech API:
- * - "microphone off" / "hey bot" → onCommand
+ * - "microphone off" / "microphone on" → onCommand
  * - "apple" + number or a number (40–240) → onMetronomeCommand('start' | 'setBpm', bpm)
  * - "stop" → onMetronomeCommand('stop') and onBackingTrackCommand('stop')
  * - "carrot" + description → onBackingTrackCommand('describe', description)
@@ -322,7 +322,7 @@ export function useVoiceCommandMicOnOff(
             lastCommandTimeRef.current = now;
             playChime();
             onCommandRef.current({ type: 'set_backend_mic_enabled', enabled: true });
-            console.log('Voice command (interim): hey bot');
+            console.log('Voice command (interim): microphone on');
             continue;
           }
           if (isMicOffCommand(transcript)) {
@@ -417,7 +417,7 @@ export function useVoiceCommandMicOnOff(
             lastCommandTimeRef.current = now;
             playChime();
             onCommandRef.current({ type: 'set_backend_mic_enabled', enabled: true });
-            console.log('Voice command: hey bot');
+            console.log('Voice command: microphone on');
             return;
           }
           if (isStopCommand(transcript) && !isInMetronomeStopCooldown(now)) {
@@ -453,7 +453,7 @@ export function useVoiceCommandMicOnOff(
             lastCommandTimeRef.current = now;
             playChime();
             onCommandRef.current({ type: 'set_backend_mic_enabled', enabled: true });
-            console.log('Voice command: hey bot');
+            console.log('Voice command: microphone on');
             return;
           }
           if (isStopCommand(transcript)) {
@@ -526,7 +526,7 @@ export function useVoiceCommandMicOnOff(
             lastCommandTimeRef.current = now;
             playChime();
             onCommandRef.current({ type: 'set_backend_mic_enabled', enabled: true });
-            console.log('Voice command: hey bot');
+            console.log('Voice command: microphone on');
             return;
           }
           if (isStopCommand(transcript)) {
@@ -675,7 +675,7 @@ export function useVoiceCommandMicOnOff(
           lastCommandTimeRef.current = now;
           playChime();
           onCommandRef.current({ type: 'set_backend_mic_enabled', enabled: true });
-          console.log('Voice command: hey bot');
+          console.log('Voice command: microphone on');
           return;
         }
         if (onGuitarTabDisplayCommandRef.current && isCloseDisplayCommand(transcript)) {

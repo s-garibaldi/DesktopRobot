@@ -179,7 +179,7 @@ function App() {
     },
   );
   // Voice command from Tauri frontend: "microphone off" / "hey bot" to disable/enable backend mic input
-  const [backendMicEnabledByVoice, setBackendMicEnabledByVoice] = useState<boolean>(false);
+  const [backendMicEnabledByVoice, setBackendMicEnabledByVoice] = useState<boolean>(true);
 
   // Initialize the recording hook.
   const { startRecording, stopRecording, downloadRecording } =
@@ -251,12 +251,13 @@ function App() {
     }
   }, [isPTTActive]);
 
-  // Listen for voice commands from Tauri frontend: "microphone off" / "hey bot"
+  // Listen for voice commands from Tauri frontend: "microphone off" / "microphone on"
   // Also listen for Spotify track events for queue controller
   useEffect(() => {
     const handleParentMessage = async (event: MessageEvent) => {
       const data = event.data;
       if (data?.type === 'set_backend_mic_enabled' && typeof data.enabled === 'boolean') {
+        console.log('[Backend] Received set_backend_mic_enabled:', data.enabled);
         setBackendMicEnabledByVoice(data.enabled);
         return;
       }

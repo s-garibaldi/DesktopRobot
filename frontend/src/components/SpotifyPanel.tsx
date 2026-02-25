@@ -154,10 +154,16 @@ export default function SpotifyPanel({ backendUrl, onPlaybackStateChange, onStop
   const setVolume = useBackend ? () => {} : (frontendPlayer as { setVolume?: (n: number) => void }).setVolume ?? (() => {});
   const reconnectPlayer = useBackend ? () => {} : (frontendPlayer as { reconnect?: () => void }).reconnect ?? (() => {});
 
+  // Send token to backend when using backend playback; re-send when iframe reloads
   useEffect(() => {
-    if (useBackend && token && sendToBackendIframe) {
-      sendToBackendIframe({ type: 'spotify_set_token', token });
-    }
+    const sendToken = () => {
+      if (useBackend && token && sendToBackendIframe) {
+        sendToBackendIframe({ type: 'spotify_set_token', token });
+      }
+    };
+    sendToken();
+    window.addEventListener('backend-iframe-loaded', sendToken);
+    return () => window.removeEventListener('backend-iframe-loaded', sendToken);
   }, [useBackend, token, sendToBackendIframe]);
 
   // MusicController + Spotify adapter; queueUris loads a list so playback auto-starts
