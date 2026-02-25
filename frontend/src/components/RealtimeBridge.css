@@ -361,6 +361,95 @@
   background: rgba(255, 255, 255, 0.1);
 }
 
+.spotify-panel-header-actions {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.spotify-reconnect-btn {
+  background: rgba(29, 185, 84, 0.2);
+  color: #1DB954;
+  border: 1px solid #1DB954;
+  padding: 0.35rem 0.75rem;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.spotify-reconnect-btn:hover {
+  background: rgba(29, 185, 84, 0.3);
+}
+
+.spotify-panel-error-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 0.5rem 0;
+}
+
+.spotify-panel-error-row .spotify-panel-error {
+  margin: 0;
+  flex: 1;
+}
+
+.spotify-reconnect-inline-btn {
+  background: rgba(29, 185, 84, 0.2);
+  color: #1DB954;
+  border: 1px solid #1DB954;
+  padding: 0.3rem 0.6rem;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.spotify-reconnect-inline-btn:hover {
+  background: rgba(29, 185, 84, 0.3);
+}
+
+.spotify-start-row {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0.75rem 0;
+}
+
+.spotify-start-btn {
+  background: #1DB954;
+  color: white;
+  border: none;
+  padding: 0.6rem 1.2rem;
+  border-radius: 24px;
+  font-weight: 600;
+  cursor: pointer;
+  font-size: 1rem;
+}
+
+.spotify-start-btn:hover {
+  background: #1ed760;
+}
+
+.spotify-start-btn-urgent {
+  background: #e74c3c;
+  animation: spotify-audio-pulse 1.5s ease-in-out infinite;
+}
+
+.spotify-start-btn-urgent:hover {
+  background: #ec7063;
+}
+
+@keyframes spotify-audio-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(231, 76, 60, 0.4); }
+  50% { box-shadow: 0 0 0 8px rgba(231, 76, 60, 0); }
+}
+
+.spotify-start-hint {
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.6);
+}
+
 .spotify-search-row {
   display: flex;
   gap: 0.5rem;

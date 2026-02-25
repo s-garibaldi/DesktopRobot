@@ -35,6 +35,7 @@ import { useVoiceCommandDetection } from "./hooks/useVoiceCommandDetection";
 import { useMemoryExtraction } from "./hooks/useMemoryExtraction";
 import { getMemoriesForAgent, formatMemoriesAsContext } from "./lib/memoryStorage";
 import { setMusicState } from "./lib/musicState";
+import { SpotifyPlayerBridge } from "./components/SpotifyPlayerBridge";
 
 function App() {
   const searchParams = useSearchParams()!;
@@ -177,7 +178,7 @@ function App() {
       return stored ? stored === 'true' : true;
     },
   );
-  // Voice command from Tauri frontend: "microphone off" / "microphone on" to disable/enable backend mic input
+  // Voice command from Tauri frontend: "microphone off" / "hey bot" to disable/enable backend mic input
   const [backendMicEnabledByVoice, setBackendMicEnabledByVoice] = useState<boolean>(false);
 
   // Initialize the recording hook.
@@ -250,7 +251,7 @@ function App() {
     }
   }, [isPTTActive]);
 
-  // Listen for voice commands from Tauri frontend: "microphone off" / "microphone on"
+  // Listen for voice commands from Tauri frontend: "microphone off" / "hey bot"
   // Also listen for Spotify track events for queue controller
   useEffect(() => {
     const handleParentMessage = async (event: MessageEvent) => {
@@ -648,6 +649,7 @@ function App() {
 
   return (
     <div className="text-base flex flex-col h-screen bg-gray-100 text-gray-800 relative">
+      <SpotifyPlayerBridge />
       <div className="p-5 text-lg font-semibold flex justify-between items-center">
         <div
           className="flex items-center cursor-pointer"

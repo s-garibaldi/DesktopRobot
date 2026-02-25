@@ -9,6 +9,8 @@ export interface QueueItem {
   artist: string;
   uri: string;
   albumArtUrl?: string;
+  /** Duration in ms, from search/add – used when Spotify doesn't return it yet */
+  durationMs?: number;
 }
 
 export interface MusicQueue {

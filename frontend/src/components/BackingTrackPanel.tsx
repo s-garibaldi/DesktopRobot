@@ -184,7 +184,7 @@ export default function BackingTrackPanel({
     }
     finalTranscriptRef.current = '';
     setTranscript('');
-    setStatusMessage('Listening… say your backing track command.');
+    setStatusMessage('Listening… say carrot plus your description (e.g. carrot blues in A).');
     setStatus('listening');
     const recognition = new Ctor() as SpeechRecognitionInstance;
     recognition.continuous = false;

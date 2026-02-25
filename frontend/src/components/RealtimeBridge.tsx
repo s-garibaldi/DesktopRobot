@@ -433,6 +433,18 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
               console.log(`PTT state updated: active=${data.isPTTActive}, speaking=${data.isPTTUserSpeaking}`);
               break;
 
+            case 'spotify_playback_state':
+              window.dispatchEvent(new CustomEvent('spotify-backend-playback-state', { detail: data }));
+              break;
+
+            case 'spotify_ready':
+              window.dispatchEvent(new CustomEvent('spotify-backend-ready', { detail: { deviceId: data.deviceId } }));
+              break;
+
+            case 'spotify_play_result':
+              window.dispatchEvent(new CustomEvent('spotify_play_result', { detail: { ok: data.ok } }));
+              break;
+
             case 'metronome_set_bpm': {
               // Flow: backend decided one BPM → we set it in the metronome and start (no voice-command path)
               const bpm = data.bpm;
@@ -484,10 +496,19 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
                 onEmotionChange('spotify');
                 lastKnownMicEnabledRef.current = false;
                 sendMessageToIframe({ type: 'set_backend_mic_enabled', enabled: false });
+                // Notify SpotifyPanel that AI requested playback (browsers need user click for audio)
+                window.dispatchEvent(new CustomEvent('spotify-agent-requested-playback'));
+                const albumArtUrl = typeof data.albumArtUrl === 'string' ? data.albumArtUrl : undefined;
+                const durationMs = typeof data.durationMs === 'number' && data.durationMs > 0 ? data.durationMs : undefined;
                 musicController.playUri(uri, {
                   title: typeof data.trackName === 'string' ? data.trackName : 'Unknown',
                   artist: typeof data.artists === 'string' ? data.artists : '',
-                  albumArtUrl: typeof data.albumArtUrl === 'string' ? data.albumArtUrl : undefined,
+                  albumArtUrl,
+                  durationMs,
+                }).then((ok) => {
+                  if (!ok) {
+                    window.dispatchEvent(new CustomEvent('spotify-playback-failed', { detail: { reason: 'not_connected' } }));
+                  }
                 });
               }
               break;
@@ -507,15 +528,20 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
                   onEmotionChange('spotify');
                   lastKnownMicEnabledRef.current = false;
                   sendMessageToIframe({ type: 'set_backend_mic_enabled', enabled: false });
-                  musicController.addToQueueAndStartIfIdle(
-                    valid.map((it: { uri: string; title?: string; artist?: string; albumArtUrl?: string }) => ({
-                      id: `q-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
-                      uri: it.uri,
-                      title: it.title ?? 'Unknown',
-                      artist: it.artist ?? '',
-                      albumArtUrl: it.albumArtUrl,
-                    }))
-                  );
+                  window.dispatchEvent(new CustomEvent('spotify-agent-requested-playback'));
+                  const mapped = valid.map((it: { uri: string; title?: string; artist?: string; albumArtUrl?: unknown; durationMs?: number }) => ({
+                    id: `q-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+                    uri: (it as { uri: string }).uri,
+                    title: (it as { title?: string }).title ?? 'Unknown',
+                    artist: (it as { artist?: string }).artist ?? '',
+                    albumArtUrl: typeof (it as { albumArtUrl?: unknown }).albumArtUrl === 'string' ? (it as { albumArtUrl: string }).albumArtUrl : undefined,
+                    durationMs: typeof (it as { durationMs?: number }).durationMs === 'number' && (it as { durationMs: number }).durationMs > 0 ? (it as { durationMs: number }).durationMs : undefined,
+                  }));
+                  musicController.addToQueueAndStartIfIdle(mapped).then((ok) => {
+                    if (!ok) {
+                      window.dispatchEvent(new CustomEvent('spotify-playback-failed', { detail: { reason: 'not_connected' } }));
+                    }
+                  });
                 }
               }
               break;
@@ -701,7 +727,7 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
   const handleMicCommand = useCallback((payload: { type: 'set_backend_mic_enabled'; enabled: boolean }) => {
     const mode = activeModeRef.current;
     if (payload.enabled) {
-      // "microphone on" — only enter backend_mic mode when not in backing_track or metronome (or already in backend_mic)
+      // "hey bot" — only enter backend_mic mode when not in backing_track or metronome (or already in backend_mic)
       if (mode === 'backing_track' || mode === 'metronome') return;
       setActiveModeAndRef('backend_mic');
       backingTrackHandlersRef.current?.stop();
@@ -990,7 +1016,7 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
         type: 'bridge_ready',
         emotionIntegration: true
       });
-      // Start with backend mic off; user must say "microphone on" or click Enable to turn it on
+      // Start with backend mic off; user must say "hey bot" or click Enable to turn it on
       lastKnownMicEnabledRef.current = false;
       sendMessageToIframe({ type: 'set_backend_mic_enabled', enabled: false });
     }, 1000);
@@ -1059,15 +1085,21 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
         onStopMetronome={handleStopMetronome}
       />
 
-      <SpotifyPanel backendUrl={realtimeUrl} onPlaybackStateChange={onSpotifyPlaybackStateChange} onStop={onSpotifyStop} />
+      <SpotifyPanel
+            backendUrl={realtimeUrl}
+            onPlaybackStateChange={onSpotifyPlaybackStateChange}
+            onStop={onSpotifyStop}
+            useBackendForPlayback={isConnected && iframeLoaded}
+            sendToBackendIframe={sendMessageToIframe}
+          />
 
       {micStatus === 'granted' && isConnected && (
         <p className="voice-command-hint">
-          Voice: <strong>&quot;microphone off&quot;</strong> / <strong>&quot;microphone on&quot;</strong>;
-          <strong> &quot;metronome&quot;</strong> (chime), then say BPM — or &quot;metronome&quot; + number; <strong>&quot;stop&quot;</strong> (metronome + backing);
-          <strong> &quot;backing track&quot;</strong> (chime), then say description — or &quot;backing track&quot; + description in one phrase;
+          Voice: <strong>&quot;microphone off&quot;</strong> / <strong>&quot;hey bot&quot;</strong>;
+          <strong> &quot;apple&quot;</strong> (chime), then say BPM — or &quot;apple&quot; + number; <strong>&quot;stop&quot;</strong> (apple + carrot);
+          <strong> &quot;carrot&quot;</strong> (chime), then say description — or &quot;carrot&quot; + description in one phrase;
           <strong> &quot;eggplant&quot;</strong> (chime), then say chord — or &quot;eggplant&quot; + chord; <strong>&quot;close display&quot;</strong> (back to neutral);
-          <strong> &quot;pause&quot;</strong> / <strong>&quot;play&quot;</strong> / <strong>&quot;save&quot;</strong> for backing track.
+          <strong> &quot;pause&quot;</strong> / <strong>&quot;play&quot;</strong> / <strong>&quot;save&quot;</strong> for carrot.
           When Spotify is showing: <strong>&quot;pause&quot;</strong> / <strong>&quot;play&quot;</strong> / <strong>&quot;stop&quot;</strong> / <strong>&quot;restart&quot;</strong>; <strong>&quot;rewind X seconds&quot;</strong> / <strong>&quot;fast forward X seconds&quot;</strong>. Ask the AI to &quot;play Song A, Song B, and Song C&quot; for a queue.
         </p>
       )}

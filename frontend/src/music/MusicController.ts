@@ -10,7 +10,7 @@ function generateId(): string {
 }
 
 export type PlaybackAdapter = {
-  playUri: (uri: string, positionMs?: number) => Promise<boolean>;
+  playUri: (uri: string, positionMs?: number, queueUris?: string[]) => Promise<boolean>;
   pause: () => Promise<void>;
   resume: () => Promise<void>;
   seek: (positionMs: number) => Promise<void>;
@@ -73,7 +73,7 @@ class MusicControllerImpl {
     return {
       item: this.nowPlayingItem,
       progressMs: 0,
-      durationMs: 0,
+      durationMs: this.nowPlayingItem.durationMs ?? 0,
     };
   }
 
@@ -176,7 +176,10 @@ class MusicControllerImpl {
 
   async playIndex(index: number): Promise<boolean> {
     if (index < 0) return false;
-    if (!this.adapter) return false;
+    if (!this.adapter) {
+      console.warn('[MusicController] playIndex failed: no playback adapter (Spotify not connected?)');
+      return false;
+    }
     if (index >= this.items.length) {
       if (index === 0 && this.nowPlayingItem && this.playbackStatus === 'paused') {
         this.playbackStatus = 'playing';
@@ -188,11 +191,12 @@ class MusicControllerImpl {
     }
     const item = this.items[index];
     this.items.splice(index, 1);
+    const queueUris = this.items.map((i) => i.uri);
     this.nowPlayingItem = item;
     this.playbackStatus = 'playing';
     this.notifyQueue();
     this.notifyNowPlaying();
-    const ok = await this.adapter.playUri(item.uri, 0);
+    const ok = await this.adapter.playUri(item.uri, 0, queueUris);
     if (!ok) {
       this.items.splice(index, 0, item);
       this.nowPlayingItem = null;
@@ -204,8 +208,17 @@ class MusicControllerImpl {
     return true;
   }
 
+  /** Skip to a specific queue item by reference. More robust than playIndex when the queue
+   * may have changed (e.g. after adding songs or track-auto-advance) since we find by id. */
+  async playItem(item: QueueItem): Promise<boolean> {
+    const index = this.items.findIndex((i) => i.id === item.id || i.uri === item.uri);
+    if (index < 0) return false;
+    return this.playIndex(index);
+  }
+
   async playUri(uri: string, item?: Partial<QueueItem>): Promise<boolean> {
     if (!this.adapter) {
+      console.warn('[MusicController] playUri failed: no playback adapter (Spotify not connected?)');
       this.playbackStatus = 'stopped';
       return false;
     }
@@ -239,14 +252,17 @@ class MusicControllerImpl {
 
   async addAndPlay(items: QueueItem[]): Promise<boolean> {
     if (items.length === 0) return false;
-    if (!this.adapter) return false;
+    if (!this.adapter) {
+      console.warn('[MusicController] addAndPlay failed: no playback adapter (Spotify not connected?)');
+      return false;
+    }
     const [first, ...rest] = items;
     this.nowPlayingItem = first;
     this.items = rest;
     this.playbackStatus = 'playing';
     this.notifyQueue();
     this.notifyNowPlaying();
-    const ok = await this.adapter.playUri(first.uri, 0);
+    const ok = await this.adapter.playUri(first.uri, 0, rest.map((i) => i.uri));
     if (!ok) {
       this.playbackStatus = 'stopped';
       this.notifyNowPlaying();

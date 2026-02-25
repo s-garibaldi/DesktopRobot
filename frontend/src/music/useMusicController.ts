@@ -5,11 +5,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { musicController } from './MusicController';
 import { handleMusicControllerEvent } from './events';
-import type { MusicQueue, NowPlaying, PlaybackStatus } from './types';
+import type { MusicQueue, NowPlaying, PlaybackStatus, QueueItem } from './types';
 
 export interface UseMusicControllerOptions {
-  /** play(uri) returns Promise<boolean> */
-  play: (uri: string) => Promise<boolean>;
+  /** play(uri, queueUris?) returns Promise<boolean>; pass queueUris to load a list for auto-play */
+  play: (uri: string, queueUris?: string[]) => Promise<boolean>;
   pause: () => Promise<void>;
   resume: () => Promise<void>;
   seek: (positionMs: number) => Promise<void>;
@@ -39,10 +39,12 @@ export function useMusicController(options: UseMusicControllerOptions) {
   const [status, setStatus] = useState<PlaybackStatus>(() => musicController.getPlaybackStatus());
   const lastTrackUriRef = useRef<string | null>(null);
   const trackEndedFiredForUriRef = useRef<string | null>(null);
+  const uriNullDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     const adapter = {
-      playUri: async (uri: string) => play(uri),
+      playUri: async (uri: string, _positionMs?: number, queueUris?: string[]) =>
+        play(uri, queueUris),
       pause,
       resume,
       seek,
@@ -75,11 +77,14 @@ export function useMusicController(options: UseMusicControllerOptions) {
   }, []);
 
   // Poll Spotify playback state for progress/duration UI (Spotify SDK returns seconds)
+  // Use item.durationMs when Spotify returns 0 (connectivity/sync delay)
   useEffect(() => {
-    if (!playbackState?.trackUri) return;
-    const posMs = playbackState.position * 1000;
-    const durMs = playbackState.duration * 1000;
-    musicController.updateProgress(posMs, durMs);
+    const np = musicController.getNowPlaying();
+    if (!playbackState?.trackUri && !np) return;
+    const posMs = (playbackState?.position ?? 0) * 1000;
+    let durMs = (playbackState?.duration ?? 0) * 1000;
+    if (durMs <= 0 && np?.item.durationMs) durMs = np.item.durationMs;
+    if (np) musicController.updateProgress(posMs, durMs);
   }, [playbackState?.trackUri, playbackState?.position, playbackState?.duration]);
 
   // Detect track ended and auto-advance to next in queue.
@@ -104,11 +109,21 @@ export function useMusicController(options: UseMusicControllerOptions) {
       onTrackEnded?.();
     };
 
-    // Path 1: uri went from non-null to null
+    // Path 1: uri went from non-null to null. Debounce: SDK briefly reports null during track switch.
     if (lastTrackUriRef.current && !uri) {
       lastTrackUriRef.current = null;
-      fireTrackEnded();
+      if (uriNullDebounceRef.current) clearTimeout(uriNullDebounceRef.current);
+      uriNullDebounceRef.current = setTimeout(() => {
+        uriNullDebounceRef.current = null;
+        fireTrackEnded();
+      }, 600);
     } else {
+      if (uri) {
+        if (uriNullDebounceRef.current) {
+          clearTimeout(uriNullDebounceRef.current);
+          uriNullDebounceRef.current = null;
+        }
+      }
       lastTrackUriRef.current = uri;
     }
 
@@ -150,6 +165,7 @@ export function useMusicController(options: UseMusicControllerOptions) {
   const previous = useCallback(() => musicController.previous(), []);
 
   const playIndex = useCallback((index: number) => musicController.playIndex(index), []);
+  const playItem = useCallback((item: QueueItem) => musicController.playItem(item), []);
 
   const playUri = useCallback(
     (uri: string, item?: Partial<{ id: string; title: string; artist: string; albumArtUrl: string }>) =>
@@ -194,6 +210,7 @@ export function useMusicController(options: UseMusicControllerOptions) {
     next,
     previous,
     playIndex,
+    playItem,
     playUri,
     addAndPlay,
     addToQueueAndStartIfIdle,

@@ -7,8 +7,10 @@ interface SpotifyFaceProps {
   onTogglePlay?: () => void;
 }
 
-function formatDuration(ms: number): string {
-  const s = Math.floor(ms / 1000);
+/** PlaybackState uses seconds; convert to m:ss for display. Tolerates ms input if value is unreasonably large (>2h). */
+function formatDurationSec(value: number): string {
+  const sec = value > 7200 ? value / 1000 : value; // >2h in sec = likely ms
+  const s = Math.floor(Math.max(0, sec));
   const m = Math.floor(s / 60);
   return `${m}:${(s % 60).toString().padStart(2, '0')}`;
 }
@@ -23,8 +25,8 @@ export default function SpotifyFace({ playbackState, onSeek, onTogglePlay }: Spo
   const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!playbackState || playbackState.duration <= 0 || !onSeek) return;
     const pct = Number(e.target.value);
-    const positionMs = (pct / 100) * playbackState.duration;
-    onSeek(positionMs);
+    const positionSec = (pct / 100) * playbackState.duration;
+    onSeek(positionSec * 1000);
   };
 
   return (
@@ -57,7 +59,7 @@ export default function SpotifyFace({ playbackState, onSeek, onTogglePlay }: Spo
             </div>
             <div className="spotify-face-bar-wrap">
               <div className="spotify-face-time">
-                {formatDuration(Math.floor(playbackState.position))}
+                {formatDurationSec(playbackState.position)}
               </div>
               <input
                 type="range"
@@ -71,7 +73,7 @@ export default function SpotifyFace({ playbackState, onSeek, onTogglePlay }: Spo
                 aria-label="Seek"
               />
               <div className="spotify-face-time">
-                {formatDuration(playbackState.duration)}
+                {formatDurationSec(playbackState.duration)}
               </div>
             </div>
             {onTogglePlay && (

@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   useSpotifyMetadata,
   useSpotifyPlayer,
+  useSpotifyViaBackend,
   buildAuthUrl,
   generatePkce,
   SPOTIFY_PLAYBACK_SCOPES,
@@ -37,15 +38,22 @@ interface SpotifyPanelProps {
   backendUrl: string;
   onPlaybackStateChange?: (state: PlaybackState | null) => void;
   onStop?: () => void;
+  /** When true, use backend iframe for playback (same context as Realtime AI audio) */
+  useBackendForPlayback?: boolean;
+  sendToBackendIframe?: (msg: object) => void;
 }
 
-export default function SpotifyPanel({ backendUrl, onPlaybackStateChange, onStop }: SpotifyPanelProps) {
+export default function SpotifyPanel({ backendUrl, onPlaybackStateChange, onStop, useBackendForPlayback = false, sendToBackendIframe }: SpotifyPanelProps) {
   const [token, setToken] = useState<string | null>(loadStoredToken);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<SpotifyTrack[]>([]);
   const [callbackError, setCallbackError] = useState<string | null>(null);
+  const [agentPlaybackError, setAgentPlaybackError] = useState<string | null>(null);
+  const [showStartPlaybackHint, setShowStartPlaybackHint] = useState(false);
   const [restoringSession, setRestoringSession] = useState(false);
   const [skipSeconds, setSkipSeconds] = useState(10);
+  const [volume, setVolumeState] = useState(0.5);
+  const tokenExchangeInProgressRef = useRef(false);
 
   const { searchTracks, loading: searchLoading, error: searchError } = useSpotifyMetadata(backendUrl);
 
@@ -120,28 +128,50 @@ export default function SpotifyPanel({ backendUrl, onPlaybackStateChange, onStop
     }
   }, [backendUrl]);
 
-  const {
-    ready: playerReady,
-    error: playerError,
-    playbackState,
-    play,
-    pause,
-    resume,
-    setVolume,
-    seek,
-  } = useSpotifyPlayer(token, { getValidToken, onAuthenticationError });
+  const sendToBackend = useCallback(
+    (msg: object) => sendToBackendIframe?.(msg),
+    [sendToBackendIframe]
+  );
 
-  // MusicController + Spotify adapter
+  const backendPlayer = useSpotifyViaBackend({
+    sendToIframe: sendToBackend,
+    isIframeReady: useBackendForPlayback && !!sendToBackendIframe,
+  });
+
+  const frontendPlayer = useSpotifyPlayer(token, { getValidToken, onAuthenticationError });
+
+  const useBackend = useBackendForPlayback && !!sendToBackendIframe;
+  const player = useBackend ? backendPlayer : frontendPlayer;
+  const playerReady = player.ready;
+  const playerError = player.error;
+  const playbackState = player.playbackState;
+  const autoplayBlocked = player.autoplayBlocked;
+  const play = player.play;
+  const pause = player.pause;
+  const resume = player.resume;
+  const seek = player.seek;
+  const activateElement = player.activateElement;
+  const setVolume = useBackend ? () => {} : (frontendPlayer as { setVolume?: (n: number) => void }).setVolume ?? (() => {});
+  const reconnectPlayer = useBackend ? () => {} : (frontendPlayer as { reconnect?: () => void }).reconnect ?? (() => {});
+
+  useEffect(() => {
+    if (useBackend && token && sendToBackendIframe) {
+      sendToBackendIframe({ type: 'spotify_set_token', token });
+    }
+  }, [useBackend, token, sendToBackendIframe]);
+
+  // MusicController + Spotify adapter; queueUris loads a list so playback auto-starts
   const playWithRetry = useCallback(
-    async (uri: string) => {
-      let ok = await play(uri);
+    async (uri: string, queueUris?: string[]) => {
+      const uris = queueUris && queueUris.length > 0 ? [uri, ...queueUris] : uri;
+      let ok = await play(uris);
       if (!ok) {
         await new Promise((r) => setTimeout(r, 600));
-        ok = await play(uri);
+        ok = await play(uris);
       }
       if (!ok) {
         await new Promise((r) => setTimeout(r, 1500));
-        ok = await play(uri);
+        ok = await play(uris);
       }
       return ok;
     },
@@ -163,16 +193,45 @@ export default function SpotifyPanel({ backendUrl, onPlaybackStateChange, onStop
       : null,
   });
 
+  const handleStartPlayback = useCallback(async () => {
+    activateElement();
+    if (music.queue.items.length > 0) {
+      music.playIndex(0);
+    } else if (music.nowPlaying) {
+      if (autoplayBlocked) {
+        await music.togglePause();
+        await music.resume();
+      } else {
+        music.resume();
+      }
+    }
+  }, [activateElement, music, autoplayBlocked]);
+
   // Handle redirect from Spotify (callback with ?code=...)
+  // Guard: code is single-use; React Strict Mode double-invokes effects, so prevent duplicate exchange.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const code = params.get('code');
     if (!code) return;
+    if (tokenExchangeInProgressRef.current) return;
+    tokenExchangeInProgressRef.current = true;
 
-    const codeVerifier = sessionStorage.getItem(SPOTIFY_CODE_VERIFIER_KEY);
+    // Try sessionStorage first; fallback to state param (survives localhost → 127.0.0.1 redirect)
+    let codeVerifier = sessionStorage.getItem(SPOTIFY_CODE_VERIFIER_KEY);
+    if (!codeVerifier) {
+      const stateParam = params.get('state');
+      if (stateParam) {
+        try {
+          codeVerifier = decodeURIComponent(stateParam);
+        } catch {
+          // ignore decode errors
+        }
+      }
+    }
     const redirectUri = getSpotifyRedirectUri();
 
     if (!codeVerifier) {
+      tokenExchangeInProgressRef.current = false;
       setCallbackError('Missing code verifier. Try connecting again.');
       window.history.replaceState({}, '', window.location.pathname || '/');
       return;
@@ -200,12 +259,16 @@ export default function SpotifyPanel({ backendUrl, onPlaybackStateChange, onStop
           setToken(data.access_token);
           setCallbackError(null);
         } else {
-          const msg = data.error ?? 'Failed to get token';
+          let msg = data.error ?? 'Failed to get token';
+          if (/invalid.*authorization.*code/i.test(msg)) {
+            msg += ' — Click Connect with Spotify again to get a fresh login.';
+          }
           setCallbackError(codeVerifier ? msg : 'Session lost after redirect. Close the app, reopen it, then try Connect with Spotify again.');
         }
       } catch (e) {
         setCallbackError(e instanceof Error ? e.message : String(e));
       } finally {
+        tokenExchangeInProgressRef.current = false;
         sessionStorage.removeItem(SPOTIFY_CODE_VERIFIER_KEY);
         window.history.replaceState({}, '', window.location.pathname || '/');
       }
@@ -262,16 +325,73 @@ export default function SpotifyPanel({ backendUrl, onPlaybackStateChange, onStop
     })();
   }, [backendUrl]);
 
+  // Merge MusicController nowPlaying with SDK playbackState so displays stay in sync when we skip.
+  // MusicController updates immediately; SDK lags. Prefer our queue state for track identity.
+  // Ensure position/duration are in seconds (not ms) - SDK uses seconds, MusicController uses ms.
+  const toSeconds = (v: number, isFromMs: boolean) =>
+    isFromMs ? v / 1000 : v > 7200 ? v / 1000 : v; // >2h in sec = likely ms
   useEffect(() => {
-    onPlaybackStateChange?.(token ? playbackState : null);
-  }, [token, playbackState, onPlaybackStateChange]);
+    if (!token) {
+      onPlaybackStateChange?.(null);
+      return;
+    }
+    if (!playbackState) {
+      onPlaybackStateChange?.(null);
+      return;
+    }
+    const np = music.nowPlaying;
+    const useQueueTrack =
+      np && (music.status === 'playing' || music.status === 'paused');
+    const pos =
+      useQueueTrack && playbackState.duration <= 0
+        ? np.progressMs / 1000
+        : toSeconds(playbackState.position, false);
+    const dur =
+      useQueueTrack && playbackState.duration <= 0
+        ? np.durationMs / 1000
+        : toSeconds(playbackState.duration, false);
+    const merged: PlaybackState = useQueueTrack
+      ? {
+          ...playbackState,
+          trackName: np!.item.title,
+          trackUri: np!.item.uri,
+          artistNames: np!.item.artist,
+          albumImageUrl: np!.item.albumArtUrl ?? playbackState.albumImageUrl,
+          position: pos,
+          duration: dur,
+        }
+      : { ...playbackState, position: pos, duration: dur };
+    onPlaybackStateChange?.(merged);
+  }, [token, playbackState, music.nowPlaying, music.status, onPlaybackStateChange]);
 
   // When we're connected (have token) and not handling a callback, clear any stale token-exchange error so it doesn't keep showing.
   useEffect(() => {
     if (token && !new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '').get('code')) {
       setCallbackError(null);
+      setAgentPlaybackError(null);
     }
   }, [token]);
+
+  // Listen for playback failures when agent tries to play without Spotify connected
+  useEffect(() => {
+    const handler = () => setAgentPlaybackError('Connect Spotify to play music from the AI.');
+    window.addEventListener('spotify-playback-failed', handler);
+    return () => window.removeEventListener('spotify-playback-failed', handler);
+  }, []);
+
+  // When AI requests playback, show hint to click Start playback (browsers require user gesture for audio)
+  useEffect(() => {
+    const handler = () => setShowStartPlaybackHint(true);
+    window.addEventListener('spotify-agent-requested-playback', handler);
+    return () => window.removeEventListener('spotify-agent-requested-playback', handler);
+  }, []);
+
+  // Clear the hint once playback is actually running
+  useEffect(() => {
+    if (music.status === 'playing' && showStartPlaybackHint) {
+      setShowStartPlaybackHint(false);
+    }
+  }, [music.status, showStartPlaybackHint]);
 
   // When there's no token and we're not restoring: auto-redirect to Spotify so user doesn't have to click Connect.
   useEffect(() => {
@@ -283,6 +403,7 @@ export default function SpotifyPanel({ backendUrl, onPlaybackStateChange, onStop
     const clientId = import.meta.env.VITE_SPOTIFY_CLIENT_ID as string | undefined;
     if (!clientId) return;
 
+    // 800ms gives user a moment to see the connect screen before auto-redirect
     const t = setTimeout(async () => {
       const redirectUri = getSpotifyRedirectUri();
       const { codeVerifier, codeChallenge } = await generatePkce();
@@ -296,7 +417,7 @@ export default function SpotifyPanel({ backendUrl, onPlaybackStateChange, onStop
         scopes: SPOTIFY_PLAYBACK_SCOPES,
       });
       window.location.href = url;
-    }, 400);
+    }, 800);
 
     return () => clearTimeout(t);
   }, [token, restoringSession, callbackError]);
@@ -330,6 +451,7 @@ export default function SpotifyPanel({ backendUrl, onPlaybackStateChange, onStop
     setSearchResults([]);
     setSearchQuery('');
     setCallbackError(null);
+    setAgentPlaybackError(null);
   }, []);
 
   const handleSearch = useCallback(async () => {
@@ -340,17 +462,19 @@ export default function SpotifyPanel({ backendUrl, onPlaybackStateChange, onStop
 
   const playTrack = useCallback(
     (track: SpotifyTrack) => {
+      activateElement();
       const uri = `spotify:track:${track.id}`;
       const item = {
         id: `q-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
         title: track.name,
-        artist: track.artists?.join(', ') ?? '',
+        artist: Array.isArray(track.artists) ? track.artists.map((a) => a.name).join(', ') : String(track.artists ?? ''),
         uri,
         albumArtUrl: track.album?.images?.[0]?.url,
+        durationMs: track.duration_ms,
       };
       music.addAndPlay([item]);
     },
-    [music]
+    [music, activateElement]
   );
 
   const formatDuration = (ms: number) => {
@@ -358,17 +482,6 @@ export default function SpotifyPanel({ backendUrl, onPlaybackStateChange, onStop
     const m = Math.floor(s / 60);
     return `${m}:${(s % 60).toString().padStart(2, '0')}`;
   };
-
-  const handleSeek = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      const pct = Number(e.target.value);
-      if (playbackState && playbackState.duration > 0) {
-        const positionMs = (pct / 100) * playbackState.duration;
-        seek(positionMs);
-      }
-    },
-    [playbackState, seek]
-  );
 
   const handleStop = useCallback(async () => {
     onStop?.();
@@ -381,7 +494,11 @@ export default function SpotifyPanel({ backendUrl, onPlaybackStateChange, onStop
     }
   }, [pause, seek, onStop, music]);
 
+  const lastRestartAtRef = useRef(0);
   const handleRestart = useCallback(async () => {
+    const now = Date.now();
+    if (now - lastRestartAtRef.current < 800) return; // Debounce: prevent accidental double-click
+    lastRestartAtRef.current = now;
     await seek(0);
     await resume();
   }, [seek, resume]);
@@ -422,22 +539,18 @@ export default function SpotifyPanel({ backendUrl, onPlaybackStateChange, onStop
 
   const handleForward = useCallback(() => {
     if (!playbackState || playbackState.duration <= 0) return;
-    const ms = Math.min(playbackState.duration, playbackState.position + skipSeconds * 1000);
-    seek(ms);
+    const posMs = playbackState.position * 1000;
+    const durMs = playbackState.duration * 1000;
+    seek(Math.min(durMs, posMs + skipSeconds * 1000));
   }, [playbackState, skipSeconds, seek]);
 
   const handleRewind = useCallback(() => {
     if (!playbackState) return;
-    const ms = Math.max(0, playbackState.position - skipSeconds * 1000);
-    seek(ms);
+    const posMs = playbackState.position * 1000;
+    seek(Math.max(0, posMs - skipSeconds * 1000));
   }, [playbackState, skipSeconds, seek]);
 
-  const seekPercent =
-    playbackState && playbackState.duration > 0
-      ? Math.min(100, (playbackState.position / playbackState.duration) * 100)
-      : 0;
-
-  const errorMsg = callbackError ?? searchError ?? playerError;
+  const errorMsg = callbackError ?? agentPlaybackError ?? searchError ?? playerError;
 
   if (!token) {
     return (
@@ -465,18 +578,47 @@ export default function SpotifyPanel({ backendUrl, onPlaybackStateChange, onStop
     <div className="spotify-panel">
       <div className="spotify-panel-header">
         <h3 className="spotify-panel-title">Spotify</h3>
-        <button type="button" className="spotify-logout-btn" onClick={handleLogout} title="Disconnect">
-          Disconnect
-        </button>
+        <div className="spotify-panel-header-actions">
+          <button type="button" className="spotify-reconnect-btn" onClick={reconnectPlayer} title="Reconnect player (fixes 404 errors)">
+            Reconnect
+          </button>
+          <button type="button" className="spotify-logout-btn" onClick={handleLogout} title="Disconnect">
+            Disconnect
+          </button>
+        </div>
       </div>
 
       <NowPlayingPanel
         nowPlaying={music.nowPlaying}
         status={music.status}
-        onPlayPause={music.togglePause}
-        onNext={music.next}
-        onPrevious={music.previous}
+        onPlayPause={() => {
+          activateElement();
+          music.togglePause();
+        }}
+        onNext={() => {
+          activateElement();
+          music.next();
+        }}
+        onPrevious={() => {
+          activateElement();
+          music.previous();
+        }}
         onSeek={music.seekTo}
+        volume={playerReady ? volume : undefined}
+        onVolumeChange={
+          playerReady
+            ? (v) => {
+                setVolumeState(v);
+                setVolume(v);
+              }
+            : undefined
+        }
+        onStop={playerReady ? handleStop : undefined}
+        onRestart={playerReady ? handleRestart : undefined}
+        skipSeconds={skipSeconds}
+        onSkipSecondsChange={setSkipSeconds}
+        onRewind={playerReady ? handleRewind : undefined}
+        onForward={playerReady ? handleForward : undefined}
       />
 
       <QueuePanel
@@ -484,14 +626,43 @@ export default function SpotifyPanel({ backendUrl, onPlaybackStateChange, onStop
         onRemoveAt={music.removeAt}
         onMove={music.move}
         onClear={music.clear}
-        onPlayIndex={music.playIndex}
+        onPlayItem={(item) => {
+          activateElement();
+          music.playItem(item);
+        }}
       />
+
+      {(playerReady && (music.queue.items.length > 0 || music.nowPlaying)) || autoplayBlocked || showStartPlaybackHint ? (
+        <div className="spotify-start-row">
+          <button
+            type="button"
+            className={`spotify-start-btn ${autoplayBlocked || showStartPlaybackHint ? 'spotify-start-btn-urgent' : ''}`}
+            onClick={() => {
+              setShowStartPlaybackHint(false);
+              handleStartPlayback();
+            }}
+            title={autoplayBlocked ? 'Click to enable audio' : 'Click to start playback (required by browser)'}
+          >
+            {autoplayBlocked ? '🔊 Click to enable audio' : showStartPlaybackHint ? '▶ Click to play (browser requires this)' : '▶ Start playback'}
+          </button>
+          <span className="spotify-start-hint">
+            {autoplayBlocked ? 'Audio was blocked. Click the button above to hear the music.' : showStartPlaybackHint ? 'The AI queued a song — click above to hear it.' : "If songs don't play, click here first"}
+          </span>
+        </div>
+      ) : null}
 
       {restoringSession && (
         <p className="spotify-panel-hint">Restoring session…</p>
       )}
 
-      {errorMsg && <p className="spotify-panel-error">{errorMsg}</p>}
+      {errorMsg && (
+        <div className="spotify-panel-error-row">
+          <p className="spotify-panel-error">{errorMsg}</p>
+          <button type="button" className="spotify-reconnect-inline-btn" onClick={reconnectPlayer}>
+            Reconnect
+          </button>
+        </div>
+      )}
 
       {!playerReady && !restoringSession && (
         <p className="spotify-panel-hint">Loading player… Make sure Spotify Premium is active on this account.</p>
@@ -515,146 +686,6 @@ export default function SpotifyPanel({ backendUrl, onPlaybackStateChange, onStop
           {searchLoading ? 'Searching…' : 'Search'}
         </button>
       </div>
-
-      {playerReady && (
-        <>
-          {(playbackState?.trackName || (playbackState && playbackState.duration > 0)) && (
-            <div className="spotify-now-playing">
-              <div className="spotify-now-playing-info">
-                <span className="spotify-now-playing-title">
-                  {playbackState?.trackName ?? '—'}
-                </span>
-                {playbackState?.artistNames && (
-                  <span className="spotify-now-playing-artist">{playbackState.artistNames}</span>
-                )}
-              </div>
-              <div className="spotify-progress-row">
-                <span className="spotify-time-label">
-                  {formatDuration(Math.floor(playbackState?.position ?? 0))}
-                </span>
-                <input
-                  type="range"
-                  className="spotify-seek-slider"
-                  min="0"
-                  max="100"
-                  value={seekPercent}
-                  onChange={handleSeek}
-                  title="Seek"
-                />
-                <span className="spotify-time-label">
-                  {formatDuration(playbackState?.duration ?? 0)}
-                </span>
-              </div>
-              <div className="spotify-transport-row">
-                <button
-                  type="button"
-                  className="spotify-transport-btn"
-                  onClick={() => music.previous()}
-                  title="Previous"
-                  aria-label="Previous"
-                >
-                  ⏮
-                </button>
-                <button
-                  type="button"
-                  className="spotify-transport-btn spotify-play-pause"
-                  onClick={() => music.togglePause()}
-                  title={playbackState?.paused ? 'Play' : 'Pause'}
-                  aria-label={playbackState?.paused ? 'Play' : 'Pause'}
-                >
-                  {playbackState?.paused ? '▶' : '⏸'}
-                </button>
-                <button
-                  type="button"
-                  className="spotify-transport-btn"
-                  onClick={() => music.next()}
-                  title="Next"
-                  aria-label="Next"
-                >
-                  ⏭
-                </button>
-                <label className="spotify-volume-label">
-                  Vol
-                  <input
-                    type="range"
-                    min="0"
-                    max="100"
-                    defaultValue="50"
-                    onChange={(e) => setVolume(Number(e.target.value) / 100)}
-                  />
-                </label>
-              </div>
-              <div className="spotify-extra-controls">
-                <button
-                  type="button"
-                  className="spotify-transport-btn"
-                  onClick={handleStop}
-                  title="Stop"
-                  aria-label="Stop"
-                >
-                  ⏹ Stop
-                </button>
-                <button
-                  type="button"
-                  className="spotify-transport-btn"
-                  onClick={handleRestart}
-                  title="Restart song"
-                  aria-label="Restart song"
-                >
-                  ↺ Restart
-                </button>
-                <div className="spotify-skip-row">
-                  <label className="spotify-skip-label">
-                    Skip
-                    <input
-                      type="number"
-                      className="spotify-skip-input"
-                      min={1}
-                      max={600}
-                      value={skipSeconds}
-                      onChange={(e) => setSkipSeconds(Math.max(1, Math.min(600, Number(e.target.value) || 1)))}
-                      title="Seconds to skip"
-                    />
-                    s
-                  </label>
-                  <button
-                    type="button"
-                    className="spotify-transport-btn"
-                    onClick={handleRewind}
-                    title={`Rewind ${skipSeconds} s`}
-                    aria-label={`Rewind ${skipSeconds} seconds`}
-                  >
-                    ⏪ −{skipSeconds}s
-                  </button>
-                  <button
-                    type="button"
-                    className="spotify-transport-btn"
-                    onClick={handleForward}
-                    title={`Forward ${skipSeconds} s`}
-                    aria-label={`Forward ${skipSeconds} seconds`}
-                  >
-                    +{skipSeconds}s ⏩
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-          {!(playbackState?.trackName) && (
-            <div className="spotify-controls-row">
-              <label className="spotify-volume-label">
-                Volume
-                <input
-                  type="range"
-                  min="0"
-                  max="100"
-                  defaultValue="50"
-                  onChange={(e) => setVolume(Number(e.target.value) / 100)}
-                />
-              </label>
-            </div>
-          )}
-        </>
-      )}
 
       <ul className="spotify-track-list">
         {searchResults.map((track) => (

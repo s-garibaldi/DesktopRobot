@@ -115,17 +115,23 @@ const suggestChordProgressionTool = tool({
         progressions = getProgressionsForStyle('pop', comp as 'basic' | 'intermediate' | 'advanced', keyRoot, use_sevenths);
       }
       const diatonic = getDiatonicChords(keyRoot);
+      const limited = progressions.slice(0, 2).map((p) => ({
+        name: p.name,
+        chords: p.chords.join(' → '),
+        chord_list: p.chords,
+        description: p.description,
+      }));
+      const firstProg = limited[0];
+      const sayAloud = firstProg
+        ? `Try ${firstProg.chords} for a ${styleNorm} feel in ${keyRoot}.`
+        : null;
       return {
         success: true,
         key: keyRoot,
         style: styleNorm,
         complexity: comp,
-        progressions: progressions.map((p) => ({
-          name: p.name,
-          chords: p.chords.join(' → '),
-          chord_list: p.chords,
-          description: p.description,
-        })),
+        progressions: limited,
+        say_aloud: sayAloud,
         diatonic_in_key: diatonic ? diatonic.map((d) => `${d.roman} ${d.chord}`).join(', ') : null,
         available_styles: getAllStyles(),
       };
@@ -226,23 +232,19 @@ const songwritingSuggestionTool = tool({
       const moodData = styleData?.[mood];
 
       if (moodData) {
+        const sayAloud = `For ${style} ${mood}, try ${moodData.progression}. ${moodData.tempo}. I can share structure and lyrics ideas if you'd like.`;
         return {
           success: true,
           style: style,
           mood: mood,
           key: key || 'C',
+          say_aloud: sayAloud,
           suggestion: {
             chord_progression: moodData.progression,
             song_structure: moodData.structure,
             lyrics_theme: moodData.lyrics_theme,
             tempo: moodData.tempo,
-            tips: [
-              'Start with the chord progression to establish the mood',
-              'Write lyrics that match the emotional tone',
-              'Consider the song structure for flow and impact',
-              'Experiment with different strumming patterns',
-              'Add dynamics (soft/loud) for emotional impact'
-            ]
+            tip: 'Start with the chord progression, then match lyrics to the mood.',
           }
         };
       } else {
@@ -432,17 +434,21 @@ const musicTheoryTool = tool({
 
       const explanation = explanations[topic];
       if (explanation) {
+        const sayAloudMap: Record<string, string> = {
+          circle_of_fifths: "It's the order of keys by fifths: C, G, D, A... Keys next to each other share most notes.",
+          scales: "Major scale is C-D-E-F-G-A-B. Minor has a different pattern. Want me to go deeper?",
+          intervals: "Intervals are the distance between notes - like major third is 4 semitones. Want details?",
+          harmony: "Chords in a key follow I, ii, iii, IV, V, vi, vii. Dominant resolves to tonic.",
+          chord_construction: "Major is root plus major 3rd plus 5th. Want the full breakdown?",
+        };
+        const sayAloud = sayAloudMap[topic] ?? "Here's the gist - want me to go deeper?";
         return {
           success: true,
           topic: topic,
           key: key || 'C',
           explanation: explanation,
-          tips: [
-            'Practice scales daily to improve finger dexterity',
-            'Learn intervals to understand chord construction',
-            'Study chord progressions to understand song structure',
-            'Experiment with different voicings and inversions'
-          ]
+          say_aloud: sayAloud,
+          tip: 'Practice daily to improve. Ask for more detail if you want to go deeper.',
         };
       } else {
         return {
@@ -497,6 +503,7 @@ const playSpotifyTrackTool = tool({
         trackName: result.trackName,
         artists: result.artists,
         albumArtUrl: result.albumArtUrl,
+        durationMs: result.durationMs,
       });
       return {
         success: true,
@@ -527,7 +534,7 @@ function parseQueueQueries(input: string): string[] {
 }
 
 /** Search and get track with URI for queue add. */
-async function searchAndGetQueueItem(query: string): Promise<{ uri: string; title: string; artist: string; albumArtUrl?: string } | null> {
+async function searchAndGetQueueItem(query: string): Promise<{ uri: string; title: string; artist: string; albumArtUrl?: string; durationMs?: number } | null> {
   const result = await searchSpotifyTrack(query);
   if (!result?.trackName) return null;
   return {
@@ -535,6 +542,7 @@ async function searchAndGetQueueItem(query: string): Promise<{ uri: string; titl
     title: result.trackName,
     artist: result.artists,
     albumArtUrl: result.albumArtUrl,
+    durationMs: result.durationMs,
   };
 }
 
@@ -561,7 +569,7 @@ const spotifyQueueAddTool = tool({
     if (list.length === 0) {
       return { success: false, message: 'Specify at least one song to add (e.g. "Blinding Lights" or "Song A, Song B").' };
     }
-    const items: { uri: string; title: string; artist: string; albumArtUrl?: string }[] = [];
+    const items: { uri: string; title: string; artist: string; albumArtUrl?: string; durationMs?: number }[] = [];
     for (const q of list) {
       const item = await searchAndGetQueueItem(q);
       if (item) items.push(item);
@@ -575,6 +583,7 @@ const spotifyQueueAddTool = tool({
         title: it.title,
         artist: it.artist,
         albumArtUrl: it.albumArtUrl,
+        durationMs: it.durationMs,
       })),
     });
     return {
@@ -585,6 +594,14 @@ const spotifyQueueAddTool = tool({
   },
 });
 
+/** Get music state; retries once after 300ms if empty (handles race with music_state_update after queue-add). */
+async function getMusicStateWithRetry(): Promise<ReturnType<typeof getMusicState>> {
+  let state = getMusicState();
+  if (state.queue.length > 0 || state.nowPlaying) return state;
+  await new Promise((r) => setTimeout(r, 300));
+  return getMusicState();
+}
+
 // Get the current queue (read-only, from frontend MusicController shadow state).
 const spotifyQueueGetTool = tool({
   name: 'spotify_queue_get',
@@ -592,7 +609,7 @@ const spotifyQueueGetTool = tool({
     'Get the current Spotify queue. Use when the user asks what is in the queue, what song is next, what is coming up, list the queue, show me the queue, or similar questions about what songs are queued.',
   parameters: { type: 'object', properties: {}, required: [], additionalProperties: false },
   execute: async () => {
-    const { queue, currentIndex, nowPlaying, status } = getMusicState();
+    const { queue, currentIndex, nowPlaying, status } = await getMusicStateWithRetry();
     const isPlaying = status === 'playing';
     const list = queue.map((item, i) => ({
       position: i + 1,
@@ -806,14 +823,18 @@ export const musicalCompanionAgent = new RealtimeAgent({
   instructions: `
 You are a knowledgeable and enthusiastic musical companion AI, specialized in guitar, songwriting, and music theory. You help musicians with chord recognition, songwriting suggestions, and music theory explanations.
 
+# Voice and Brevity (Critical)
+You are speaking aloud. Users cannot skim. Keep each reply to 1–3 sentences unless they explicitly ask for more.
+- Never read out lists of more than 2–3 items. Pick the best one or two and say those.
+- Sound like a friend chatting, not a lecturer. Avoid formal transitions like "Furthermore" or "Additionally."
+- Give the gist in one sentence, then offer to go deeper.
+- Bad: "C major consists of the notes C, E, and G. The theory is root plus major third plus perfect fifth. The fingering is..." Good: "C major is C, E, and G - I'll show you the fingering on the tab."
+
 # Initial Greeting
-When the conversation starts or when you first connect, immediately greet the user with their name warmly and enthusiastically. Say that you are ready to help them with thier music. For example: "Hey Sebastian! Let's get started with some music!"
+When the conversation starts or when you first connect, immediately greet the user with their name warmly and enthusiastically. Say that you are ready to help them with their music. For example: "Hey Sebastian! Let's get started with some music!"
 
 # Memory and Context
-You have access to memories from previous conversations. When the session starts, you may receive memories in the format "[Memory: topic] content". Review these to understand the user's preferences, name,  favorite chords, musical style, or other relevant information. Use retrieve_memories to recall additional information when needed. When the user shares important information (like favorite genres, skill level, preferences, or personal facts), use store_memory to save it for future conversations. The system may also automatically extract some information, but you should still use store_memory for important details.
-
-# Brevity
-Keep replies brief unless the user asks for more. Prefer one clear sentence over a paragraph. If a topic could be explained at length, give the gist first and offer to elaborate.
+You have access to memories from previous conversations. When the session starts, you may receive memories in the format "[Memory: topic] content". Review these to understand the user's preferences, name, favorite chords, musical style, or other relevant information. Use retrieve_memories to recall additional information when needed. When the user shares important information (like favorite genres, skill level, preferences, or personal facts), use store_memory to save it for future conversations. The system may also automatically extract some information, but you should still use store_memory for important details.
 
 # Your Expertise
 - Guitar chord recognition and fingerings
@@ -827,6 +848,9 @@ Keep replies brief unless the user asks for more. Prefer one clear sentence over
 When the user asks to see or display a chord (e.g. "show me G minor", "display A major"), use display_guitar_chord with the chord name. When they ask for a scale (e.g. "show me the G major scale", "display A dorian scale"), use display_guitar_chord with a value that includes the word "scale" (e.g. "G major scale", "A dorian scale") so the diagram shows scale positions. If they ask to close or hide the display, use display_guitar_chord with close: true.
 
 # How to Use Your Tools
+- When a tool returns say_aloud, prefer using it as your spoken reply - it is already brief and speech-optimized.
+- When a tool returns multiple items (e.g. progressions, chords), pick the single best one to mention aloud. Do not enumerate all of them. The user can ask for more.
+- For tools that return progressions[], explanation objects, or tips[]: summarize in one sentence, do not read the full structure.
 - Use recognize_guitar_chord for chord information, notes, and theory (supports triads, 7ths, maj7, m7, dim, aug, sus2, sus4, add9, 9, 11, 13)
 - Use suggest_chord_progression to suggest progressions in a key and style (pop, rock, jazz, folk, R&B, country) at basic, intermediate, or advanced complexity; use this when the user wants chord progressions, "what chords go together", or more complex/interesting progressions
 - Use songwriting_suggestion for creative songwriting help (structure, lyrics themes, tempo)
@@ -839,7 +863,7 @@ When the user asks to see or display a chord (e.g. "show me G minor", "display A
 - Use retrieve_memories to recall information from previous conversations
 
 # Guidelines
-- Be encouraging and supportive; keep answers concise unless the user wants more.
+- Be encouraging in tone, not length. A warm "Try that!" is enough. Don't pad replies with extra praise.
 - Give practical, actionable advice in a few sentences; offer to go deeper if relevant.
 - When explaining theory, start with the essential idea and ask if they want more detail.
 - Suggest chord progressions and structures clearly and briefly.
@@ -857,6 +881,11 @@ When the user asks to see or display a chord (e.g. "show me G minor", "display A
 - "Play a blues backing track" / "I want to jam in A minor" / "Backing track in E around 90 bpm" / "Play something for rock soloing" → Use play_backing_track with a command describing the desired track
 - User says "I love jazz" → Use store_memory to save this preference
 - User asks "What's my favorite genre?" → Use retrieve_memories to recall
+
+# Example Replies (aim for this style)
+- User: "What's in F#m7?" → "F#m7 has F#, A, C#, and E. Want me to show the fingering?"
+- User: "Give me a chord progression in G" → "Try G, Em, C, D - classic pop. I can suggest more if you'd like."
+- User: "Explain the circle of fifths" → "It's the order of keys by fifths: C, G, D, A... Keys next to each other share most notes. Want me to go deeper?"
 
 # Response Style
 - Default to short, conversational answers: 1–3 sentences for most questions. Sound like a helpful friend, not a textbook.

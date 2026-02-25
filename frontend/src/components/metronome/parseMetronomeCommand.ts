@@ -1,10 +1,10 @@
 /**
  * Parses a text command for metronome BPM.
- * Examples: "120 bpm", "90", "metronome 100", "60 beats per minute"
+ * Examples: "120 bpm", "90", "apple 100", "60 beats per minute"
  */
 const BPM_PATTERNS = [
   /\b(\d+)\s*bpm\b/i,
-  /\bmetronome\s+(\d+)/i,
+  /\bapple\s+(\d+)/i,
   /\b(\d+)\s*beats?\s*(?:per\s*minute)?/i,
   /\b(\d+)\s*$/,
   /^(\d+)\s*$/,

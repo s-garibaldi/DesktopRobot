@@ -68,10 +68,10 @@ export function postClientAction(type: string, payload?: Record<string, unknown>
 }
 
 /**
- * Send play_spotify_track to the parent (Tauri/frontend). Used by both single-song play and queue.
- * Ensures identical message format so the frontend handles both the same way.
+ * Send music_play_track to the parent (Tauri/frontend). Used for single-song play.
+ * Frontend handles music_play_track (and legacy play_spotify_track) identically.
  */
-export function postPlaySpotifyTrack(payload: { uri: string; trackName: string; artists: string }) {
-  postClientAction('play_spotify_track', payload);
+export function postPlaySpotifyTrack(payload: { uri: string; trackName: string; artists: string; albumArtUrl?: string }) {
+  postClientAction('music_play_track', payload);
 }
 

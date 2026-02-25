@@ -2,14 +2,16 @@
  * Queue panel - list items, reorder (up/down), remove, clear.
  */
 import React, { useState } from 'react';
-import type { MusicQueue } from './types';
+import type { MusicQueue, QueueItem } from './types';
 
 export interface QueuePanelProps {
   queue: MusicQueue;
   onRemoveAt: (index: number) => void;
   onMove: (from: number, to: number) => void;
   onClear: () => void;
-  onPlayIndex: (index: number) => void;
+  onPlayIndex?: (index: number) => void;
+  /** Prefer onPlayItem for row clicks - more robust when queue changes between render and click */
+  onPlayItem?: (item: QueueItem) => void;
 }
 
 export function QueuePanel({
@@ -18,6 +20,7 @@ export function QueuePanel({
   onMove,
   onClear,
   onPlayIndex,
+  onPlayItem,
 }: QueuePanelProps) {
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
 
@@ -67,7 +70,7 @@ export function QueuePanel({
             onDragOver={handleDragOver}
             onDrop={(e) => handleDrop(e, index)}
             onDragEnd={handleDragEnd}
-            onClick={() => onPlayIndex(index)}
+            onClick={() => (onPlayItem ? onPlayItem(item) : onPlayIndex?.(index))}
           >
             <span className="queue-item-index">{index + 1}</span>
             {item.albumArtUrl ? (

@@ -37,6 +37,8 @@ export type GuitarTabDisplayVoiceAction = 'show' | 'close';
 export type SpotifyVoiceAction = 'pause' | 'play' | 'stop' | 'restart' | 'rewind' | 'forward';
 
 const COOLDOWN_MS = 2500;
+/** Min ms between acting on interim results to avoid double-fire from rapid interims. */
+const INTERIM_DEBOUNCE_MS = 400;
 const BACKING_DESCRIPTION_TIMEOUT_MS = 5000;
 const DISPLAY_DESCRIPTION_TIMEOUT_MS = 5000;
 const METRONOME_BPM_TIMEOUT_MS = 5000;
@@ -45,12 +47,13 @@ const METRONOME_START_COOLDOWN_MS = 6000;
 /** Ignore "close display" for this long after chord was shown from backend (avoids agent saying "say close display to go back" triggering close). */
 const GUITAR_TAB_CLOSE_COOLDOWN_MS = 6000;
 const PHRASE_OFF = 'microphone off';
-const PHRASE_ON = 'microphone on';
-const PHRASE_BACKING_TRACK = 'backing track';
+const PHRASE_ON = 'hey bot';
+const PHRASE_BACKING_TRACK = 'carrot';
 const PHRASE_DISPLAY = 'eggplant';
 const PHRASE_CLOSE_DISPLAY = 'close display';
+const PHRASE_METRONOME = 'apple';
 
-/** Play a short ascending chime (C5 → E5) to acknowledge e.g. "backing track", "metronome", "microphone on". */
+/** Play a short ascending chime (C5 → E5) to acknowledge e.g. "carrot", "apple", "hey bot". */
 function playChime(): void {
   if (typeof window === 'undefined') return;
   try {
@@ -117,7 +120,7 @@ function isMicOffCommand(transcript: string): boolean {
   return t === PHRASE_OFF || t.endsWith(PHRASE_OFF);
 }
 
-/** Stricter check for "microphone on" to reduce false positives (e.g. AI echo). */
+/** Stricter check for "hey bot" to reduce false positives (e.g. AI echo). */
 function isMicOnCommand(transcript: string): boolean {
   const t = normalize(transcript);
   return t === PHRASE_ON || t.endsWith(PHRASE_ON);
@@ -178,14 +181,14 @@ function isSpotifyForwardPhrase(transcript: string): boolean {
   return /^(fast forward|skip forward|forward)(\s|$)/.test(t) || /(fast forward|skip forward|forward)\s+\d+/.test(t);
 }
 
-/** Extract description after "backing track" for ElevenLabs. */
+/** Extract description after "carrot" for ElevenLabs. */
 function extractBackingTrackDescription(transcript: string): string | null {
   const t = transcript.trim();
   const lower = t.toLowerCase();
   const idx = lower.indexOf(PHRASE_BACKING_TRACK);
   if (idx === -1) return null;
   const after = t.slice(idx + PHRASE_BACKING_TRACK.length).trim();
-  return after || ''; // allow "backing track" alone (use defaults)
+  return after || ''; // allow "carrot" alone (use defaults)
 }
 
 /** Extract chord/scale description after "eggplant" for guitar tab. */
@@ -205,10 +208,10 @@ function isCloseDisplayCommand(transcript: string): boolean {
 
 /**
  * Listens for vocal commands via Web Speech API:
- * - "microphone off" / "microphone on" → onCommand
- * - "metronome" + number or a number (40–240) → onMetronomeCommand('start' | 'setBpm', bpm)
+ * - "microphone off" / "hey bot" → onCommand
+ * - "apple" + number or a number (40–240) → onMetronomeCommand('start' | 'setBpm', bpm)
  * - "stop" → onMetronomeCommand('stop') and onBackingTrackCommand('stop')
- * - "backing track" + description → onBackingTrackCommand('describe', description)
+ * - "carrot" + description → onBackingTrackCommand('describe', description)
  * - "pause" / "play" / "save" / "stop" → onBackingTrackCommand
  * - "eggplant" (chime), then say chord — or "eggplant" + chord in one phrase; "close display" → back to neutral
  * - When Spotify is active: "pause", "play", "stop", "restart", "rewind X seconds", "fast forward X seconds"
@@ -290,7 +293,7 @@ export function useVoiceCommandMicOnOff(
         const result = results[i];
         const transcript = (result[0]?.transcript ?? '').trim();
 
-        // Play chime as soon as "backing track", "display", or "metronome" is detected (including interim) so it feels immediate
+        // Play chime as soon as "carrot", "display", or "apple" is detected (including interim) so it feels immediate
         if (extractBackingTrackDescription(transcript) !== null && !chimePlayedForBackingRef.current) {
           playChime();
           chimePlayedForBackingRef.current = true;
@@ -299,12 +302,82 @@ export function useVoiceCommandMicOnOff(
           playChime();
           chimePlayedForDisplayRef.current = true;
         }
-        if (transcriptContainsPhrase(transcript, 'metronome') && !chimePlayedForMetronomeRef.current) {
+        if (transcriptContainsPhrase(transcript, PHRASE_METRONOME) && !chimePlayedForMetronomeRef.current) {
           playChime();
           chimePlayedForMetronomeRef.current = true;
         }
 
-        if (!result.isFinal) continue;
+        // Act on interim results for short commands to reduce latency (same pattern as backing track chime)
+        if (!result.isFinal) {
+          if (now - lastCommandTimeRef.current < INTERIM_DEBOUNCE_MS) {
+            continue;
+          }
+          if (isMicOnCommand(transcript)) {
+            lastCommandTimeRef.current = now;
+            playChime();
+            onCommandRef.current({ type: 'set_backend_mic_enabled', enabled: true });
+            console.log('Voice command (interim): hey bot');
+            continue;
+          }
+          if (isMicOffCommand(transcript)) {
+            lastCommandTimeRef.current = now;
+            playChimeDown();
+            onCommandRef.current({ type: 'set_backend_mic_enabled', enabled: false });
+            console.log('Voice command (interim): microphone off');
+            continue;
+          }
+          if (isSpotifyActiveRef.current && onSpotifyCommandRef.current) {
+            const spotify = onSpotifyCommandRef.current;
+            if (isPauseCommand(transcript)) {
+              lastCommandTimeRef.current = now;
+              playChimeDown();
+              spotify('pause');
+              console.log('Voice command (interim): Spotify pause');
+              continue;
+            }
+            if (isPlayCommand(transcript)) {
+              lastCommandTimeRef.current = now;
+              playChime();
+              spotify('play');
+              console.log('Voice command (interim): Spotify play');
+              continue;
+            }
+            if (isStopCommand(transcript)) {
+              lastCommandTimeRef.current = now;
+              playChimeDown();
+              spotify('stop');
+              console.log('Voice command (interim): Spotify stop');
+              continue;
+            }
+          }
+          if (onBackingTrackCommandRef.current) {
+            if (isPauseCommand(transcript) && !isInMetronomeStopCooldown(now)) {
+              lastCommandTimeRef.current = now;
+              playChimeDown();
+              onBackingTrackCommandRef.current('pause');
+              if (onMetronomeCommandRef.current) onMetronomeCommandRef.current('pause');
+              console.log('Voice command (interim): backing track pause');
+              continue;
+            }
+            if (isPlayCommand(transcript) && !isInMetronomeStopCooldown(now)) {
+              lastCommandTimeRef.current = now;
+              playChime();
+              onBackingTrackCommandRef.current('play');
+              if (onMetronomeCommandRef.current) onMetronomeCommandRef.current('play');
+              console.log('Voice command (interim): backing track play');
+              continue;
+            }
+            if (isStopCommand(transcript) && !isInMetronomeStopCooldown(now)) {
+              lastCommandTimeRef.current = now;
+              playChimeDown();
+              onBackingTrackCommandRef.current('stop');
+              if (onMetronomeCommandRef.current) onMetronomeCommandRef.current('stop');
+              console.log('Voice command (interim): backing track stop');
+              continue;
+            }
+          }
+          continue;
+        }
 
         // If we're waiting for a guitar tab display description, next utterance is the chord (unless it's a command)
         if (waitingForDisplayDescriptionRef.current && onGuitarTabDisplayCommandRef.current) {
@@ -331,7 +404,7 @@ export function useVoiceCommandMicOnOff(
             lastCommandTimeRef.current = now;
             playChime();
             onCommandRef.current({ type: 'set_backend_mic_enabled', enabled: true });
-            console.log('Voice command: microphone on');
+            console.log('Voice command: hey bot');
             return;
           }
           if (isStopCommand(transcript) && !isInMetronomeStopCooldown(now)) {
@@ -367,7 +440,7 @@ export function useVoiceCommandMicOnOff(
             lastCommandTimeRef.current = now;
             playChime();
             onCommandRef.current({ type: 'set_backend_mic_enabled', enabled: true });
-            console.log('Voice command: microphone on');
+            console.log('Voice command: hey bot');
             return;
           }
           if (isStopCommand(transcript)) {
@@ -409,7 +482,7 @@ export function useVoiceCommandMicOnOff(
           if (bpm !== null && onMetronomeCommandRef.current) {
             lastCommandTimeRef.current = now;
             playChime();
-            const hasMetronomeWord = transcriptContainsPhrase(transcript, 'metronome');
+            const hasMetronomeWord = transcriptContainsPhrase(transcript, PHRASE_METRONOME);
             onMetronomeCommandRef.current(hasMetronomeWord ? 'start' : 'setBpm', bpm);
             console.log('Voice command: metronome', hasMetronomeWord ? 'start' : 'setBpm', bpm);
             return;
@@ -440,7 +513,7 @@ export function useVoiceCommandMicOnOff(
             lastCommandTimeRef.current = now;
             playChime();
             onCommandRef.current({ type: 'set_backend_mic_enabled', enabled: true });
-            console.log('Voice command: microphone on');
+            console.log('Voice command: hey bot');
             return;
           }
           if (isStopCommand(transcript)) {
@@ -516,8 +589,23 @@ export function useVoiceCommandMicOnOff(
         if (now - lastCommandTimeRef.current < COOLDOWN_MS) return;
 
         // When Spotify face is active, handle Spotify transport commands first (frontend only)
+        // Check pause/play before restart - "pause" can be misheard as "restart" or "start over"
         if (isSpotifyActiveRef.current && onSpotifyCommandRef.current) {
           const spotify = onSpotifyCommandRef.current;
+          if (isPauseCommand(transcript)) {
+            lastCommandTimeRef.current = now;
+            playChimeDown();
+            spotify('pause');
+            console.log('Voice command: Spotify pause');
+            return;
+          }
+          if (isPlayCommand(transcript)) {
+            lastCommandTimeRef.current = now;
+            playChime();
+            spotify('play');
+            console.log('Voice command: Spotify play');
+            return;
+          }
           if (isRestartCommand(transcript)) {
             lastCommandTimeRef.current = now;
             playChime();
@@ -547,20 +635,6 @@ export function useVoiceCommandMicOnOff(
             console.log('Voice command: Spotify forward (default 15s)');
             return;
           }
-          if (isPauseCommand(transcript)) {
-            lastCommandTimeRef.current = now;
-            playChimeDown();
-            spotify('pause');
-            console.log('Voice command: Spotify pause');
-            return;
-          }
-          if (isPlayCommand(transcript)) {
-            lastCommandTimeRef.current = now;
-            playChime();
-            spotify('play');
-            console.log('Voice command: Spotify play');
-            return;
-          }
           if (isStopCommand(transcript)) {
             lastCommandTimeRef.current = now;
             playChimeDown();
@@ -581,7 +655,7 @@ export function useVoiceCommandMicOnOff(
           lastCommandTimeRef.current = now;
           playChime();
           onCommandRef.current({ type: 'set_backend_mic_enabled', enabled: true });
-          console.log('Voice command: microphone on');
+          console.log('Voice command: hey bot');
           return;
         }
         if (onGuitarTabDisplayCommandRef.current && isCloseDisplayCommand(transcript)) {
@@ -700,7 +774,7 @@ export function useVoiceCommandMicOnOff(
           console.log('Voice command: metronome play');
           return;
         }
-        if (onMetronomeCommandRef.current && transcriptContainsPhrase(transcript, 'metronome')) {
+        if (onMetronomeCommandRef.current && transcriptContainsPhrase(transcript, PHRASE_METRONOME)) {
           const bpm = parseMetronomeBpm(transcript);
           lastCommandTimeRef.current = now;
           if (bpm !== null) {

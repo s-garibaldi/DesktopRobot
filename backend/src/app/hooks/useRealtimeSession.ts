@@ -15,16 +15,16 @@ function normalizeTranscript(s: string): string {
   return (s ?? '').toLowerCase().trim().replace(/\s+/g, ' ');
 }
 
-/** True if transcript is "microphone off" or "microphone on". */
+/** True if transcript is "microphone off" or "hey bot". */
 function isMicCommandPhrase(transcript: string): boolean {
   const t = normalizeTranscript(transcript);
-  return t.includes('microphone off') || t.includes('microphone on');
+  return t.includes('microphone off') || t.includes('hey bot');
 }
 
 export interface RealtimeSessionCallbacks {
   onConnectionChange?: (status: SessionStatus) => void;
   onAgentHandoff?: (agentName: string) => void;
-  /** When user input is detected as "microphone off" or "microphone on" (e.g. to play a short ack). */
+  /** When user input is detected as "microphone off" or "hey bot" (e.g. to play a short ack). */
   onMicCommandTranscription?: (transcript: string) => void;
 }
 
