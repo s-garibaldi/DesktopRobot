@@ -888,7 +888,7 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
     [onGuitarTabDisplayCommand]
   );
 
-  const handleSpotifyCommand = useCallback((action: 'pause' | 'play' | 'stop' | 'restart' | 'rewind' | 'forward', seconds?: number) => {
+  const handleSpotifyCommand = useCallback((action: 'pause' | 'play' | 'stop' | 'restart' | 'rewind' | 'forward' | 'skip', seconds?: number) => {
     if (action === 'play') {
       setActiveModeAndRef(null);
       lastKnownMicEnabledRef.current = false;
@@ -1100,7 +1100,7 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
           <strong> &quot;carrot&quot;</strong> (chime), then say description — or &quot;carrot&quot; + description in one phrase;
           <strong> &quot;eggplant&quot;</strong> (chime), then say chord — or &quot;eggplant&quot; + chord; <strong>&quot;close display&quot;</strong> (back to neutral);
           <strong> &quot;pause&quot;</strong> / <strong>&quot;play&quot;</strong> / <strong>&quot;save&quot;</strong> for carrot.
-          When Spotify is showing: <strong>&quot;pause&quot;</strong> / <strong>&quot;play&quot;</strong> / <strong>&quot;stop&quot;</strong> / <strong>&quot;restart&quot;</strong>; <strong>&quot;rewind X seconds&quot;</strong> / <strong>&quot;fast forward X seconds&quot;</strong>. Ask the AI to &quot;play Song A, Song B, and Song C&quot; for a queue.
+          When Spotify is showing: <strong>&quot;pause&quot;</strong> / <strong>&quot;play&quot;</strong> / <strong>&quot;stop&quot;</strong> / <strong>&quot;restart&quot;</strong> / <strong>&quot;skip song&quot;</strong> (or &quot;next&quot;); <strong>&quot;rewind X seconds&quot;</strong> / <strong>&quot;fast forward X seconds&quot;</strong>. Ask the AI to &quot;play Song A, Song B, and Song C&quot; for a queue.
         </p>
       )}
 

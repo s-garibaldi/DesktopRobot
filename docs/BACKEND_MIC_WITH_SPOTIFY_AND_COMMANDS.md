@@ -50,6 +50,7 @@ So the **frontend is the single source of truth** for “backend mic on/off” v
 - **When the user says “Play”** (resume Spotify): the frontend turns the backend mic **off** again and clears `backend_mic` mode so the mic stays off until the user says “hey bot” (while paused) or “Stop”.
 - **When the user says “Stop”** (Spotify): playback stops; the backend mic is **turned back on** automatically so the user can talk to the AI again.
 - **When the user says “Pause”** (Spotify): playback pauses; the backend mic is **not** turned on automatically. The user can say **“hey bot”** to turn the backend mic on and talk to the AI. When they say **“Play”** again, the mic is turned off again.
+- **When the user says “Skip song” or “Next”** (Spotify): skips to the next track. If the queue is empty, playback stops and the face returns to neutral (same as “Stop”).
 
 So:
 

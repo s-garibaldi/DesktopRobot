@@ -529,6 +529,12 @@ export default function SpotifyPanel({ backendUrl, onPlaybackStateChange, onStop
         case 'forward':
           music.seekTo(Math.min(dur || 999999, pos + (seconds ?? 15) * 1000));
           break;
+        case 'skip': {
+          void music.next().then((ok) => {
+            if (!ok) void handleStop();
+          });
+          break;
+        }
         default:
           break;
       }

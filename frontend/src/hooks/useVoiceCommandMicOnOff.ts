@@ -34,7 +34,7 @@ export type BackingTrackVoiceAction = 'describe' | 'pause' | 'play' | 'save' | '
 
 export type GuitarTabDisplayVoiceAction = 'show' | 'close';
 
-export type SpotifyVoiceAction = 'pause' | 'play' | 'stop' | 'restart' | 'rewind' | 'forward';
+export type SpotifyVoiceAction = 'pause' | 'play' | 'stop' | 'restart' | 'rewind' | 'forward' | 'skip';
 
 const COOLDOWN_MS = 2500;
 /** Min ms between acting on interim results to avoid double-fire from rapid interims. */
@@ -149,6 +149,12 @@ function isSaveCommand(transcript: string): boolean {
 function isRestartCommand(transcript: string): boolean {
   const t = normalize(transcript);
   return t === 'restart' || t.startsWith('restart ') || t === 'start over' || t.startsWith('start over ');
+}
+
+function isSkipCommand(transcript: string): boolean {
+  const t = normalize(transcript);
+  return t === 'skip' || t === 'skip song' || t === 'next song' || t === 'next track' || t === 'next'
+    || t.startsWith('skip ') || t.startsWith('next ') || t.includes('skip song') || t.includes('next song');
 }
 
 /** Parse "rewind 30 seconds", "fast forward 1 minute", "go back 15", "skip forward 45". Returns seconds or null. */
@@ -347,6 +353,13 @@ export function useVoiceCommandMicOnOff(
               playChimeDown();
               spotify('stop');
               console.log('Voice command (interim): Spotify stop');
+              continue;
+            }
+            if (isSkipCommand(transcript)) {
+              lastCommandTimeRef.current = now;
+              playChime();
+              spotify('skip');
+              console.log('Voice command (interim): Spotify skip');
               continue;
             }
           }
@@ -640,6 +653,13 @@ export function useVoiceCommandMicOnOff(
             playChimeDown();
             spotify('stop');
             console.log('Voice command: Spotify stop');
+            return;
+          }
+          if (isSkipCommand(transcript)) {
+            lastCommandTimeRef.current = now;
+            playChime();
+            spotify('skip');
+            console.log('Voice command: Spotify skip');
             return;
           }
         }
