@@ -79,8 +79,8 @@ function playChime(): void {
   }
 }
 
-/** Play a short descending chime (E5 → C5) to acknowledge "microphone off". */
-function playChimeDown(): void {
+/** Play a short descending chime (E5 → C5) to acknowledge "microphone off". Exported for use by backend auto mic-off. */
+export function playChimeDown(): void {
   if (typeof window === 'undefined') return;
   try {
     const Ctor = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;

@@ -35,7 +35,10 @@ import { useVoiceCommandDetection } from "./hooks/useVoiceCommandDetection";
 import { useMemoryExtraction } from "./hooks/useMemoryExtraction";
 import { getMemoriesForAgent, formatMemoriesAsContext } from "./lib/memoryStorage";
 import { setMusicState } from "./lib/musicState";
+import { postClientAction } from "./lib/bridge";
 import { SpotifyPlayerBridge } from "./components/SpotifyPlayerBridge";
+
+const MIC_IDLE_AUTO_OFF_MS = 8000;
 
 function App() {
   const searchParams = useSearchParams()!;
@@ -148,6 +151,23 @@ function App() {
     };
   }, [sdkAudioElement]);
 
+  const idleTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearIdleTimer = React.useCallback(() => {
+    if (idleTimeoutRef.current) {
+      clearTimeout(idleTimeoutRef.current);
+      idleTimeoutRef.current = null;
+    }
+  }, []);
+
+  const scheduleIdleAutoOff = React.useCallback(() => {
+    clearIdleTimer();
+    idleTimeoutRef.current = setTimeout(() => {
+      idleTimeoutRef.current = null;
+      postClientAction('backend_auto_mic_off');
+    }, MIC_IDLE_AUTO_OFF_MS);
+  }, [clearIdleTimer]);
+
   const {
     connect,
     disconnect,
@@ -161,6 +181,7 @@ function App() {
       handoffTriggeredRef.current = true;
       setSelectedAgentName(agentName);
     },
+    onAIOutputComplete: scheduleIdleAutoOff,
   });
 
   const [sessionStatus, setSessionStatus] =
@@ -274,6 +295,14 @@ function App() {
     window.addEventListener('message', handleParentMessage);
     return () => window.removeEventListener('message', handleParentMessage);
   }, []);
+
+  // Auto mic-off: 5s after AI finishes speaking, tell frontend to turn off. Clear timer when mic disabled.
+  useEffect(() => {
+    if (!backendMicEnabledByVoice) {
+      clearIdleTimer();
+    }
+    return () => clearIdleTimer();
+  }, [backendMicEnabledByVoice, clearIdleTimer]);
 
   // Send PTT state to parent window (Tauri frontend) for emotion sync
   useEffect(() => {

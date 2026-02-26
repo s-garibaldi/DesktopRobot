@@ -26,6 +26,10 @@ export interface RealtimeSessionCallbacks {
   onAgentHandoff?: (agentName: string) => void;
   /** When user input is detected as "microphone off" or "microphone on" (e.g. to play a short ack). */
   onMicCommandTranscription?: (transcript: string) => void;
+  /** Called when any user speech is transcribed (e.g. for other features). */
+  onUserInputTranscription?: () => void;
+  /** Called when AI has finished outputting audio (resets idle timer for auto mic-off). */
+  onAIOutputComplete?: () => void;
 }
 
 export interface ConnectOptions {
@@ -57,6 +61,10 @@ export function useRealtimeSession(callbacks: RealtimeSessionCallbacks = {}) {
   const historyHandlers = useHandleSessionHistory().current;
   const onMicCommandTranscriptionRef = useRef(callbacks.onMicCommandTranscription);
   onMicCommandTranscriptionRef.current = callbacks.onMicCommandTranscription;
+  const onUserInputTranscriptionRef = useRef(callbacks.onUserInputTranscription);
+  onUserInputTranscriptionRef.current = callbacks.onUserInputTranscription;
+  const onAIOutputCompleteRef = useRef(callbacks.onAIOutputComplete);
+  onAIOutputCompleteRef.current = callbacks.onAIOutputComplete;
 
   // Track if we've already sent a speaking signal for the current response
   // This prevents flooding the bridge with delta events
@@ -77,6 +85,7 @@ export function useRealtimeSession(callbacks: RealtimeSessionCallbacks = {}) {
     switch (event.type) {
       case "conversation.item.input_audio_transcription.completed": {
         const transcript = (event.transcript ?? '').trim();
+        onUserInputTranscriptionRef.current?.();
         if (isMicCommandPhrase(transcript)) {
           sessionRef.current?.interrupt();
           onMicCommandTranscriptionRef.current?.(transcript);
@@ -131,6 +140,7 @@ export function useRealtimeSession(callbacks: RealtimeSessionCallbacks = {}) {
         }
         speakingEndTimerRef.current = setTimeout(() => {
           sendSpeakingEndToParent();
+          onAIOutputCompleteRef.current?.();
           speakingEndTimerRef.current = null;
         }, totalDelay);
         break;

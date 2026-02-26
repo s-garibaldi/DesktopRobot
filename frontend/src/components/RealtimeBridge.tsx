@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Emotion } from '../App';
 import { useMicrophone } from '../hooks/useMicrophone';
-import { useVoiceCommandMicOnOff } from '../hooks/useVoiceCommandMicOnOff';
+import { useVoiceCommandMicOnOff, playChimeDown } from '../hooks/useVoiceCommandMicOnOff';
 import { setMetronomeBpm } from './metronome/metronomeStore';
 import MicrophonePanel from './MicrophonePanel';
 import BackingTrackPanel, { type BackingTrackHandlers } from './BackingTrackPanel';
@@ -86,6 +86,8 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
   const startMetronomeFromBackendBpmRef = useRef<(bpm: number) => void>(() => {});
   /** Backend can command chord display; ref so message handler can call the callback. */
   const onGuitarTabDisplayCommandRef = useRef<((action: 'show' | 'close', description?: string) => void) | undefined>(undefined);
+  /** Ref for handleMicCommand so message handler (which runs before it's defined) can trigger mic off. */
+  const handleMicCommandRef = useRef<(payload: { type: 'set_backend_mic_enabled'; enabled: boolean }) => void>(() => {});
   /** Set when metronome starts (voice or backend); voice hook ignores stop/pause for a few seconds to avoid false triggers. */
   const lastMetronomeStartTimeRef = useRef(0);
   /** Set when chord display is shown from backend; voice hook ignores "close display" for a few seconds so AI saying it doesn't dismiss. */
@@ -293,7 +295,7 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
       const data = event.data;
-      const isClientAction = data?.type === 'play_spotify_track' || data?.type === 'spotify_stop' || data?.type === 'music_play_track' || data?.type === 'music_add_to_queue' || data?.type === 'music_next' || data?.type === 'music_previous' || data?.type === 'music_pause' || data?.type === 'music_resume' || data?.type === 'music_clear' || data?.type === 'music_play_index' || data?.type === 'music_remove_at' || data?.type === 'music_move' || data?.type === 'play_backing_track' || data?.type === 'metronome_set_bpm' || data?.type === 'guitar_tab_display';
+      const isClientAction = data?.type === 'play_spotify_track' || data?.type === 'spotify_stop' || data?.type === 'music_play_track' || data?.type === 'music_add_to_queue' || data?.type === 'music_next' || data?.type === 'music_previous' || data?.type === 'music_pause' || data?.type === 'music_resume' || data?.type === 'music_clear' || data?.type === 'music_play_index' || data?.type === 'music_remove_at' || data?.type === 'music_move' || data?.type === 'play_backing_track' || data?.type === 'metronome_set_bpm' || data?.type === 'guitar_tab_display' || data?.type === 'backend_auto_mic_off';
       if (isClientAction) {
         console.log('[RealtimeBridge] Client action received:', data?.type, 'origin=', event.origin, 'expected~', backendOrigin);
       }
@@ -445,6 +447,13 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
               isPTTActiveRef.current = data.isPTTActive;
               isPTTUserSpeakingRef.current = data.isPTTUserSpeaking;
               console.log(`PTT state updated: active=${data.isPTTActive}, speaking=${data.isPTTUserSpeaking}`);
+              break;
+
+            case 'backend_auto_mic_off':
+              // Backend detected 5s of no audio input — play chime and turn off mic (same as "microphone off" voice command)
+              playChimeDown();
+              handleMicCommandRef.current?.({ type: 'set_backend_mic_enabled', enabled: false });
+              console.log('[RealtimeBridge] backend_auto_mic_off: mic turned off due to 5s idle');
               break;
 
             case 'spotify_playback_state':
@@ -768,6 +777,7 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
       sendMessageToIframe({ type: 'set_backend_mic_enabled', enabled: false });
     }
   }, [setActiveModeAndRef, onEmotionChange]);
+  handleMicCommandRef.current = handleMicCommand;
 
   const handleStartMetronome = useCallback(() => {
     if (activeModeRef.current !== 'metronome') {
