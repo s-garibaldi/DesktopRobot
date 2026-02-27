@@ -85,8 +85,14 @@ export default function SpotifyPanel({ backendUrl, onPlaybackStateChange, onStop
         setToken(data.access_token);
         return data.access_token;
       }
+      // Refresh token invalid/revoked; clear stored tokens to stop retry loop
+      localStorage.removeItem(SPOTIFY_TOKEN_KEY);
+      localStorage.removeItem(SPOTIFY_REFRESH_KEY);
+      localStorage.removeItem(SPOTIFY_EXPIRES_AT_KEY);
+      setToken(null);
+      setCallbackError('Spotify session expired. Please connect again.');
     } catch {
-      // fall through
+      // fall through: keep existing token
     }
     return typeof localStorage !== 'undefined' ? localStorage.getItem(SPOTIFY_TOKEN_KEY) : null;
   }, [backendUrl]);
@@ -98,6 +104,7 @@ export default function SpotifyPanel({ backendUrl, onPlaybackStateChange, onStop
       localStorage.removeItem(SPOTIFY_REFRESH_KEY);
       localStorage.removeItem(SPOTIFY_EXPIRES_AT_KEY);
       setToken(null);
+      setCallbackError('Spotify session expired. Please connect again.');
       return;
     }
     try {
@@ -119,12 +126,14 @@ export default function SpotifyPanel({ backendUrl, onPlaybackStateChange, onStop
         localStorage.removeItem(SPOTIFY_REFRESH_KEY);
         localStorage.removeItem(SPOTIFY_EXPIRES_AT_KEY);
         setToken(null);
+        setCallbackError('Spotify session expired. Please connect again.');
       }
     } catch {
       localStorage.removeItem(SPOTIFY_TOKEN_KEY);
       localStorage.removeItem(SPOTIFY_REFRESH_KEY);
       localStorage.removeItem(SPOTIFY_EXPIRES_AT_KEY);
       setToken(null);
+      setCallbackError('Spotify session expired. Please connect again.');
     }
   }, [backendUrl]);
 

@@ -300,8 +300,15 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
         console.log('[RealtimeBridge] Client action received:', data?.type, 'origin=', event.origin, 'expected~', backendOrigin);
       }
 
-      const fromLocalhost = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/.test(String(event.origin || ''));
-      const accept = isAcceptedOrigin(event.origin) || (isClientAction && fromLocalhost);
+      const originStr = String(event.origin || '');
+      const fromLocalhost = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/.test(originStr);
+      const nullOrigin = originStr === '' || originStr === 'null';
+      const fromIframe = event.source === iframeRef.current?.contentWindow;
+      // Some WebViews report origin as "null" or custom schemes (tauri://, asset://).
+      // For client actions, accept any message that originates from our iframe.
+      const accept =
+        isAcceptedOrigin(event.origin) ||
+        (isClientAction && (fromIframe || fromLocalhost || nullOrigin));
       if (!accept) {
         if (isClientAction) {
           console.warn('[RealtimeBridge] Message rejected (origin mismatch):', event.origin, 'vs', backendOrigin);
@@ -412,11 +419,14 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
           // Handle different types of events from the realtime service
           switch (data.type) {
             case 'session_status':
-              setIsConnected(data.connected);
-              // Reset activity timer when connection status changes
+              // Only trust session_status when it says connected: true. The bridge.js DOM heuristic
+              // can false-negative (e.g. body contains "error"/"disconnected" in UI copy) and would
+              // unmount the iframe, removing backend access to tools (queue, metronome, etc.).
               if (data.connected) {
+                setIsConnected(true);
                 lastActivityTimeRef.current = Date.now();
               }
+              // Never set false from bridge - let checkRealtimeService be the source of truth for disconnect
               break;
               
             case 'ai_speaking_start':
@@ -539,6 +549,7 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
 
             case 'music_add_to_queue': {
               const items = data.items;
+              console.log('[RealtimeBridge] music_add_to_queue received:', Array.isArray(items) ? items.length : 'invalid');
               if (Array.isArray(items) && items.length > 0) {
                 const valid = items.filter(
                   (it: unknown) =>
@@ -547,6 +558,7 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
                     typeof (it as { uri?: unknown }).uri === 'string' &&
                     (it as { uri: string }).uri.startsWith('spotify:track:')
                 );
+                console.log('[RealtimeBridge] music_add_to_queue valid items:', valid.length);
                 if (valid.length > 0) {
                   onEmotionChange('spotify');
                   lastKnownMicEnabledRef.current = false;

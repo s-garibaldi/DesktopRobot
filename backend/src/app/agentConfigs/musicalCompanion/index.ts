@@ -566,17 +566,20 @@ const spotifyQueueAddTool = tool({
   execute: async (input: any) => {
     const { queries } = input as { queries: string };
     const list = parseQueueQueries((queries ?? '').trim());
+    console.log('[spotify_queue_add] input:', queries, 'parsed:', list);
     if (list.length === 0) {
       return { success: false, message: 'Specify at least one song to add (e.g. "Blinding Lights" or "Song A, Song B").' };
     }
     const items: { uri: string; title: string; artist: string; albumArtUrl?: string; durationMs?: number }[] = [];
     for (const q of list) {
       const item = await searchAndGetQueueItem(q);
+      if (!item) console.warn('[spotify_queue_add] no track found for:', q);
       if (item) items.push(item);
     }
     if (items.length === 0) {
       return { success: false, message: 'No tracks found. Try different song names.' };
     }
+    console.log('[spotify_queue_add] posting items:', items.length);
     postClientAction('music_add_to_queue', {
       items: items.map((it) => ({
         uri: it.uri,
