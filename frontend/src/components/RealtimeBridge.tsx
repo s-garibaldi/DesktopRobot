@@ -146,6 +146,10 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
     if (currentEmotion === 'spotify') {
       return;
     }
+    // Tuner stays until user switches; ignore backend-driven emotion changes while on tuner
+    if (currentEmotion === 'tuner') {
+      return;
+    }
     // Metronome stays on until user says "stop" or "pause"; ignore backend-driven emotion changes while on metronome
     if (currentEmotion === 'metronome') {
       return;
@@ -993,13 +997,13 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
         // Do not stop metronome or backing track on idle — they run until user says "stop" or "pause"
         if (mode === 'metronome' || mode === 'backing_track') {
           // Only switch to time display if desired; do not exit mode or restore mic
-          if (currentEmotion !== 'time' && currentEmotion !== 'metronome' && currentEmotion !== 'guitarTabs' && currentEmotion !== 'spotify' && !isTransitioning) {
+          if (currentEmotion !== 'time' && currentEmotion !== 'metronome' && currentEmotion !== 'guitarTabs' && currentEmotion !== 'spotify' && currentEmotion !== 'tuner' && !isTransitioning) {
             setLastEmotionChange(now);
             handleEmotionChange('time', 'idle_timeout', true);
           }
           return;
         }
-        if (currentEmotion !== 'time' && currentEmotion !== 'metronome' && currentEmotion !== 'guitarTabs' && currentEmotion !== 'spotify' && !isTransitioning) {
+        if (currentEmotion !== 'time' && currentEmotion !== 'metronome' && currentEmotion !== 'guitarTabs' && currentEmotion !== 'spotify' && currentEmotion !== 'tuner' && !isTransitioning) {
           console.log('Idle timeout reached, switching to time display');
           setLastEmotionChange(now);
           handleEmotionChange('time', 'idle_timeout', true);

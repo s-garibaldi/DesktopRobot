@@ -1,14 +1,15 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import AnimatedFace from './components/face/AnimatedFace';
 import EmotionControls from './components/face/EmotionControls';
 import GuitarTabsFace from './components/guitarTabs/GuitarTabsFace';
 import SpotifyFace from './components/spotify/SpotifyFace';
+import TunerFace from './components/tuner/TunerFace';
 import { getChordVoicings, getScaleVoicings, normalizeChordInput, resolveChordOrScaleInputForDisplay, getConfusableRootChords, getChordDisplayName } from './components/guitarTabs/chordData';
 import RealtimeBridge from './components/RealtimeBridge';
 import type { PlaybackState } from './spotify';
 import './App.css';
 
-export type Emotion = 'neutral' | 'happy' | 'listening' | 'time' | 'thinking' | 'speaking' | 'metronome' | 'guitarTabs' | 'spotify';
+export type Emotion = 'neutral' | 'happy' | 'listening' | 'time' | 'thinking' | 'speaking' | 'metronome' | 'guitarTabs' | 'spotify' | 'tuner';
 
 function App() {
   const [currentEmotion, setCurrentEmotion] = useState<Emotion>('neutral');
@@ -30,6 +31,26 @@ function App() {
     setGuitarTabsVoicingIndex(0);
   }, [guitarTabsInput]);
 
+  // Destroy tuner when switching away to prevent it from updating detached DOM (crashes)
+  const handleEmotionChange = useCallback((emotion: Emotion) => {
+    const leavingTuner = currentEmotion === 'tuner' && emotion !== 'tuner';
+    if (leavingTuner) {
+      try {
+        (window as { Tuner?: { destroy: () => void } }).Tuner?.destroy();
+      } catch {
+        // Ignore destroy errors
+      }
+    }
+    // When user manually selects a non-spotify face while a track is playing, prevent
+    // the Spotify effect from immediately switching back
+    const hasActiveTrack = spotifyPlaybackState &&
+      (spotifyPlaybackState.trackName || spotifyPlaybackState.duration > 0);
+    if (emotion !== 'spotify' && hasActiveTrack) {
+      setSpotifyUserStopped(true);
+    }
+    setCurrentEmotion(emotion);
+  }, [currentEmotion, spotifyPlaybackState]);
+
   // Auto-show Spotify face when a track is loaded (playing or paused); only go back to neutral when track is stopped.
   // If user pressed Stop, don't switch back to Spotify until they play again (no active track).
   useEffect(() => {
@@ -37,20 +58,20 @@ function App() {
       spotifyPlaybackState &&
       (spotifyPlaybackState.trackName || spotifyPlaybackState.duration > 0);
     if (hasActiveTrack && !spotifyUserStopped) {
-      setCurrentEmotion('spotify');
+      handleEmotionChange('spotify');
     } else if (!hasActiveTrack) {
       setSpotifyUserStopped(false);
-      if (currentEmotion === 'spotify') setCurrentEmotion('neutral');
+      if (currentEmotion === 'spotify') handleEmotionChange('neutral');
     }
-  }, [spotifyPlaybackState?.trackName ?? null, spotifyPlaybackState?.duration ?? 0, currentEmotion, spotifyUserStopped]);
+  }, [spotifyPlaybackState?.trackName ?? null, spotifyPlaybackState?.duration ?? 0, currentEmotion, spotifyUserStopped, handleEmotionChange]);
 
   const handleGuitarTabDisplayCommand = (action: 'show' | 'close', description?: string) => {
     if (action === 'show') {
       // Resolve to display form; for scales include " scale" so the UI shows scale voicings (backend can send "G major scale" or "G major")
       setGuitarTabsInput(resolveChordOrScaleInputForDisplay(description ?? ''));
-      setCurrentEmotion('guitarTabs');
+      handleEmotionChange('guitarTabs');
     } else {
-      setCurrentEmotion('neutral');
+      handleEmotionChange('neutral');
     }
   };
 
@@ -68,7 +89,7 @@ function App() {
           </button>
         )}
         <h1>Desktop Robot</h1>
-        <div className={`robot-container${currentEmotion === 'guitarTabs' ? ' guitar-tabs-active' : ''}${currentEmotion === 'spotify' ? ' spotify-active' : ''}`}>
+        <div className={`robot-container${currentEmotion === 'guitarTabs' ? ' guitar-tabs-active' : ''}${currentEmotion === 'spotify' ? ' spotify-active' : ''}${currentEmotion === 'tuner' ? ' tuner-active' : ''}`}>
           <div className="left-panel">
             <div className="animated-face-wrapper">
               {currentEmotion === 'guitarTabs' ? (
@@ -78,10 +99,12 @@ function App() {
                 />
               ) : currentEmotion === 'spotify' ? (
                 <SpotifyFace playbackState={spotifyPlaybackState} />
+              ) : currentEmotion === 'tuner' ? (
+                <TunerFace />
               ) : (
                 <AnimatedFace emotion={currentEmotion} fillContainer={isEmotionFullscreen} />
               )}
-              {!isEmotionFullscreen && currentEmotion !== 'guitarTabs' && currentEmotion !== 'spotify' && (
+              {!isEmotionFullscreen && currentEmotion !== 'guitarTabs' && currentEmotion !== 'spotify' && currentEmotion !== 'tuner' && (
                 <button
                   type="button"
                   className="emotion-fullscreen-enter"
@@ -113,11 +136,22 @@ function App() {
                   Spotify
                 </p>
               )}
+              {currentEmotion === 'tuner' && (
+                <p style={{
+                  marginTop: '0.25rem',
+                  fontSize: '1rem',
+                  textTransform: 'capitalize',
+                  color: '#00FFFF',
+                  textShadow: '0 0 10px #00FFFF'
+                }}>
+                  Tuner
+                </p>
+              )}
             </div>
             <div className="controls-section">
               <EmotionControls
                 currentEmotion={currentEmotion}
-                onEmotionChange={setCurrentEmotion}
+                onEmotionChange={handleEmotionChange}
               />
               {currentEmotion === 'guitarTabs' && (
                 <div className="guitar-tabs-input-section">
@@ -185,11 +219,11 @@ function App() {
           <div className="right-panel">
             <RealtimeBridge
               currentEmotion={currentEmotion}
-              onEmotionChange={setCurrentEmotion}
+              onEmotionChange={handleEmotionChange}
               onGuitarTabDisplayCommand={handleGuitarTabDisplayCommand}
               onSpotifyPlaybackStateChange={setSpotifyPlaybackState}
               onSpotifyStop={() => {
-                setCurrentEmotion('neutral');
+                handleEmotionChange('neutral');
                 setSpotifyUserStopped(true);
               }}
             />

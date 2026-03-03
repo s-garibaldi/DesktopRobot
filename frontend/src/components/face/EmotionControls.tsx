@@ -11,13 +11,14 @@ const EmotionControls: React.FC<EmotionControlsProps> = ({
   currentEmotion, 
   onEmotionChange 
 }) => {
-  const emotions: Emotion[] = ['neutral', 'happy', 'listening', 'time', 'thinking', 'speaking', 'metronome', 'guitarTabs', 'spotify'];
+  const emotions: Emotion[] = ['neutral', 'happy', 'listening', 'time', 'thinking', 'speaking', 'metronome', 'guitarTabs', 'spotify', 'tuner'];
 
   const labelForEmotion = (emotion: Emotion) => {
     if (emotion === 'time') return 'Time';
     if (emotion === 'metronome') return 'Metronome';
     if (emotion === 'guitarTabs') return 'Guitar tabs';
     if (emotion === 'spotify') return 'Spotify';
+    if (emotion === 'tuner') return 'Tuner';
     return emotion;
   };
 
