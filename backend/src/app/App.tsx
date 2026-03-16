@@ -181,7 +181,8 @@ function App() {
       handoffTriggeredRef.current = true;
       setSelectedAgentName(agentName);
     },
-    onAIOutputComplete: scheduleIdleAutoOff,
+    // Idle-time auto mic-off: after AI finishes speaking, wait MIC_IDLE_AUTO_OFF_MS then send backend_auto_mic_off to frontend.
+    // onAIOutputComplete: scheduleIdleAutoOff,
   });
 
   const [sessionStatus, setSessionStatus] =

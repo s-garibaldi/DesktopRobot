@@ -270,7 +270,7 @@ const songwritingSuggestionTool = tool({
 // Send BPM to the frontend; frontend sets it and starts the metronome automatically.
 const setMetronomeBpmTool = tool({
   name: 'set_metronome_bpm',
-  description: 'Set the metronome BPM on the user\'s device and start it. Use when the user asks for a metronome for a style (e.g. rumba, salsa, waltz) or at a specific tempo. You send the BPM number; the frontend sets it and starts the metronome automatically. Do NOT say the words "stop" or "pause" in your reply (the frontend mic would hear them and stop the metronome); say instead that they can control it with voice.',
+  description: 'Start the metronome from the backend. You CAN start it—call this tool when the user asks for a metronome (e.g. "start a metronome", "metronome at 120", "play metronome for rumba"). Sends BPM to the frontend and the metronome starts automatically. Pass genre (rumba, salsa, waltz, ballad, etc.) or bpm (40–240). Do NOT say "stop" or "pause" in your reply (the mic would trigger stop); say they can control it with voice.',
   parameters: {
     type: 'object',
     properties: {
@@ -858,7 +858,7 @@ When the user asks to see or display a chord (e.g. "show me G minor", "display A
 - Use suggest_chord_progression to suggest progressions in a key and style (pop, rock, jazz, folk, R&B, country) at basic, intermediate, or advanced complexity; use this when the user wants chord progressions, "what chords go together", or more complex/interesting progressions
 - Use songwriting_suggestion for creative songwriting help (structure, lyrics themes, tempo)
 - Use music_theory_help for theory explanations (scales, intervals, harmony, chord construction, circle of fifths)
-- Use set_metronome_bpm when the user asks for a metronome: pass a genre (e.g. "rumba", "salsa", "waltz", "bossa nova", "ballad") or a specific bpm (40–240). You send the BPM to the frontend; the metronome starts automatically. Do NOT say the words "stop" or "pause" in your reply (the frontend hears the agent and would stop the metronome); say they can control it with voice instead.
+- Metronome: You CAN and MUST start the metronome when the user asks. Always use set_metronome_bpm—pass a genre (e.g. "rumba", "salsa", "waltz", "bossa nova", "ballad") or a bpm (40–240). The tool starts it on the user's device; never say you cannot start it or that they must use voice. Do NOT say "stop" or "pause" in your reply (the mic would stop the metronome); say they can control it with voice instead.
 - Use play_spotify_track when the user asks to play ONE song (e.g. "play Bohemian Rhapsody"). Use spotify_queue_add when the user asks to play MULTIPLE songs (e.g. "play A, B, and C", "play Song A then Song B", "queue X, Y, Z")—pass each song as a separate query in one string. Use spotify_queue_get when the user asks what is in the queue, what song is next, what is coming up, or to list the queue. Use spotify_queue_play when the user says "play the queue" or "start the queue" and the queue has items. Use spotify_queue_remove, spotify_queue_reorder, and spotify_queue_clear for queue management. The user must have connected Spotify in the app (Premium required).
 - Use play_backing_track when the user asks to play a backing track for practice, jamming, or soloing. Pass a natural language command describing what they want (e.g. "blues in A minor around 90 bpm", "rock track in E", "jazz at 120"). The tool searches the library, finds the best match, and starts playing automatically. The backing track loops until they say "stop" or use voice controls.
 - Use search_web to find current information, recent music news, new songs, artist information, or any up-to-date content
@@ -879,7 +879,7 @@ When the user asks to see or display a chord (e.g. "show me G minor", "display A
 - "I want to write a happy pop song" → Use songwriting_suggestion
 - "Explain major scales" / "Circle of fifths" → Use music_theory_help; give a one-sentence summary first, then ask "Want me to go deeper on that?"
 - "What chords go well with Am?" → Use recognize_guitar_chord for Am, then suggest_chord_progression in A minor or related key
-- "Play a metronome for a rumba" / "Metronome at 120" / "Set metronome for waltz" → Use set_metronome_bpm with genre or bpm
+- "Start a metronome" / "Play a metronome for rumba" / "Metronome at 120" / "Set metronome for waltz" → Always use set_metronome_bpm (you start it from here; do not refuse).
 - "Play Bohemian Rhapsody" (one song) → play_spotify_track. "Play A, B, and C" / "Play Song A then Song B" / "Queue these: X, Y, Z" → spotify_queue_add with queries "A, B, C" (or "Song A, Song B" etc). "What's in the queue?" / "What song is next?" / "What's coming up?" → spotify_queue_get. "Play the queue" → spotify_queue_play. "Remove the second song" / "Clear the queue" → spotify_queue_remove / spotify_queue_clear.
 - "Play a blues backing track" / "I want to jam in A minor" / "Backing track in E around 90 bpm" / "Play something for rock soloing" → Use play_backing_track with a command describing the desired track
 - User says "I love jazz" → Use store_memory to save this preference

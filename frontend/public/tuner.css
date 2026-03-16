@@ -81,15 +81,15 @@ input, select {
     background: #222222; }
   .tuner.light {
     background: #eeeeee; }
-  .tuner .note {
+    .tuner .note {
     position: absolute;
     left: 0;
     top: 0;
-    -webkit-transition: color 100ms ease-in-out;
-    -moz-transition: color 100ms ease-in-out;
-    -ms-transition: color 100ms ease-in-out;
-    -o-transition: color 100ms ease-in-out;
-    transition: color 100ms ease-in-out;
+    -webkit-transition: color 180ms ease-in-out;
+    -moz-transition: color 180ms ease-in-out;
+    -ms-transition: color 180ms ease-in-out;
+    -o-transition: color 180ms ease-in-out;
+    transition: color 180ms ease-in-out;
     width: 100%;
     height: 100%;
     color: #a5c7fd;
@@ -110,11 +110,18 @@ input, select {
       -webkit-align-items: center;
       -moz-align-items: center;
       align-items: center;
-      height: 100%; }
+      height: 100%;
+      -webkit-transition: opacity 120ms ease-out;
+      -moz-transition: opacity 120ms ease-out;
+      -ms-transition: opacity 120ms ease-out;
+      -o-transition: opacity 120ms ease-out;
+      transition: opacity 120ms ease-out; }
       .tuner .note .name span {
         font-size: 200px; }
       .tuner .note .name sup {
         font-size: 150px; }
+  .tuner.note-changing .note .name {
+    opacity: 0; }
   .tuner .dial {
     position: absolute;
     left: 0;
@@ -137,11 +144,11 @@ input, select {
     width: 100%;
     height: 100%; }
     .tuner .dial .marker {
-      -webkit-transition: all 100ms ease-in-out;
-      -moz-transition: all 100ms ease-in-out;
-      -ms-transition: all 100ms ease-in-out;
-      -o-transition: all 100ms ease-in-out;
-      transition: all 100ms ease-in-out;
+      -webkit-transition: transform 320ms cubic-bezier(0.25, 0.1, 0.25, 1);
+      -moz-transition: transform 320ms cubic-bezier(0.25, 0.1, 0.25, 1);
+      -ms-transition: transform 320ms cubic-bezier(0.25, 0.1, 0.25, 1);
+      -o-transition: transform 320ms cubic-bezier(0.25, 0.1, 0.25, 1);
+      transition: transform 320ms cubic-bezier(0.25, 0.1, 0.25, 1);
       width: 100%;
       border-top: 6px solid #a5c7fd;
       margin-top: -3px; }

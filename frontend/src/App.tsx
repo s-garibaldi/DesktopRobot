@@ -75,6 +75,12 @@ function App() {
     }
   };
 
+  const handleTunerCommand = (action: 'close') => {
+    if (action === 'close') {
+      handleEmotionChange('neutral');
+    }
+  };
+
   return (
     <div className="app">
       <div className={isEmotionFullscreen ? 'app-fullscreen' : undefined}>
@@ -221,6 +227,7 @@ function App() {
               currentEmotion={currentEmotion}
               onEmotionChange={handleEmotionChange}
               onGuitarTabDisplayCommand={handleGuitarTabDisplayCommand}
+              onTunerCommand={handleTunerCommand}
               onSpotifyPlaybackStateChange={setSpotifyPlaybackState}
               onSpotifyStop={() => {
                 handleEmotionChange('neutral');

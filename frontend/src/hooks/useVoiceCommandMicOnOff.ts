@@ -36,6 +36,8 @@ export type GuitarTabDisplayVoiceAction = 'show' | 'close';
 
 export type SpotifyVoiceAction = 'pause' | 'play' | 'stop' | 'restart' | 'rewind' | 'forward' | 'skip';
 
+export type TunerVoiceAction = 'close';
+
 const COOLDOWN_MS = 2500;
 /** Min ms between acting on interim results to avoid double-fire from rapid interims. */
 const INTERIM_DEBOUNCE_MS = 400;
@@ -207,9 +209,20 @@ function extractDisplayDescription(transcript: string): string | null {
   return after || ''; // allow "eggplant" alone (wait for follow-up)
 }
 
-function isCloseDisplayCommand(transcript: string): boolean {
+/** Exported for unit tests. Matches "close display". */
+export function isCloseDisplayCommand(transcript: string): boolean {
   const t = normalize(transcript);
   return t === PHRASE_CLOSE_DISPLAY || t.endsWith(PHRASE_CLOSE_DISPLAY) || t.includes(PHRASE_CLOSE_DISPLAY);
+}
+
+/** Exported for unit tests. Matches "stop", "close", "close display", "close tuner", "stop tuner", "turn off tuner" etc. */
+export function isCloseTunerCommand(transcript: string): boolean {
+  const t = normalize(transcript);
+  if (t === 'stop' || t === 'close') return true;
+  if (t.includes('close display') || t.includes('close tuner') || t.includes('stop tuner')) return true;
+  if (t.includes('turn off tuner') || t.includes('turn off the tuner')) return true;
+  if (t === 'exit' || t === 'hide' || t === 'done') return true;
+  return false;
 }
 
 /**
@@ -221,6 +234,7 @@ function isCloseDisplayCommand(transcript: string): boolean {
  * - "pause" / "play" / "save" / "stop" → onBackingTrackCommand
  * - "eggplant" (chime), then say chord — or "eggplant" + chord in one phrase; "close display" → back to neutral
  * - When Spotify is active: "pause", "play", "stop", "restart", "rewind X seconds", "fast forward X seconds"
+ * - When tuner is active: "stop", "close", "close display", "close tuner" → close tuner and return to neutral
  */
 export function useVoiceCommandMicOnOff(
   enabled: boolean,
@@ -229,21 +243,30 @@ export function useVoiceCommandMicOnOff(
   onBackingTrackCommand?: (action: BackingTrackVoiceAction, description?: string) => void,
   onGuitarTabDisplayCommand?: (action: GuitarTabDisplayVoiceAction, description?: string) => void,
   onSpotifyCommand?: (action: SpotifyVoiceAction, seconds?: number) => void,
+  onTunerCommand?: (action: TunerVoiceAction) => void,
   voiceCooldownRefs?: {
     lastMetronomeStartTime: MutableRefObject<number>;
     lastGuitarTabDisplayFromBackendTime: MutableRefObject<number>;
   },
-  isSpotifyActive?: boolean
+  isSpotifyActive?: boolean,
+  isTunerActive?: boolean,
+  isMetronomeActive?: boolean
 ) {
   const onCommandRef = useRef(onCommand);
   const onMetronomeCommandRef = useRef(onMetronomeCommand);
   const onBackingTrackCommandRef = useRef(onBackingTrackCommand);
   const onGuitarTabDisplayCommandRef = useRef(onGuitarTabDisplayCommand);
   const onSpotifyCommandRef = useRef(onSpotifyCommand);
+  const onTunerCommandRef = useRef(onTunerCommand);
   const isSpotifyActiveRef = useRef(isSpotifyActive ?? false);
+  const isTunerActiveRef = useRef(isTunerActive ?? false);
+  const isMetronomeActiveRef = useRef(isMetronomeActive ?? false);
   const lastCommandTimeRef = useRef(0);
   onSpotifyCommandRef.current = onSpotifyCommand;
+  onTunerCommandRef.current = onTunerCommand;
   isSpotifyActiveRef.current = isSpotifyActive ?? false;
+  isTunerActiveRef.current = isTunerActive ?? false;
+  isMetronomeActiveRef.current = isMetronomeActive ?? false;
 
   const lastMetronomeStartTimeRef = voiceCooldownRefs?.lastMetronomeStartTime;
   const lastGuitarTabDisplayFromBackendTimeRef = voiceCooldownRefs?.lastGuitarTabDisplayFromBackendTime;
@@ -362,6 +385,13 @@ export function useVoiceCommandMicOnOff(
               console.log('Voice command (interim): Spotify skip');
               continue;
             }
+          }
+          if (isTunerActiveRef.current && onTunerCommandRef.current && isCloseTunerCommand(transcript)) {
+            lastCommandTimeRef.current = now;
+            playChimeDown();
+            onTunerCommandRef.current('close');
+            console.log('Voice command (interim): tuner close');
+            continue;
           }
           if (onBackingTrackCommandRef.current) {
             if (isPauseCommand(transcript) && !isInMetronomeStopCooldown(now)) {
@@ -664,6 +694,15 @@ export function useVoiceCommandMicOnOff(
           }
         }
 
+        // When tuner face is active, "stop", "close", "close tuner" etc. close it and return to neutral
+        if (isTunerActiveRef.current && onTunerCommandRef.current && isCloseTunerCommand(transcript)) {
+          lastCommandTimeRef.current = now;
+          playChimeDown();
+          onTunerCommandRef.current('close');
+          console.log('Voice command: tuner close');
+          return;
+        }
+
         if (isMicOffCommand(transcript)) {
           lastCommandTimeRef.current = now;
           playChimeDown();
@@ -794,6 +833,17 @@ export function useVoiceCommandMicOnOff(
           console.log('Voice command: metronome play');
           return;
         }
+        // While metronome is playing: a number (e.g. "90", "120 bpm") changes BPM without stopping
+        if (isMetronomeActiveRef.current && onMetronomeCommandRef.current) {
+          const bpm = parseMetronomeBpm(transcript);
+          if (bpm !== null) {
+            lastCommandTimeRef.current = now;
+            playChime();
+            onMetronomeCommandRef.current('setBpm', bpm);
+            console.log('Voice command: metronome setBpm (while playing)', bpm);
+            return;
+          }
+        }
         if (onMetronomeCommandRef.current && transcriptContainsPhrase(transcript, PHRASE_METRONOME)) {
           const bpm = parseMetronomeBpm(transcript);
           lastCommandTimeRef.current = now;
@@ -820,6 +870,7 @@ export function useVoiceCommandMicOnOff(
           const bpm = parseMetronomeBpm(transcript);
           if (bpm !== null) {
             lastCommandTimeRef.current = now;
+            playChime();
             onMetronomeCommandRef.current('setBpm', bpm);
             console.log('Voice command: metronome setBpm', bpm);
             return;
