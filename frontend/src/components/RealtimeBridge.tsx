@@ -377,19 +377,14 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
             // Check for audio input events (user speaking)
             const audioState = deriveAudioInputStateFromBackendLog(log.payload);
             if (audioState === 'start') {
-              // #region agent log
-              try {
-                const mode = activeModeRef.current;
-                const paused = getMetronomePaused();
-                fetch('http://127.0.0.1:7242/ingest/6aae1c4b-c2f3-4f12-bcce-d9a7131e841e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'RealtimeBridge.tsx:bridge_log audio start',message:'audio input start',data:{mode,paused,willResetTimer:mode==='metronome'&&paused},timestamp:Date.now(),hypothesisId:'H1'})}).catch(()=>{});
-              } catch (e) {
-                fetch('http://127.0.0.1:7242/ingest/6aae1c4b-c2f3-4f12-bcce-d9a7131e841e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'RealtimeBridge.tsx:bridge_log audio start',message:'error in audio start block',data:{err:String(e)},timestamp:Date.now(),hypothesisId:'H1'})}).catch(()=>{});
-              }
-              // #endregion
               // When metronome is paused with mic on: any backend audio input resets the 5s idle-off timer
               if (activeModeRef.current === 'metronome' && getMetronomePaused()) {
                 scheduleMetronomePausedMicIdleOffRef.current?.();
               }
+              // Backing track paused idle condition commented out
+              // if (activeModeRef.current === 'backing_track' && backingTrackPausedRef.current) {
+              //   scheduleBackingTrackPausedMicIdleOffRef.current?.();
+              // }
               // Only show listening face if:
               // 1. AI is NOT currently speaking (speaking takes priority)
               // 2. PTT mode is OFF (VAD mode), OR PTT is ON AND button is pressed
@@ -454,6 +449,10 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
             const responseAudioState = deriveResponseAudioStateFromBackendLog(log.payload);
             if (responseAudioState === 'start') {
               lastActivityTimeRef.current = Date.now();
+              // Backing track paused idle condition commented out
+              // if (activeModeRef.current === 'backing_track' && backingTrackPausedRef.current) {
+              //   scheduleBackingTrackPausedMicIdleOffRef.current?.();
+              // }
               // AI is outputting audio - show speaking face
               // Speaking takes priority over everything except explicit user interruption
               
@@ -498,6 +497,10 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
               isSpeakingRef.current = true;
               setIsSpeaking(true);
               lastActivityTimeRef.current = Date.now();
+              // Backing track paused idle condition commented out
+              // if (activeModeRef.current === 'backing_track' && backingTrackPausedRef.current) {
+              //   scheduleBackingTrackPausedMicIdleOffRef.current?.();
+              // }
               handleEmotionChange('speaking', 'ai_speaking_start', true);
               break;
               
@@ -505,6 +508,10 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
               isSpeakingRef.current = false;
               setIsSpeaking(false);
               lastActivityTimeRef.current = Date.now();
+              // Backing track paused idle condition commented out
+              // if (activeModeRef.current === 'backing_track' && backingTrackPausedRef.current) {
+              //   scheduleBackingTrackPausedMicIdleOffRef.current?.();
+              // }
               // Audio playback finished → neutral, but not when metronome is running or we just showed guitar tab
               const justShowedGuitarTabOnSpeakingEnd = Date.now() - lastGuitarTabDisplayFromBackendTimeRef.current < 3000;
               if (!isListeningRef.current && !isCallingToolRef.current && activeModeRef.current !== 'metronome' && !justShowedGuitarTabOnSpeakingEnd) {
@@ -545,9 +552,6 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
 
             case 'metronome_set_bpm': {
               const bpm = data.bpm;
-              // #region agent log
-              fetch('http://127.0.0.1:7242/ingest/6aae1c4b-c2f3-4f12-bcce-d9a7131e841e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'RealtimeBridge.tsx:metronome_set_bpm',message:'received metronome_set_bpm',data:{bpm,validBpm:typeof bpm==='number'&&bpm>=40&&bpm<=240,hasRef:typeof startMetronomeFromBackendBpmRef.current==='function'},timestamp:Date.now(),hypothesisId:'H2'})}).catch(()=>{});
-              // #endregion
               // Flow: backend decided one BPM → we set it in the metronome and start (no voice-command path)
               if (typeof bpm === 'number' && bpm >= 40 && bpm <= 240) {
                 const startFromBackend = startMetronomeFromBackendBpmRef.current;
@@ -828,13 +832,34 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
   /** Duration to show "thinking" while "generating" metronome sound/timing before switching to metronome face. */
   const METRONOME_PREPARE_MS = 600;
   const METRONOME_PAUSED_MIC_IDLE_MS = 5000;
+  const BACKING_TRACK_PAUSED_MIC_IDLE_MS = 5000;
+
+  const backingTrackPausedRef = useRef(false);
+  const backingTrackPausedMicIdleTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scheduleBackingTrackPausedMicIdleOffRef = useRef<() => void>(() => {});
+
+  // Backing track flow:
+  // - Playing: backend mic OFF, no audio input. Voice "pause" → pause + mic ON; "stop/close" → shut down.
+  // - Paused: backend mic ON, user can converse with AI; mic does not turn off on its own. Voice "play" → resume + mic OFF, no AI output; "stop/close" → shut down.
+  // - "microphone on" only turns mic on when paused; when playing, mic stays off.
 
   const handleMicCommand = useCallback((payload: { type: 'set_backend_mic_enabled'; enabled: boolean }) => {
     const mode = activeModeRef.current;
     if (payload.enabled) {
-      // "microphone on" — only enter backend_mic mode when not in backing_track or metronome (or already in backend_mic)
-      if (mode === 'backing_track' || mode === 'metronome') {
-        console.log('[microphone on] Skipping — in mode:', mode, '(say "stop" first to exit)');
+      // "microphone on" when in backing_track: only when paused (when playing, mic stays off)
+      if (mode === 'backing_track') {
+        if (!backingTrackPausedRef.current) {
+          console.log('[microphone on] Backing track is playing — mic stays off (say "pause" first)');
+          return;
+        }
+        if (!iframeRef.current?.contentWindow) return;
+        lastKnownMicEnabledRef.current = true;
+        sendMessageToIframe({ type: 'set_backend_mic_enabled', enabled: true });
+        console.log('[microphone on] Backing track paused — mic on');
+        return;
+      }
+      if (mode === 'metronome') {
+        console.log('[microphone on] Skipping — in metronome (say "stop" first to exit)');
         return;
       }
       if (!iframeRef.current?.contentWindow) {
@@ -879,9 +904,6 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
 
   /** Single path for backend: receive one BPM number → input into metronome and start. Used only by metronome_set_bpm message. */
   const startMetronomeFromBackendBpm = useCallback((bpm: number) => {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/6aae1c4b-c2f3-4f12-bcce-d9a7131e841e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'RealtimeBridge.tsx:startMetronomeFromBackendBpm',message:'invoked',data:{bpm},timestamp:Date.now(),hypothesisId:'H3'})}).catch(()=>{});
-    // #endregion
     setMetronomeBpm(bpm);
     setMetronomePaused(false);
     lastMetronomeStartTimeRef.current = Date.now();
@@ -904,6 +926,10 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
       if (metronomePausedMicIdleTimeoutRef.current) {
         clearTimeout(metronomePausedMicIdleTimeoutRef.current);
         metronomePausedMicIdleTimeoutRef.current = null;
+      }
+      if (backingTrackPausedMicIdleTimeoutRef.current) {
+        clearTimeout(backingTrackPausedMicIdleTimeoutRef.current);
+        backingTrackPausedMicIdleTimeoutRef.current = null;
       }
     };
   }, []);
@@ -938,18 +964,41 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
       metronomePausedMicIdleTimeoutRef.current = null;
       lastKnownMicEnabledRef.current = false;
       sendMessageToIframe({ type: 'set_backend_mic_enabled', enabled: false });
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/6aae1c4b-c2f3-4f12-bcce-d9a7131e841e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'RealtimeBridge.tsx:idle timer fired',message:'paused mic idle 5s — backend mic off',data:{},timestamp:Date.now(),hypothesisId:'H4'})}).catch(()=>{});
-      // #endregion
       console.log('[METRONOME] paused mic idle 5s — backend mic off');
     }, METRONOME_PAUSED_MIC_IDLE_MS);
   }, [clearMetronomePausedMicIdleTimer]);
   scheduleMetronomePausedMicIdleOffRef.current = scheduleMetronomePausedMicIdleOff;
 
+  const clearBackingTrackPausedMicIdleTimer = useCallback(() => {
+    if (backingTrackPausedMicIdleTimeoutRef.current) {
+      clearTimeout(backingTrackPausedMicIdleTimeoutRef.current);
+      backingTrackPausedMicIdleTimeoutRef.current = null;
+    }
+  }, []);
+
+  const scheduleBackingTrackPausedMicIdleOff = useCallback(() => {
+    clearBackingTrackPausedMicIdleTimer();
+    // Idle condition commented out for backing track — mic stays on until user says "microphone off" or "play"/"stop"
+    // backingTrackPausedMicIdleTimeoutRef.current = setTimeout(() => {
+    //   backingTrackPausedMicIdleTimeoutRef.current = null;
+    //   lastKnownMicEnabledRef.current = false;
+    //   playChimeDown();
+    //   sendMessageToIframe({ type: 'set_backend_mic_enabled', enabled: false });
+    //   console.log('[BACKING TRACK] paused mic idle 5s — backend mic off');
+    // }, BACKING_TRACK_PAUSED_MIC_IDLE_MS);
+  }, [clearBackingTrackPausedMicIdleTimer]);
+  scheduleBackingTrackPausedMicIdleOffRef.current = scheduleBackingTrackPausedMicIdleOff;
+
+  const handleBackingTrackPaused = useCallback(() => {
+    backingTrackPausedRef.current = true;
+    lastKnownMicEnabledRef.current = true;
+    sendMessageToIframe({ type: 'set_backend_mic_enabled', enabled: true });
+    // Idle condition commented out: mic stays on until user says "microphone off" or "play"/"stop"
+    // scheduleBackingTrackPausedMicIdleOff();
+    console.log('[BACKING TRACK] paused — mic on');
+  }, []);
+
   const handleMetronomeCommand = useCallback((action: 'start' | 'stop' | 'setBpm' | 'pause' | 'play', bpm?: number) => {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/6aae1c4b-c2f3-4f12-bcce-d9a7131e841e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'RealtimeBridge.tsx:handleMetronomeCommand',message:'command',data:{action,bpm,mode:activeModeRef.current},timestamp:Date.now(),hypothesisId:'H5'})}).catch(()=>{});
-    // #endregion
     const mode = activeModeRef.current;
     if (action === 'stop') {
       if (mode !== 'metronome') return;
@@ -1016,6 +1065,10 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
       if (mode === 'metronome' || mode === 'backend_mic') return;
       const h = backingTrackHandlersRef.current;
       if (!h) return;
+      // So the backend does not speak when user says play/pause/stop for the backing track
+      if (action === 'play' || action === 'pause' || action === 'stop') {
+        sendMessageToIframe({ type: 'backing_track_voice_handled' });
+      }
       if (mode === null) {
         setActiveModeAndRef('backing_track');
         savedMicBeforeBackingTrackRef.current = lastKnownMicEnabledRef.current;
@@ -1044,7 +1097,7 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
           break;
       }
     },
-    [setActiveModeAndRef]
+    [setActiveModeAndRef, sendMessageToIframe]
   );
 
   const handleGuitarTabDisplayCommand = useCallback(
@@ -1091,17 +1144,22 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
     },
     currentEmotion === 'spotify',
     currentEmotion === 'tuner',
-    currentEmotion === 'metronome'
+    currentEmotion === 'metronome',
+    activeMode === 'backing_track'
   );
 
   const handleBackingTrackPlayingStart = useCallback(() => {
+    backingTrackPausedRef.current = false;
+    clearBackingTrackPausedMicIdleTimer();
     setActiveModeAndRef('backing_track');
     savedMicBeforeBackingTrackRef.current = lastKnownMicEnabledRef.current;
     sendMessageToIframe({ type: 'set_backend_mic_enabled', enabled: false });
-  }, [setActiveModeAndRef]);
+  }, [setActiveModeAndRef, clearBackingTrackPausedMicIdleTimer]);
 
   const handleBackingTrackPlayingStop = useCallback(() => {
     if (activeModeRef.current === 'backing_track') {
+      backingTrackPausedRef.current = false;
+      clearBackingTrackPausedMicIdleTimer();
       setActiveModeAndRef(null);
       sendMessageToIframe({
         type: 'set_backend_mic_enabled',
@@ -1109,7 +1167,7 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
       });
       lastKnownMicEnabledRef.current = savedMicBeforeBackingTrackRef.current;
     }
-  }, [setActiveModeAndRef]);
+  }, [setActiveModeAndRef, clearBackingTrackPausedMicIdleTimer]);
 
   // Idle timeout: switch to "time" display after 30s of no activity when NOT in metronome/backing_track.
   // Metronome and backing track are NOT stopped by idle — they run until user says "stop" or "pause".
@@ -1251,6 +1309,7 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
       <BackingTrackPanel
         onPlayingStart={handleBackingTrackPlayingStart}
         onPlayingStop={handleBackingTrackPlayingStop}
+        onBackingTrackPaused={handleBackingTrackPaused}
         elevenLabsApiKey={import.meta.env?.VITE_ELEVENLABS_API_KEY ?? ''}
         backendUrl={realtimeUrl}
         onHandlersReady={handleBackingTrackHandlersReady}

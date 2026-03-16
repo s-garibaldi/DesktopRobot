@@ -195,6 +195,17 @@ export function useRealtimeSession(callbacks: RealtimeSessionCallbacks = {}) {
     }
   }, [sessionRef.current]);
 
+  // When frontend handles "play"/"pause"/"stop" for backing track, interrupt so the AI does not speak
+  useEffect(() => {
+    const onMessage = (event: MessageEvent) => {
+      if (event.data?.type === 'backing_track_voice_handled') {
+        sessionRef.current?.interrupt();
+      }
+    };
+    window.addEventListener('message', onMessage);
+    return () => window.removeEventListener('message', onMessage);
+  }, []);
+
   const connect = useCallback(
     async ({
       getEphemeralKey,

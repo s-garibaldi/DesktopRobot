@@ -57,8 +57,10 @@ const GENRES = ['', 'Blues', 'Rock', 'Jazz', 'Bossa Nova', 'Country', 'Folk', 'F
 interface BackingTrackPanelProps {
   /** Called when playback starts: parent should set AI mic to disabled. */
   onPlayingStart: () => void;
-  /** Called when playback stops: parent should restore previous AI mic state. */
+  /** Called when playback stops (user stopped track): parent should restore previous AI mic state. */
   onPlayingStop: () => void;
+  /** Called when user pauses (not stop): parent should turn mic on and stay in backing_track mode. */
+  onBackingTrackPaused?: () => void;
   /** API key for ElevenLabs (e.g. from VITE_ELEVENLABS_API_KEY). Empty = show config hint. */
   elevenLabsApiKey: string;
   /** Backend URL for upload/list/serve of project-stored backing tracks. */
@@ -76,6 +78,7 @@ const PROJECT_PREFIX = 'project:';
 export default function BackingTrackPanel({
   onPlayingStart,
   onPlayingStop,
+  onBackingTrackPaused,
   elevenLabsApiKey,
   backendUrl,
   onHandlersReady,
@@ -589,9 +592,13 @@ export default function BackingTrackPanel({
     pause();
     setStatus('paused');
     setStatusMessage('Paused. Click Play to resume.');
-    // Turn backend mic back ON when paused so user can talk to AI
-    onPlayingStop();
-  }, [pause, onPlayingStop]);
+    // Turn backend mic ON when paused so user can talk to AI (stays in backing_track mode)
+    if (onBackingTrackPaused) {
+      onBackingTrackPaused();
+    } else {
+      onPlayingStop();
+    }
+  }, [pause, onPlayingStop, onBackingTrackPaused]);
 
   const handleResume = useCallback(() => {
     resume();

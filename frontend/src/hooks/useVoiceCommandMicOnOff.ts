@@ -41,6 +41,8 @@ export type TunerVoiceAction = 'close';
 const COOLDOWN_MS = 2500;
 /** Min ms between acting on interim results to avoid double-fire from rapid interims. */
 const INTERIM_DEBOUNCE_MS = 400;
+/** Min ms between backing-track chimes so conversation about "carrot" doesn't trigger repeated chimes. */
+const BACKING_CHIME_COOLDOWN_MS = 8000;
 const BACKING_DESCRIPTION_TIMEOUT_MS = 5000;
 const DISPLAY_DESCRIPTION_TIMEOUT_MS = 5000;
 const METRONOME_BPM_TIMEOUT_MS = 5000;
@@ -205,6 +207,12 @@ function extractBackingTrackDescription(transcript: string): string | null {
   return after || ''; // allow "carrot" alone (use defaults)
 }
 
+/** True if transcript looks like a backing-track command (starts with "carrot"), not conversational mention. */
+function isBackingTrackCommandPhrase(transcript: string): boolean {
+  const lower = transcript.trim().toLowerCase();
+  return lower.startsWith(PHRASE_BACKING_TRACK) || lower.startsWith(PHRASE_BACKING_TRACK + ' ');
+}
+
 /** Extract chord/scale description after "eggplant" for guitar tab. */
 function extractDisplayDescription(transcript: string): string | null {
   const t = transcript.trim();
@@ -256,7 +264,8 @@ export function useVoiceCommandMicOnOff(
   },
   isSpotifyActive?: boolean,
   isTunerActive?: boolean,
-  isMetronomeActive?: boolean
+  isMetronomeActive?: boolean,
+  isBackingTrackActive?: boolean
 ) {
   const onCommandRef = useRef(onCommand);
   const onMetronomeCommandRef = useRef(onMetronomeCommand);
@@ -267,12 +276,14 @@ export function useVoiceCommandMicOnOff(
   const isSpotifyActiveRef = useRef(isSpotifyActive ?? false);
   const isTunerActiveRef = useRef(isTunerActive ?? false);
   const isMetronomeActiveRef = useRef(isMetronomeActive ?? false);
+  const isBackingTrackActiveRef = useRef(isBackingTrackActive ?? false);
   const lastCommandTimeRef = useRef(0);
   onSpotifyCommandRef.current = onSpotifyCommand;
   onTunerCommandRef.current = onTunerCommand;
   isSpotifyActiveRef.current = isSpotifyActive ?? false;
   isTunerActiveRef.current = isTunerActive ?? false;
   isMetronomeActiveRef.current = isMetronomeActive ?? false;
+  isBackingTrackActiveRef.current = isBackingTrackActive ?? false;
 
   const lastMetronomeStartTimeRef = voiceCooldownRefs?.lastMetronomeStartTime;
   const lastGuitarTabDisplayFromBackendTimeRef = voiceCooldownRefs?.lastGuitarTabDisplayFromBackendTime;
@@ -290,6 +301,7 @@ export function useVoiceCommandMicOnOff(
   const enabledRef = useRef(enabled);
   const waitingForBackingDescriptionRef = useRef(false);
   const chimePlayedForBackingRef = useRef(false);
+  const lastBackingChimeTimeRef = useRef(0);
   const backingDescriptionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const waitingForDisplayDescriptionRef = useRef(false);
   const chimePlayedForDisplayRef = useRef(false);
@@ -328,10 +340,29 @@ export function useVoiceCommandMicOnOff(
         const result = results[i];
         const transcript = (result[0]?.transcript ?? '').trim();
 
-        // Play chime as soon as "carrot", "display", or "apple" is detected (including interim) so it feels immediate
-        if (extractBackingTrackDescription(transcript) !== null && !chimePlayedForBackingRef.current) {
+        // When backing track is active (playing or paused), only respond to: microphone on/off, stop, play, pause. Ignore all other speech (no chime).
+        if (isBackingTrackActiveRef.current) {
+          const allowed =
+            isMicOnCommand(transcript) ||
+            isMicOffCommand(transcript) ||
+            isStopOrCloseCommand(transcript) ||
+            isPlayCommand(transcript) ||
+            isPauseCommand(transcript);
+          if (!allowed) continue;
+        }
+
+        // Play chime only when "carrot" looks like a command (not conversational), and not in backing_track mode; cooldown avoids repeated chimes when discussing backing tracks.
+        const backingDesc = extractBackingTrackDescription(transcript);
+        const backingChimeOk =
+          backingDesc !== null &&
+          !isBackingTrackActiveRef.current &&
+          isBackingTrackCommandPhrase(transcript) &&
+          !chimePlayedForBackingRef.current &&
+          now - lastBackingChimeTimeRef.current >= BACKING_CHIME_COOLDOWN_MS;
+        if (backingChimeOk) {
           playChime();
           chimePlayedForBackingRef.current = true;
+          lastBackingChimeTimeRef.current = now;
         }
         if (extractDisplayDescription(transcript) !== null && !chimePlayedForDisplayRef.current) {
           playChime();
@@ -399,7 +430,8 @@ export function useVoiceCommandMicOnOff(
             console.log('Voice command (interim): tuner close');
             continue;
           }
-          if (onBackingTrackCommandRef.current) {
+          // Only handle backing track pause/play/stop when backing track is actually active (so "play" to the AI doesn't trigger frontend)
+          if (isBackingTrackActiveRef.current && onBackingTrackCommandRef.current) {
             if (isPauseCommand(transcript) && !isInMetronomeStopCooldown(now)) {
               lastCommandTimeRef.current = now;
               playChimeDown();
@@ -410,6 +442,7 @@ export function useVoiceCommandMicOnOff(
             }
             if (isPlayCommand(transcript) && !isInMetronomeStopCooldown(now)) {
               lastCommandTimeRef.current = now;
+              onCommandRef.current({ type: 'set_backend_mic_enabled', enabled: false });
               playChime();
               onBackingTrackCommandRef.current('play');
               if (onMetronomeCommandRef.current) onMetronomeCommandRef.current('play');
@@ -512,8 +545,10 @@ export function useVoiceCommandMicOnOff(
             }
             return;
           }
-          if (isPlayCommand(transcript)) {
+          // Only treat "play" as resume when backing track is active; otherwise e.g. "play the funk one" is the description
+          if (isBackingTrackActiveRef.current && isPlayCommand(transcript)) {
             lastCommandTimeRef.current = now;
+            onCommandRef.current({ type: 'set_backend_mic_enabled', enabled: false });
             playChime();
             onBackingTrackCommandRef.current('play');
             if (onMetronomeCommandRef.current) onMetronomeCommandRef.current('play');
@@ -607,8 +642,10 @@ export function useVoiceCommandMicOnOff(
               }
               return;
             }
-            if (isPlayCommand(transcript)) {
+            // Only backing track "play" when backing is active; avoid "play" to the AI triggering frontend
+            if (isBackingTrackActiveRef.current && isPlayCommand(transcript)) {
               lastCommandTimeRef.current = now;
+              onCommandRef.current({ type: 'set_backend_mic_enabled', enabled: false });
               playChime();
               onBackingTrackCommandRef.current('play');
               if (onMetronomeCommandRef.current) onMetronomeCommandRef.current('play');
@@ -633,6 +670,46 @@ export function useVoiceCommandMicOnOff(
           }
           // Not a number and not a command: cancel wait (already cleared above), do nothing else
           return;
+        }
+
+        // When backing track is active, handle allowed commands (mic on/off, stop, play, pause) before cooldown so they always work
+        if (isBackingTrackActiveRef.current && result.isFinal) {
+          lastCommandTimeRef.current = now;
+          if (isMicOffCommand(transcript)) {
+            playChimeDown();
+            onCommandRef.current({ type: 'set_backend_mic_enabled', enabled: false });
+            console.log('Voice command (backing track): microphone off');
+            return;
+          }
+          if (isMicOnCommand(transcript)) {
+            playChime();
+            onCommandRef.current({ type: 'set_backend_mic_enabled', enabled: true });
+            console.log('Voice command (backing track): microphone on');
+            return;
+          }
+          if (isStopOrCloseCommand(transcript) && !isInMetronomeStopCooldown(now)) {
+            playChimeDown();
+            if (onBackingTrackCommandRef.current) onBackingTrackCommandRef.current('stop');
+            if (onMetronomeCommandRef.current) onMetronomeCommandRef.current('stop');
+            console.log('Voice command (backing track): stop');
+            return;
+          }
+          if (isPlayCommand(transcript) && !isInMetronomeStopCooldown(now)) {
+            lastCommandTimeRef.current = now;
+            onCommandRef.current({ type: 'set_backend_mic_enabled', enabled: false });
+            playChime();
+            if (onBackingTrackCommandRef.current) onBackingTrackCommandRef.current('play');
+            if (onMetronomeCommandRef.current) onMetronomeCommandRef.current('play');
+            console.log('Voice command (backing track): play');
+            return;
+          }
+          if (isPauseCommand(transcript) && !isInMetronomeStopCooldown(now)) {
+            playChimeDown();
+            if (onBackingTrackCommandRef.current) onBackingTrackCommandRef.current('pause');
+            if (onMetronomeCommandRef.current) onMetronomeCommandRef.current('pause');
+            console.log('Voice command (backing track): pause');
+            return;
+          }
         }
 
         if (now - lastCommandTimeRef.current < COOLDOWN_MS) return;
@@ -797,8 +874,10 @@ export function useVoiceCommandMicOnOff(
             }
             return;
           }
-          if (isPlayCommand(transcript)) {
+          // Only handle "play" as backing/metronome resume when backing track is active (so "play the track" to the AI doesn't trigger)
+          if (isBackingTrackActiveRef.current && isPlayCommand(transcript)) {
             lastCommandTimeRef.current = now;
+            onCommandRef.current({ type: 'set_backend_mic_enabled', enabled: false });
             playChime();
             onBackingTrackCommandRef.current('play');
             if (onMetronomeCommandRef.current) onMetronomeCommandRef.current('play');
@@ -832,7 +911,7 @@ export function useVoiceCommandMicOnOff(
             console.log('Voice command: metronome pause');
           }
           return;
-        } else if (onMetronomeCommandRef.current && isPlayCommand(transcript)) {
+        } else if (isMetronomeActiveRef.current && onMetronomeCommandRef.current && isPlayCommand(transcript)) {
           lastCommandTimeRef.current = now;
           playChime();
           onMetronomeCommandRef.current('play');

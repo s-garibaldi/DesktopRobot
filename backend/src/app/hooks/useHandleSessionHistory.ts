@@ -25,6 +25,9 @@ export function useHandleSessionHistory() {
         if (!c || typeof c !== "object") return "";
         if (c.type === "input_text") return c.text ?? "";
         if (c.type === "audio") return c.transcript ?? "";
+        // Assistant messages use output_text (text) and output_audio (transcript)
+        if (c.type === "output_text") return c.text ?? "";
+        if (c.type === "output_audio") return c.transcript ?? "";
         return "";
       })
       .filter(Boolean)
