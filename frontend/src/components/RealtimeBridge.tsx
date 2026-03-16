@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { Emotion } from '../App';
 import { useMicrophone } from '../hooks/useMicrophone';
 import { useVoiceCommandMicOnOff, playChimeDown } from '../hooks/useVoiceCommandMicOnOff';
-import { setMetronomeBpm } from './metronome/metronomeStore';
+import { setMetronomeBpm, setMetronomePaused, getMetronomePaused } from './metronome/metronomeStore';
 import MicrophonePanel from './MicrophonePanel';
 import BackingTrackPanel, { type BackingTrackHandlers } from './BackingTrackPanel';
 import MetronomePanel from './metronome/MetronomePanel';
@@ -94,45 +94,91 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
   const lastMetronomeStartTimeRef = useRef(0);
   /** Set when chord display is shown from backend; voice hook ignores "close display" for a few seconds so AI saying it doesn't dismiss. */
   const lastGuitarTabDisplayFromBackendTimeRef = useRef(0);
+  /** When metronome is paused and mic is on: turn off mic after this long with no backend audio input. */
+  const metronomePausedMicIdleTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scheduleMetronomePausedMicIdleOffRef = useRef<() => void>(() => {});
 
-  // Check if realtime service is available
-  const checkRealtimeService = async () => {
-    try {
-      console.log('Checking realtime service at:', realtimeUrl);
-      const response = await fetch(`${realtimeUrl}/api/session`, {
+  // Check if realtime service is available (optionally try alternate host if first attempt fails)
+  const checkRealtimeService = async (tryAlternateHost = true) => {
+    const tryUrl = (url: string) =>
+      fetch(`${url}/api/session`, {
         method: 'GET',
         mode: 'cors',
-        headers: {
-          'Content-Type': 'application/json',
-        }
+        headers: { 'Content-Type': 'application/json' },
       });
 
-      console.log('Service response status:', response.status);
-
-      if (response.ok) {
-        setIsConnected(true);
-        setError(null);
-        console.log('Realtime service is available');
-      } else {
-        let msg = `Backend responded with status ${response.status}`;
-        try {
-          const data = await response.json();
-          if (data?.error) msg = data.error;
-        } catch {
-          // ignore parse errors
-        }
-        throw new Error(msg);
+    const tryOne = async (url: string): Promise<Response> => {
+      const res = await tryUrl(url);
+      if (res.ok) return res;
+      let msg = `Backend responded with status ${res.status}`;
+      try {
+        const data = await res.json();
+        if (data?.error) msg = data.error;
+      } catch {
+        /* ignore */
       }
-    } catch (error) {
-      console.error('Realtime service check failed:', error);
+      throw new Error(msg);
+    };
+
+    const switchHost = (url: string): string => {
+      try {
+        const u = new URL(url);
+        if (u.hostname === 'localhost') {
+          u.hostname = '127.0.0.1';
+          return u.origin;
+        }
+        if (u.hostname === '127.0.0.1') {
+          u.hostname = 'localhost';
+          return u.origin;
+        }
+      } catch {
+        /* ignore */
+      }
+      return url;
+    };
+
+    try {
+      console.log('Checking realtime service at:', realtimeUrl);
+      const response = await tryOne(realtimeUrl);
+      console.log('Service response status:', response.status);
+      setIsConnected(true);
+      setError(null);
+      console.log('Realtime service is available');
+      return;
+    } catch (firstError) {
+      const isNetworkError =
+        firstError instanceof Error &&
+        (/Failed to fetch|NetworkError|Load failed/i.test(firstError.message) ||
+          firstError.message.includes('Network request failed'));
+      if (isNetworkError && tryAlternateHost) {
+        const altUrl = switchHost(realtimeUrl);
+        if (altUrl !== realtimeUrl) {
+          console.log('Trying alternate host:', altUrl);
+          try {
+            await tryOne(altUrl);
+            setIsConnected(true);
+            setError(null);
+            setRealtimeUrl(altUrl);
+            console.log('Realtime service is available at', altUrl);
+            return;
+          } catch {
+            /* fall through to show error with original realtimeUrl */
+          }
+        }
+      }
+      console.error('Realtime service check failed:', firstError);
       setIsConnected(false);
-      const err = error instanceof Error ? error : new Error(String(error));
+      const err = firstError instanceof Error ? firstError : new Error(String(firstError));
       const msg = err.message;
-      // Friendly message for common "backend not running" case
-      if (/Failed to fetch|NetworkError|Load failed/i.test(msg) || msg.includes('Network request failed')) {
-        setError(`Backend load failed: cannot reach ${realtimeUrl}. Make sure the backend is running (cd backend && npm run dev).`);
+      if (
+        /Failed to fetch|NetworkError|Load failed/i.test(msg) ||
+        msg.includes('Network request failed')
+      ) {
+        setError(
+          `Cannot reach ${realtimeUrl}. Start the backend (cd backend && npm run dev). If using localhost, try setting the URL to http://127.0.0.1:3000 (or the port your backend uses).`
+        );
       } else {
-        setError(`Backend load failed: ${msg}`);
+        setError(`Backend error: ${msg}. Check backend logs and OPENAI_API_KEY in backend .env.`);
       }
     }
   };
@@ -331,6 +377,19 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
             // Check for audio input events (user speaking)
             const audioState = deriveAudioInputStateFromBackendLog(log.payload);
             if (audioState === 'start') {
+              // #region agent log
+              try {
+                const mode = activeModeRef.current;
+                const paused = getMetronomePaused();
+                fetch('http://127.0.0.1:7242/ingest/6aae1c4b-c2f3-4f12-bcce-d9a7131e841e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'RealtimeBridge.tsx:bridge_log audio start',message:'audio input start',data:{mode,paused,willResetTimer:mode==='metronome'&&paused},timestamp:Date.now(),hypothesisId:'H1'})}).catch(()=>{});
+              } catch (e) {
+                fetch('http://127.0.0.1:7242/ingest/6aae1c4b-c2f3-4f12-bcce-d9a7131e841e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'RealtimeBridge.tsx:bridge_log audio start',message:'error in audio start block',data:{err:String(e)},timestamp:Date.now(),hypothesisId:'H1'})}).catch(()=>{});
+              }
+              // #endregion
+              // When metronome is paused with mic on: any backend audio input resets the 5s idle-off timer
+              if (activeModeRef.current === 'metronome' && getMetronomePaused()) {
+                scheduleMetronomePausedMicIdleOffRef.current?.();
+              }
               // Only show listening face if:
               // 1. AI is NOT currently speaking (speaking takes priority)
               // 2. PTT mode is OFF (VAD mode), OR PTT is ON AND button is pressed
@@ -485,8 +544,11 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
               break;
 
             case 'metronome_set_bpm': {
-              // Flow: backend decided one BPM → we set it in the metronome and start (no voice-command path)
               const bpm = data.bpm;
+              // #region agent log
+              fetch('http://127.0.0.1:7242/ingest/6aae1c4b-c2f3-4f12-bcce-d9a7131e841e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'RealtimeBridge.tsx:metronome_set_bpm',message:'received metronome_set_bpm',data:{bpm,validBpm:typeof bpm==='number'&&bpm>=40&&bpm<=240,hasRef:typeof startMetronomeFromBackendBpmRef.current==='function'},timestamp:Date.now(),hypothesisId:'H2'})}).catch(()=>{});
+              // #endregion
+              // Flow: backend decided one BPM → we set it in the metronome and start (no voice-command path)
               if (typeof bpm === 'number' && bpm >= 40 && bpm <= 240) {
                 const startFromBackend = startMetronomeFromBackendBpmRef.current;
                 if (typeof startFromBackend === 'function') {
@@ -765,6 +827,7 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
 
   /** Duration to show "thinking" while "generating" metronome sound/timing before switching to metronome face. */
   const METRONOME_PREPARE_MS = 600;
+  const METRONOME_PAUSED_MIC_IDLE_MS = 5000;
 
   const handleMicCommand = useCallback((payload: { type: 'set_backend_mic_enabled'; enabled: boolean }) => {
     const mode = activeModeRef.current;
@@ -798,6 +861,7 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
   handleMicCommandRef.current = handleMicCommand;
 
   const handleStartMetronome = useCallback(() => {
+    setMetronomePaused(false);
     if (activeModeRef.current !== 'metronome') {
       setActiveModeAndRef('metronome');
       savedMicBeforeMetronomeRef.current = lastKnownMicEnabledRef.current;
@@ -815,7 +879,11 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
 
   /** Single path for backend: receive one BPM number → input into metronome and start. Used only by metronome_set_bpm message. */
   const startMetronomeFromBackendBpm = useCallback((bpm: number) => {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/6aae1c4b-c2f3-4f12-bcce-d9a7131e841e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'RealtimeBridge.tsx:startMetronomeFromBackendBpm',message:'invoked',data:{bpm},timestamp:Date.now(),hypothesisId:'H3'})}).catch(()=>{});
+    // #endregion
     setMetronomeBpm(bpm);
+    setMetronomePaused(false);
     lastMetronomeStartTimeRef.current = Date.now();
     savedMicBeforeMetronomeRef.current = lastKnownMicEnabledRef.current;
     lastKnownMicEnabledRef.current = false;
@@ -833,6 +901,10 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
         clearTimeout(metronomeStartTimeoutRef.current);
         metronomeStartTimeoutRef.current = null;
       }
+      if (metronomePausedMicIdleTimeoutRef.current) {
+        clearTimeout(metronomePausedMicIdleTimeoutRef.current);
+        metronomePausedMicIdleTimeoutRef.current = null;
+      }
     };
   }, []);
 
@@ -843,6 +915,7 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
 
   const handleStopMetronome = useCallback(() => {
     if (activeModeRef.current !== 'metronome') return;
+    setMetronomePaused(false);
     setActiveModeAndRef(null);
     lastKnownMicEnabledRef.current = savedMicBeforeMetronomeRef.current;
     sendMessageToIframe({ type: 'set_backend_mic_enabled', enabled: savedMicBeforeMetronomeRef.current });
@@ -852,11 +925,37 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
     }
   }, [setActiveModeAndRef]);
 
+  const clearMetronomePausedMicIdleTimer = useCallback(() => {
+    if (metronomePausedMicIdleTimeoutRef.current) {
+      clearTimeout(metronomePausedMicIdleTimeoutRef.current);
+      metronomePausedMicIdleTimeoutRef.current = null;
+    }
+  }, []);
+
+  const scheduleMetronomePausedMicIdleOff = useCallback(() => {
+    clearMetronomePausedMicIdleTimer();
+    metronomePausedMicIdleTimeoutRef.current = setTimeout(() => {
+      metronomePausedMicIdleTimeoutRef.current = null;
+      lastKnownMicEnabledRef.current = false;
+      sendMessageToIframe({ type: 'set_backend_mic_enabled', enabled: false });
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/6aae1c4b-c2f3-4f12-bcce-d9a7131e841e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'RealtimeBridge.tsx:idle timer fired',message:'paused mic idle 5s — backend mic off',data:{},timestamp:Date.now(),hypothesisId:'H4'})}).catch(()=>{});
+      // #endregion
+      console.log('[METRONOME] paused mic idle 5s — backend mic off');
+    }, METRONOME_PAUSED_MIC_IDLE_MS);
+  }, [clearMetronomePausedMicIdleTimer]);
+  scheduleMetronomePausedMicIdleOffRef.current = scheduleMetronomePausedMicIdleOff;
+
   const handleMetronomeCommand = useCallback((action: 'start' | 'stop' | 'setBpm' | 'pause' | 'play', bpm?: number) => {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/6aae1c4b-c2f3-4f12-bcce-d9a7131e841e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'RealtimeBridge.tsx:handleMetronomeCommand',message:'command',data:{action,bpm,mode:activeModeRef.current},timestamp:Date.now(),hypothesisId:'H5'})}).catch(()=>{});
+    // #endregion
     const mode = activeModeRef.current;
-    if (action === 'stop' || action === 'pause') {
+    if (action === 'stop') {
       if (mode !== 'metronome') return;
-      console.log('[METRONOME STOP?] handleMetronomeCommand(', action, ') — voice command');
+      console.log('[METRONOME] handleMetronomeCommand(stop) — voice command');
+      clearMetronomePausedMicIdleTimer();
+      setMetronomePaused(false);
       setActiveModeAndRef(null);
       lastKnownMicEnabledRef.current = savedMicBeforeMetronomeRef.current;
       sendMessageToIframe({ type: 'set_backend_mic_enabled', enabled: savedMicBeforeMetronomeRef.current });
@@ -865,6 +964,27 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
         metronomeStartTimeoutRef.current = null;
       }
       onEmotionChange('neutral');
+      return;
+    }
+    if (action === 'pause') {
+      if (mode !== 'metronome') return;
+      console.log('[METRONOME] handleMetronomeCommand(pause) — stay in metronome face, backend mic on for input');
+      setMetronomePaused(true);
+      lastKnownMicEnabledRef.current = true;
+      sendMessageToIframe({ type: 'set_backend_mic_enabled', enabled: true });
+      scheduleMetronomePausedMicIdleOff();
+      return;
+    }
+    if (action === 'play') {
+      if (mode === 'metronome') {
+        clearMetronomePausedMicIdleTimer();
+        setMetronomePaused(false);
+        lastKnownMicEnabledRef.current = false;
+        sendMessageToIframe({ type: 'set_backend_mic_enabled', enabled: false });
+        console.log('[METRONOME] handleMetronomeCommand(play) — resume from pause');
+        return;
+      }
+      // When metronome is closed (not in metronome mode), "play" must not start it — only resume when paused
       return;
     }
     // Allow starting metronome when in backend_mic (e.g. backend sent start_metronome after user said "play metronome for rumba")
@@ -877,18 +997,15 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
       backingTrackHandlersRef.current?.stop();
       setActiveModeAndRef('metronome');
     }
-    if (action === 'play') {
-      handleStartMetronome();
-      return;
-    }
     if (bpm !== undefined) {
       setMetronomeBpm(bpm);
       if (action === 'start') {
+        setMetronomePaused(false);
         lastMetronomeStartTimeRef.current = Date.now();
         handleStartMetronome();
       }
     }
-  }, [setActiveModeAndRef, onEmotionChange]);
+  }, [setActiveModeAndRef, onEmotionChange, clearMetronomePausedMicIdleTimer, scheduleMetronomePausedMicIdleOff]);
 
   // Keep ref current so message handler (metronome_set_bpm) can call it; sync assign so it's set before any postMessage is processed
   handleMetronomeCommandRef.current = handleMetronomeCommand;

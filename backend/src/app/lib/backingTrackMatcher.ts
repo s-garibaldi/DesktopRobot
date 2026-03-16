@@ -54,8 +54,21 @@ function getBackendBaseUrl(): string {
   return 'http://localhost:3000';
 }
 
-/** Load all backing tracks with metadata via the backend API (no fs) */
+/** Load all backing tracks: from disk on server, from API in browser. */
 export async function loadBackingTracks(baseUrl?: string): Promise<BackingTrack[]> {
+  if (typeof window === 'undefined') {
+    try {
+      const { loadBackingTracksFromDisk } = await import('./backingTracksLoader');
+      const records = await loadBackingTracksFromDisk();
+      return records.map((r) => ({
+        filename: r.filename,
+        metadata: r.metadata,
+      }));
+    } catch (error) {
+      console.error('[backingTrackMatcher] Failed to load tracks from disk:', error);
+      return [];
+    }
+  }
   const url = (baseUrl || getBackendBaseUrl()) + '/api/backing-tracks';
   try {
     const res = await fetch(url, { cache: 'no-store' });
@@ -323,7 +336,7 @@ export async function findBestBackingTrack(command: string): Promise<{
 }> {
   const criteria = parseBackingTrackCommand(command);
   const tracks = await searchBackingTracks(criteria);
-  
+
   if (tracks.length === 0) {
     return {
       filename: null,

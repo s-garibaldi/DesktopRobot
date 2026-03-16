@@ -767,10 +767,68 @@ const spotifyQueuePlayTool = tool({
   },
 });
 
+// List or search backing tracks (no playback). Use when user asks what's available or wants to choose.
+const listBackingTracksTool = tool({
+  name: 'list_backing_tracks',
+  description: 'List backing tracks in the library, optionally filtered by a natural language query (e.g. "blues", "in A minor", "around 90 bpm"). Use when the user asks what backing tracks are available, wants to browse options, or choose before playing. Does not play anything—use play_backing_track after they confirm.',
+  parameters: {
+    type: 'object',
+    properties: {
+      query: {
+        type: 'string',
+        description: 'Optional filter (e.g. "blues", "jazz in C", "120 bpm"). Leave empty to list all tracks.',
+      },
+    },
+    required: [],
+    additionalProperties: false,
+  },
+  execute: async (input: any) => {
+    const { query } = (input || {}) as { query?: string };
+    try {
+      const { loadBackingTracks, searchBackingTracks, parseBackingTrackCommand } = await import('../../lib/backingTrackMatcher');
+      if (query && query.trim()) {
+        const criteria = parseBackingTrackCommand(query.trim());
+        const scored = await searchBackingTracks(criteria);
+        const top = scored.slice(0, 15).map((t) => ({
+          filename: t.filename,
+          key: t.metadata.key ?? null,
+          genre: t.metadata.genre ?? null,
+          bpm: t.metadata.bpm ?? null,
+          scales: t.metadata.scales ?? null,
+          score: t.score,
+        }));
+        return {
+          success: true,
+          tracks: top,
+          message: top.length === 0 ? 'No backing tracks match that description.' : `Found ${top.length} matching track(s). Say which one you want or "play it" to play the best match.`,
+        };
+      }
+      const tracks = await loadBackingTracks();
+      const list = tracks.slice(0, 25).map((t) => ({
+        filename: t.filename,
+        key: t.metadata.key ?? null,
+        genre: t.metadata.genre ?? null,
+        bpm: t.metadata.bpm ?? null,
+        scales: t.metadata.scales ?? null,
+      }));
+      return {
+        success: true,
+        tracks: list,
+        message: list.length === 0 ? 'No backing tracks in the library.' : `There are ${tracks.length} backing track(s). You can ask for one by genre, key, or BPM (e.g. "blues in A" or "rock at 120") and I\'ll play it when you say so.`,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: `Failed to list backing tracks: ${error}`,
+      };
+    }
+  },
+});
+
 // Play backing track from library based on user's criteria
 const playBackingTrackTool = tool({
   name: 'play_backing_track',
-  description: 'Search the backing track library and play a track that matches the user\'s criteria (BPM, genre, key, scales). Use when the user asks to play a backing track for practice, jamming, or soloing (e.g. "play a blues track in A minor", "backing track around 90 bpm", "rock track in E").',
+  description: 'Search the backing track library and play a track that matches the user\'s criteria (BPM, genre, key, scales). Only call this when the user has given an explicit affirmative to play (e.g. "yes", "play it", "that one", "sounds good", "go ahead"). Do NOT call it when you are merely suggesting or discussing options—wait for the user to agree before playing.',
   parameters: {
     type: 'object',
     properties: {
@@ -860,7 +918,7 @@ When the user asks to see or display a chord (e.g. "show me G minor", "display A
 - Use music_theory_help for theory explanations (scales, intervals, harmony, chord construction, circle of fifths)
 - Metronome: You CAN and MUST start the metronome when the user asks. Always use set_metronome_bpm—pass a genre (e.g. "rumba", "salsa", "waltz", "bossa nova", "ballad") or a bpm (40–240). The tool starts it on the user's device; never say you cannot start it or that they must use voice. Do NOT say "stop" or "pause" in your reply (the mic would stop the metronome); say they can control it with voice instead.
 - Use play_spotify_track when the user asks to play ONE song (e.g. "play Bohemian Rhapsody"). Use spotify_queue_add when the user asks to play MULTIPLE songs (e.g. "play A, B, and C", "play Song A then Song B", "queue X, Y, Z")—pass each song as a separate query in one string. Use spotify_queue_get when the user asks what is in the queue, what song is next, what is coming up, or to list the queue. Use spotify_queue_play when the user says "play the queue" or "start the queue" and the queue has items. Use spotify_queue_remove, spotify_queue_reorder, and spotify_queue_clear for queue management. The user must have connected Spotify in the app (Premium required).
-- Use play_backing_track when the user asks to play a backing track for practice, jamming, or soloing. Pass a natural language command describing what they want (e.g. "blues in A minor around 90 bpm", "rock track in E", "jazz at 120"). The tool searches the library, finds the best match, and starts playing automatically. The backing track loops until they say "stop" or use voice controls.
+- Backing tracks: Use list_backing_tracks when the user asks what backing tracks are available, wants to browse or choose (e.g. "what do you have for blues?", "what backing tracks do I have?"). You get the full list from the library and can suggest options. Only call play_backing_track when the user has given an explicit affirmative to play (e.g. "yes", "play it", "that one", "sounds good", "go ahead"). When suggesting a track, describe it and ask if they want it; once they say yes, use play_backing_track with the agreed description (e.g. "blues in A minor around 90 bpm"). The track loops until they say "stop" or use voice controls.
 - Use search_web to find current information, recent music news, new songs, artist information, or any up-to-date content
 - Use store_memory to save user preferences, favorite chords, musical interests, or skill level
 - Use retrieve_memories to recall information from previous conversations
@@ -881,7 +939,7 @@ When the user asks to see or display a chord (e.g. "show me G minor", "display A
 - "What chords go well with Am?" → Use recognize_guitar_chord for Am, then suggest_chord_progression in A minor or related key
 - "Start a metronome" / "Play a metronome for rumba" / "Metronome at 120" / "Set metronome for waltz" → Always use set_metronome_bpm (you start it from here; do not refuse).
 - "Play Bohemian Rhapsody" (one song) → play_spotify_track. "Play A, B, and C" / "Play Song A then Song B" / "Queue these: X, Y, Z" → spotify_queue_add with queries "A, B, C" (or "Song A, Song B" etc). "What's in the queue?" / "What song is next?" / "What's coming up?" → spotify_queue_get. "Play the queue" → spotify_queue_play. "Remove the second song" / "Clear the queue" → spotify_queue_remove / spotify_queue_clear.
-- "Play a blues backing track" / "I want to jam in A minor" / "Backing track in E around 90 bpm" / "Play something for rock soloing" → Use play_backing_track with a command describing the desired track
+- "What backing tracks do you have?" / "What do you have for blues?" / "What can I jam to?" → Use list_backing_tracks (with optional query like "blues"); then summarize 1–2 options and ask if they want one. "Play a blues backing track" / "Yes, play it" / "That one" / "I want to jam in A minor" (direct request or affirmative) → Use play_backing_track. Do NOT call play_backing_track until they say yes or equivalent.
 - User says "I love jazz" → Use store_memory to save this preference
 - User asks "What's my favorite genre?" → Use retrieve_memories to recall
 
@@ -897,7 +955,7 @@ When the user asks to see or display a chord (e.g. "show me G minor", "display A
 - Be enthusiastic and encouraging. Use musical terminology when it helps, but keep the main reply concise.
 - Suggest creative ideas and next steps in a sentence or two; don't over-explain unless asked.
 `,
-  tools: [recognizeChordTool, suggestChordProgressionTool, songwritingSuggestionTool, musicTheoryTool, setMetronomeBpmTool, displayGuitarChordTool, playSpotifyTrackTool, spotifyQueueAddTool, spotifyQueueGetTool, spotifyQueuePlayTool, spotifyQueueRemoveTool, spotifyQueueReorderTool, spotifyQueueClearTool, playBackingTrackTool, webSearchTool, ...createMemoryTools('musicalCompanion')],
+  tools: [recognizeChordTool, suggestChordProgressionTool, songwritingSuggestionTool, musicTheoryTool, setMetronomeBpmTool, displayGuitarChordTool, playSpotifyTrackTool, spotifyQueueAddTool, spotifyQueueGetTool, spotifyQueuePlayTool, spotifyQueueRemoveTool, spotifyQueueReorderTool, spotifyQueueClearTool, listBackingTracksTool, playBackingTrackTool, webSearchTool, ...createMemoryTools('musicalCompanion')],
   handoffs: [],
   handoffDescription: 'Musical companion AI for guitar, songwriting, and music theory',
 });
