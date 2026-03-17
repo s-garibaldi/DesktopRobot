@@ -840,7 +840,7 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
 
   // Backing track flow:
   // - Playing: backend mic OFF, no audio input. Voice "pause" → pause + mic ON; "stop/close" → shut down.
-  // - Paused: backend mic ON, user can converse with AI; mic does not turn off on its own. Voice "play" → resume + mic OFF, no AI output; "stop/close" → shut down.
+  // - Paused: backend mic ON, user can converse with AI; mic does not turn off on its own. Voice "resume" → resume + mic OFF, no AI output; "stop/close" → shut down.
   // - "microphone on" only turns mic on when paused; when playing, mic stays off.
 
   const handleMicCommand = useCallback((payload: { type: 'set_backend_mic_enabled'; enabled: boolean }) => {
@@ -1062,6 +1062,11 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
   const handleBackingTrackCommand = useCallback(
     (action: 'describe' | 'pause' | 'play' | 'save' | 'stop', description?: string) => {
       const mode = activeModeRef.current;
+      if (action === 'stop') {
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/6aae1c4b-c2f3-4f12-bcce-d9a7131e841e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({runId:'backing-stop-routing',hypothesisId:'H3',location:'RealtimeBridge.tsx:1064',message:'backing track handler received stop',data:{mode,currentEmotion,backingTrackPaused:backingTrackPausedRef.current},timestamp:Date.now()})}).catch(()=>{});
+        // #endregion
+      }
       if (mode === 'metronome' || mode === 'backend_mic') return;
       const h = backingTrackHandlersRef.current;
       if (!h) return;
@@ -1117,6 +1122,11 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
   );
 
   const handleSpotifyCommand = useCallback((action: 'pause' | 'play' | 'stop' | 'restart' | 'rewind' | 'forward' | 'skip', seconds?: number) => {
+    if (action === 'stop') {
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/6aae1c4b-c2f3-4f12-bcce-d9a7131e841e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({runId:'backing-stop-routing',hypothesisId:'H4',location:'RealtimeBridge.tsx:1119',message:'spotify handler received stop',data:{currentEmotion,activeMode:activeModeRef.current,backingTrackPaused:backingTrackPausedRef.current},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
+    }
     if (action === 'play') {
       setActiveModeAndRef(null);
       lastKnownMicEnabledRef.current = false;

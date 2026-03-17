@@ -151,6 +151,11 @@ function isPlayCommand(transcript: string): boolean {
   return t === 'play' || t.startsWith('play ');
 }
 
+function isResumeCommand(transcript: string): boolean {
+  const t = normalize(transcript);
+  return t === 'resume' || t.startsWith('resume ');
+}
+
 function isSaveCommand(transcript: string): boolean {
   const t = normalize(transcript);
   return t === 'save' || t.startsWith('save ');
@@ -340,13 +345,13 @@ export function useVoiceCommandMicOnOff(
         const result = results[i];
         const transcript = (result[0]?.transcript ?? '').trim();
 
-        // When backing track is active (playing or paused), only respond to: microphone on/off, stop, play, pause. Ignore all other speech (no chime).
+        // When backing track is active (playing or paused), only respond to: microphone on/off, stop, resume, pause. Ignore all other speech (no chime).
         if (isBackingTrackActiveRef.current) {
           const allowed =
             isMicOnCommand(transcript) ||
             isMicOffCommand(transcript) ||
             isStopOrCloseCommand(transcript) ||
-            isPlayCommand(transcript) ||
+            isResumeCommand(transcript) ||
             isPauseCommand(transcript);
           if (!allowed) continue;
         }
@@ -392,6 +397,11 @@ export function useVoiceCommandMicOnOff(
             console.log('Voice command (interim): microphone off');
             continue;
           }
+          if (isStopOrCloseCommand(transcript)) {
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/6aae1c4b-c2f3-4f12-bcce-d9a7131e841e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({runId:'backing-stop-routing',hypothesisId:'H1',location:'useVoiceCommandMicOnOff.ts:395',message:'interim stop routing snapshot',data:{transcript,isSpotifyActive:isSpotifyActiveRef.current,isBackingTrackActive:isBackingTrackActiveRef.current,isMetronomeActive:isMetronomeActiveRef.current},timestamp:Date.now()})}).catch(()=>{});
+            // #endregion
+          }
           if (isSpotifyActiveRef.current && onSpotifyCommandRef.current) {
             const spotify = onSpotifyCommandRef.current;
             if (isPauseCommand(transcript)) {
@@ -409,6 +419,9 @@ export function useVoiceCommandMicOnOff(
               continue;
             }
             if (isStopCommand(transcript)) {
+              // #region agent log
+              fetch('http://127.0.0.1:7242/ingest/6aae1c4b-c2f3-4f12-bcce-d9a7131e841e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({runId:'backing-stop-routing',hypothesisId:'H1',location:'useVoiceCommandMicOnOff.ts:412',message:'interim stop routed to spotify',data:{transcript,isSpotifyActive:isSpotifyActiveRef.current,isBackingTrackActive:isBackingTrackActiveRef.current},timestamp:Date.now()})}).catch(()=>{});
+              // #endregion
               lastCommandTimeRef.current = now;
               playChimeDown();
               spotify('stop');
@@ -430,7 +443,7 @@ export function useVoiceCommandMicOnOff(
             console.log('Voice command (interim): tuner close');
             continue;
           }
-          // Only handle backing track pause/play/stop when backing track is actually active (so "play" to the AI doesn't trigger frontend)
+          // Only handle backing track pause/resume/stop when backing track is actually active
           if (isBackingTrackActiveRef.current && onBackingTrackCommandRef.current) {
             if (isPauseCommand(transcript) && !isInMetronomeStopCooldown(now)) {
               lastCommandTimeRef.current = now;
@@ -440,13 +453,13 @@ export function useVoiceCommandMicOnOff(
               console.log('Voice command (interim): backing track pause');
               continue;
             }
-            if (isPlayCommand(transcript) && !isInMetronomeStopCooldown(now)) {
+            if (isResumeCommand(transcript) && !isInMetronomeStopCooldown(now)) {
               lastCommandTimeRef.current = now;
               onCommandRef.current({ type: 'set_backend_mic_enabled', enabled: false });
               playChime();
               onBackingTrackCommandRef.current('play');
               if (onMetronomeCommandRef.current) onMetronomeCommandRef.current('play');
-              console.log('Voice command (interim): backing track play');
+              console.log('Voice command (interim): backing track resume');
               continue;
             }
             if (isStopOrCloseCommand(transcript) && !isInMetronomeStopCooldown(now)) {
@@ -545,14 +558,14 @@ export function useVoiceCommandMicOnOff(
             }
             return;
           }
-          // Only treat "play" as resume when backing track is active; otherwise e.g. "play the funk one" is the description
-          if (isBackingTrackActiveRef.current && isPlayCommand(transcript)) {
+          // Only treat "resume" as backing track resume when backing track is active
+          if (isBackingTrackActiveRef.current && isResumeCommand(transcript)) {
             lastCommandTimeRef.current = now;
             onCommandRef.current({ type: 'set_backend_mic_enabled', enabled: false });
             playChime();
             onBackingTrackCommandRef.current('play');
             if (onMetronomeCommandRef.current) onMetronomeCommandRef.current('play');
-            console.log('Voice command: backing track play');
+            console.log('Voice command: backing track resume');
             return;
           }
           if (isSaveCommand(transcript)) {
@@ -642,14 +655,14 @@ export function useVoiceCommandMicOnOff(
               }
               return;
             }
-            // Only backing track "play" when backing is active; avoid "play" to the AI triggering frontend
-            if (isBackingTrackActiveRef.current && isPlayCommand(transcript)) {
+            // Only backing track "resume" when backing is active
+            if (isBackingTrackActiveRef.current && isResumeCommand(transcript)) {
               lastCommandTimeRef.current = now;
               onCommandRef.current({ type: 'set_backend_mic_enabled', enabled: false });
               playChime();
               onBackingTrackCommandRef.current('play');
               if (onMetronomeCommandRef.current) onMetronomeCommandRef.current('play');
-              console.log('Voice command: backing track play');
+              console.log('Voice command: backing track resume');
               return;
             }
             if (isSaveCommand(transcript)) {
@@ -672,7 +685,7 @@ export function useVoiceCommandMicOnOff(
           return;
         }
 
-        // When backing track is active, handle allowed commands (mic on/off, stop, play, pause) before cooldown so they always work
+        // When backing track is active, handle allowed commands (mic on/off, stop, resume, pause) before cooldown so they always work
         if (isBackingTrackActiveRef.current && result.isFinal) {
           lastCommandTimeRef.current = now;
           if (isMicOffCommand(transcript)) {
@@ -694,13 +707,13 @@ export function useVoiceCommandMicOnOff(
             console.log('Voice command (backing track): stop');
             return;
           }
-          if (isPlayCommand(transcript) && !isInMetronomeStopCooldown(now)) {
+          if (isResumeCommand(transcript) && !isInMetronomeStopCooldown(now)) {
             lastCommandTimeRef.current = now;
             onCommandRef.current({ type: 'set_backend_mic_enabled', enabled: false });
             playChime();
             if (onBackingTrackCommandRef.current) onBackingTrackCommandRef.current('play');
             if (onMetronomeCommandRef.current) onMetronomeCommandRef.current('play');
-            console.log('Voice command (backing track): play');
+            console.log('Voice command (backing track): resume');
             return;
           }
           if (isPauseCommand(transcript) && !isInMetronomeStopCooldown(now)) {
@@ -713,6 +726,12 @@ export function useVoiceCommandMicOnOff(
         }
 
         if (now - lastCommandTimeRef.current < COOLDOWN_MS) return;
+
+        if (isStopOrCloseCommand(transcript)) {
+          // #region agent log
+          fetch('http://127.0.0.1:7242/ingest/6aae1c4b-c2f3-4f12-bcce-d9a7131e841e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({runId:'backing-stop-routing',hypothesisId:'H2',location:'useVoiceCommandMicOnOff.ts:717',message:'final stop routing snapshot',data:{transcript,isSpotifyActive:isSpotifyActiveRef.current,isBackingTrackActive:isBackingTrackActiveRef.current,isMetronomeActive:isMetronomeActiveRef.current},timestamp:Date.now()})}).catch(()=>{});
+          // #endregion
+        }
 
         // When Spotify face is active, handle Spotify transport commands first (frontend only)
         // Check pause/play before restart - "pause" can be misheard as "restart" or "start over"
@@ -762,6 +781,9 @@ export function useVoiceCommandMicOnOff(
             return;
           }
           if (isStopCommand(transcript)) {
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/6aae1c4b-c2f3-4f12-bcce-d9a7131e841e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({runId:'backing-stop-routing',hypothesisId:'H2',location:'useVoiceCommandMicOnOff.ts:730',message:'final stop routed to spotify',data:{transcript,isSpotifyActive:isSpotifyActiveRef.current,isBackingTrackActive:isBackingTrackActiveRef.current},timestamp:Date.now()})}).catch(()=>{});
+            // #endregion
             lastCommandTimeRef.current = now;
             playChimeDown();
             spotify('stop');
@@ -874,14 +896,14 @@ export function useVoiceCommandMicOnOff(
             }
             return;
           }
-          // Only handle "play" as backing/metronome resume when backing track is active (so "play the track" to the AI doesn't trigger)
-          if (isBackingTrackActiveRef.current && isPlayCommand(transcript)) {
+          // Only handle "resume" as backing/metronome resume when backing track is active
+          if (isBackingTrackActiveRef.current && isResumeCommand(transcript)) {
             lastCommandTimeRef.current = now;
             onCommandRef.current({ type: 'set_backend_mic_enabled', enabled: false });
             playChime();
             onBackingTrackCommandRef.current('play');
             if (onMetronomeCommandRef.current) onMetronomeCommandRef.current('play');
-            console.log('Voice command: backing track play');
+            console.log('Voice command: backing track resume');
             return;
           }
           if (isSaveCommand(transcript)) {

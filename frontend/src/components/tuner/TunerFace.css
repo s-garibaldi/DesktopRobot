@@ -1,11 +1,61 @@
-/* Same outer box size/style as other faces (400×400) */
 .tuner-face {
   width: 400px;
   height: 400px;
   box-sizing: border-box;
-  background: rgba(0, 0, 0, 0.95);
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 1);
   border: 2px solid #00FFFF;
   border-radius: 15px;
+  backdrop-filter: blur(10px);
   box-shadow: 0 0 40px rgba(0, 255, 255, 0.4);
   flex-shrink: 0;
+}
+
+.tuner-face::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 200px;
+  height: 150px;
+  transform: translate(-50%, -50%);
+  border: 6px solid #00FFFF;
+  border-radius: 20px;
+  box-shadow: 0 0 30px rgba(0, 255, 255, 0.7);
+  pointer-events: none;
+  z-index: 2;
+}
+
+.tuner-face__viewport {
+  width: 200px;
+  height: 150px;
+  border-radius: 20px;
+  overflow: hidden;
+  position: relative;
+  z-index: 1;
+}
+
+.tuner-face__viewport.tuner {
+  width: 200px !important;
+  height: 150px !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  max-width: 200px !important;
+  max-height: 150px !important;
+}
+
+.tuner-face__viewport.tuner .note .name span {
+  font-size: 112px !important;
+}
+
+.tuner-face__viewport.tuner .note .name sup {
+  font-size: 68px !important;
+}
+
+.tuner-face__viewport.tuner .help {
+  display: none !important;
 }
