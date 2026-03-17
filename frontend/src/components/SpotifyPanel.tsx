@@ -54,6 +54,8 @@ export default function SpotifyPanel({ backendUrl, onPlaybackStateChange, onStop
   const [skipSeconds, setSkipSeconds] = useState(10);
   const [volume, setVolumeState] = useState(0.5);
   const tokenExchangeInProgressRef = useRef(false);
+  const spotifyActivationPrimedRef = useRef(false);
+  const spotifyActivationPendingRef = useRef(false);
 
   const { searchTracks, loading: searchLoading, error: searchError } = useSpotifyMetadata(backendUrl);
 
@@ -188,9 +190,12 @@ export default function SpotifyPanel({ backendUrl, onPlaybackStateChange, onStop
         await new Promise((r) => setTimeout(r, 1500));
         ok = await play(uris);
       }
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/6aae1c4b-c2f3-4f12-bcce-d9a7131e841e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({runId:'spotify-autoplay-debug',hypothesisId:'H2',location:'frontend/src/components/SpotifyPanel.tsx:191',message:'spotify playWithRetry completed',data:{usedBackend:Boolean(useBackend),queueLength:queueUris?.length ?? 0,ok},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
       return ok;
     },
-    [play]
+    [play, useBackend]
   );
 
   const music = useMusicController({
@@ -209,6 +214,9 @@ export default function SpotifyPanel({ backendUrl, onPlaybackStateChange, onStop
   });
 
   const handleStartPlayback = useCallback(async () => {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/6aae1c4b-c2f3-4f12-bcce-d9a7131e841e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({runId:'spotify-autoplay-debug',hypothesisId:'H4',location:'frontend/src/components/SpotifyPanel.tsx:212',message:'manual start playback invoked',data:{queueLength:music.queue.items.length,hasNowPlaying:Boolean(music.nowPlaying),autoplayBlocked:Boolean(autoplayBlocked),usedBackend:Boolean(useBackend)},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
     activateElement();
     if (music.queue.items.length > 0) {
       music.playIndex(0);
@@ -221,6 +229,44 @@ export default function SpotifyPanel({ backendUrl, onPlaybackStateChange, onStop
       }
     }
   }, [activateElement, music, autoplayBlocked]);
+
+  useEffect(() => {
+    if (!token) return;
+    const primeActivation = () => {
+      if (spotifyActivationPrimedRef.current) return;
+      if (!playerReady) {
+        spotifyActivationPendingRef.current = true;
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/6aae1c4b-c2f3-4f12-bcce-d9a7131e841e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({runId:'spotify-autoplay-debug',hypothesisId:'H7',location:'frontend/src/components/SpotifyPanel.tsx:228',message:'spotify activation deferred until player ready',data:{usedBackend:Boolean(useBackend),playerReady:Boolean(playerReady)},timestamp:Date.now()})}).catch(()=>{});
+        // #endregion
+        return;
+      }
+      spotifyActivationPrimedRef.current = true;
+      spotifyActivationPendingRef.current = false;
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/6aae1c4b-c2f3-4f12-bcce-d9a7131e841e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({runId:'spotify-autoplay-debug',hypothesisId:'H7',location:'frontend/src/components/SpotifyPanel.tsx:235',message:'spotify activation primed from general user gesture',data:{usedBackend:Boolean(useBackend),playerReady:Boolean(playerReady)},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
+      activateElement();
+    };
+    window.addEventListener('pointerdown', primeActivation, true);
+    window.addEventListener('keydown', primeActivation, true);
+    return () => {
+      window.removeEventListener('pointerdown', primeActivation, true);
+      window.removeEventListener('keydown', primeActivation, true);
+    };
+  }, [activateElement, playerReady, token, useBackend]);
+
+  useEffect(() => {
+    if (!token || !playerReady) return;
+    if (spotifyActivationPrimedRef.current) return;
+    if (!spotifyActivationPendingRef.current) return;
+    spotifyActivationPrimedRef.current = true;
+    spotifyActivationPendingRef.current = false;
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/6aae1c4b-c2f3-4f12-bcce-d9a7131e841e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({runId:'spotify-autoplay-debug',hypothesisId:'H7',location:'frontend/src/components/SpotifyPanel.tsx:250',message:'spotify activation replayed after player ready',data:{usedBackend:Boolean(useBackend),playerReady:Boolean(playerReady)},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
+    activateElement();
+  }, [activateElement, playerReady, token, useBackend]);
 
   // Handle redirect from Spotify (callback with ?code=...)
   // Guard: code is single-use; React Strict Mode double-invokes effects, so prevent duplicate exchange.
@@ -319,6 +365,7 @@ export default function SpotifyPanel({ backendUrl, onPlaybackStateChange, onStop
           mode: 'cors',
         });
         const data = await res.json();
+
         if (data.success && data.access_token) {
           const newExpiresAt = Date.now() + (data.expires_in ?? 3600) * 1000;
           localStorage.setItem(SPOTIFY_TOKEN_KEY, data.access_token);
@@ -396,10 +443,15 @@ export default function SpotifyPanel({ backendUrl, onPlaybackStateChange, onStop
 
   // When AI requests playback, show hint to click Start playback (browsers require user gesture for audio)
   useEffect(() => {
-    const handler = () => setShowStartPlaybackHint(true);
+    const handler = () => {
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/6aae1c4b-c2f3-4f12-bcce-d9a7131e841e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({runId:'spotify-autoplay-debug',hypothesisId:'H3',location:'frontend/src/components/SpotifyPanel.tsx:399',message:'ai playback hint shown',data:{usedBackend:Boolean(useBackend),playerReady:Boolean(playerReady),autoplayBlocked:Boolean(autoplayBlocked),queueLength:music.queue.items.length,hasNowPlaying:Boolean(music.nowPlaying)},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
+      setShowStartPlaybackHint(true);
+    };
     window.addEventListener('spotify-agent-requested-playback', handler);
     return () => window.removeEventListener('spotify-agent-requested-playback', handler);
-  }, []);
+  }, [autoplayBlocked, music.nowPlaying, music.queue.items.length, playerReady, useBackend]);
 
   // Clear the hint once playback is actually running
   useEffect(() => {
@@ -410,12 +462,13 @@ export default function SpotifyPanel({ backendUrl, onPlaybackStateChange, onStop
 
   // When there's no token and we're not restoring: auto-redirect to Spotify so user doesn't have to click Connect.
   useEffect(() => {
+    const hasCode = typeof window !== 'undefined' && Boolean(new URLSearchParams(window.location.search).get('code'));
+    const clientId = import.meta.env.VITE_SPOTIFY_CLIENT_ID as string | undefined;
     if (token) return;
     if (restoringSession) return;
     if (callbackError) return; // avoid redirect loop after a failed callback
     // Don't redirect if we're handling the OAuth callback (URL has ?code=...)
-    if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('code')) return;
-    const clientId = import.meta.env.VITE_SPOTIFY_CLIENT_ID as string | undefined;
+    if (hasCode) return;
     if (!clientId) return;
 
     // 800ms gives user a moment to see the connect screen before auto-redirect
@@ -613,6 +666,9 @@ export default function SpotifyPanel({ backendUrl, onPlaybackStateChange, onStop
         nowPlaying={music.nowPlaying}
         status={music.status}
         onPlayPause={() => {
+          // #region agent log
+          fetch('http://127.0.0.1:7242/ingest/6aae1c4b-c2f3-4f12-bcce-d9a7131e841e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({runId:'spotify-autoplay-debug',hypothesisId:'H9',location:'frontend/src/components/SpotifyPanel.tsx:634',message:'ui play pause pressed',data:{status:music.status,hasNowPlaying:Boolean(music.nowPlaying),usedBackend:Boolean(useBackend),autoplayBlocked:Boolean(autoplayBlocked)},timestamp:Date.now()})}).catch(()=>{});
+          // #endregion
           activateElement();
           music.togglePause();
         }}

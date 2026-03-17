@@ -54,15 +54,24 @@ export function postBridgeMessage(message: BridgeLogEvent) {
  */
 export function postClientAction(type: string, payload?: Record<string, unknown>) {
   if (typeof window === "undefined") {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/6aae1c4b-c2f3-4f12-bcce-d9a7131e841e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({runId:'tool-bridge-debug',hypothesisId:'H17',location:'backend/src/app/lib/bridge.ts:56',message:'postClientAction skipped no window',data:{type},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
     console.warn("[bridge] postClientAction skipped: no window (e.g. running in worker or Node)");
     return;
   }
   if (!window.parent || window.parent === window) {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/6aae1c4b-c2f3-4f12-bcce-d9a7131e841e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({runId:'tool-bridge-debug',hypothesisId:'H17',location:'backend/src/app/lib/bridge.ts:60',message:'postClientAction skipped not embedded',data:{type,hasParent:Boolean(window.parent),parentEqualsWindow:window.parent === window},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
     console.warn("[bridge] postClientAction skipped: not embedded in iframe (window.parent === window)");
     return;
   }
 
   const message = { type, ...payload };
+  // #region agent log
+  fetch('http://127.0.0.1:7242/ingest/6aae1c4b-c2f3-4f12-bcce-d9a7131e841e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({runId:'tool-bridge-debug',hypothesisId:'H17',location:'backend/src/app/lib/bridge.ts:65',message:'postClientAction sent',data:{type,payloadKeys:Object.keys(payload ?? {})},timestamp:Date.now()})}).catch(()=>{});
+  // #endregion
   window.parent.postMessage(message, '*');
   console.log("[bridge] postClientAction sent:", type, payload);
 }

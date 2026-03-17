@@ -556,6 +556,9 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
               const bpm = data.bpm;
               // Flow: backend decided one BPM → we set it in the metronome and start (no voice-command path)
               if (typeof bpm === 'number' && bpm >= 40 && bpm <= 240) {
+                // #region agent log
+                fetch('http://127.0.0.1:7242/ingest/6aae1c4b-c2f3-4f12-bcce-d9a7131e841e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({runId:'tool-bridge-debug',hypothesisId:'H18',location:'frontend/src/components/RealtimeBridge.tsx:558',message:'frontend received metronome_set_bpm',data:{bpm,hasHandler:typeof startMetronomeFromBackendBpmRef.current === 'function'},timestamp:Date.now()})}).catch(()=>{});
+                // #endregion
                 const startFromBackend = startMetronomeFromBackendBpmRef.current;
                 if (typeof startFromBackend === 'function') {
                   startFromBackend(bpm);
@@ -612,6 +615,9 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
             case 'music_play_track': {
               const uri = data.uri;
               if (typeof uri === 'string' && uri.startsWith('spotify:track:')) {
+                // #region agent log
+                fetch('http://127.0.0.1:7242/ingest/6aae1c4b-c2f3-4f12-bcce-d9a7131e841e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({runId:'spotify-autoplay-debug',hypothesisId:'H1',location:'frontend/src/components/RealtimeBridge.tsx:615',message:'ai requested single track playback',data:{messageType:data.type,hasAlbumArt:typeof data.albumArtUrl === 'string',hasDuration:typeof data.durationMs === 'number'},timestamp:Date.now()})}).catch(()=>{});
+                // #endregion
                 console.log('[RealtimeBridge] music_play_track from backend', uri, data.trackName);
                 onEmotionChange('spotify');
                 lastKnownMicEnabledRef.current = false;
@@ -638,6 +644,9 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
               const items = data.items;
               console.log('[RealtimeBridge] music_add_to_queue received:', Array.isArray(items) ? items.length : 'invalid');
               if (Array.isArray(items) && items.length > 0) {
+                // #region agent log
+                fetch('http://127.0.0.1:7242/ingest/6aae1c4b-c2f3-4f12-bcce-d9a7131e841e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({runId:'spotify-autoplay-debug',hypothesisId:'H1',location:'frontend/src/components/RealtimeBridge.tsx:640',message:'ai requested queue playback',data:{itemCount:items.length},timestamp:Date.now()})}).catch(()=>{});
+                // #endregion
                 const valid = items.filter(
                   (it: unknown) =>
                     it &&

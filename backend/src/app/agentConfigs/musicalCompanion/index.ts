@@ -289,6 +289,9 @@ const setMetronomeBpmTool = tool({
   execute: async (input: any) => {
     let bpm: number;
     const { bpm: inputBpm, genre } = input as { bpm?: number; genre?: string };
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/6aae1c4b-c2f3-4f12-bcce-d9a7131e841e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({runId:'tool-bridge-debug',hypothesisId:'H16',location:'backend/src/app/agentConfigs/musicalCompanion/index.ts:291',message:'metronome tool execute started',data:{hasBpm:typeof inputBpm === 'number',hasGenre:Boolean(genre?.trim())},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
     if (genre?.trim()) {
       const genreBpm = getTempoBpmForGenre(genre.trim());
       if (genreBpm != null) {
@@ -311,6 +314,9 @@ const setMetronomeBpmTool = tool({
     }
     const clamped = Math.max(40, Math.min(240, bpm));
     postClientAction('metronome_set_bpm', { bpm: clamped });
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/6aae1c4b-c2f3-4f12-bcce-d9a7131e841e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({runId:'tool-bridge-debug',hypothesisId:'H16',location:'backend/src/app/agentConfigs/musicalCompanion/index.ts:313',message:'metronome tool posted client action',data:{bpm:clamped},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
     return {
       success: true,
       bpm: clamped,
