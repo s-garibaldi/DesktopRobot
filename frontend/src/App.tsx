@@ -75,8 +75,10 @@ function App() {
     }
   };
 
-  const handleTunerCommand = (action: 'close') => {
-    if (action === 'close') {
+  const handleTunerCommand = (action: 'show' | 'close') => {
+    if (action === 'show') {
+      handleEmotionChange('tuner');
+    } else {
       handleEmotionChange('neutral');
     }
   };

@@ -816,6 +816,9 @@ export function useVoiceCommandMicOnOff(
           return;
         }
         if (isMicOnCommand(transcript)) {
+          // #region agent log
+          fetch('http://127.0.0.1:7242/ingest/6aae1c4b-c2f3-4f12-bcce-d9a7131e841e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({runId:'tuner-micon-debug',hypothesisId:'MO1',location:'useVoiceCommandMicOnOff.ts:818',message:'final microphone on command matched',data:{transcript,isTunerActive:isTunerActiveRef.current,isSpotifyActive:isSpotifyActiveRef.current,isBackingTrackActive:isBackingTrackActiveRef.current,isMetronomeActive:isMetronomeActiveRef.current},timestamp:Date.now()})}).catch(()=>{});
+          // #endregion
           lastCommandTimeRef.current = now;
           playChime();
           onCommandRef.current({ type: 'set_backend_mic_enabled', enabled: true });

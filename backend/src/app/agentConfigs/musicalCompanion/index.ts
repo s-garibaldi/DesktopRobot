@@ -363,6 +363,39 @@ const displayGuitarChordTool = tool({
   },
 });
 
+// Show or hide the tuner face on the frontend.
+const displayTunerTool = tool({
+  name: 'display_tuner',
+  description: 'Open or close the guitar tuner display on the user\'s device. Use this when the user asks to open, show, start, hide, or close the tuner.',
+  parameters: {
+    type: 'object',
+    properties: {
+      close: {
+        type: 'boolean',
+        description: 'If true, close the tuner display and return to the neutral face.',
+      },
+    },
+    required: [],
+    additionalProperties: false,
+  },
+  execute: async (input: any) => {
+    const { close } = input as { close?: boolean };
+    if (close === true) {
+      postClientAction('tuner_display', { action: 'close' });
+      return {
+        success: true,
+        message: 'Tuner closed.',
+      };
+    }
+
+    postClientAction('tuner_display', { action: 'show' });
+    return {
+      success: true,
+      message: 'Opening the tuner now.',
+    };
+  },
+});
+
 // Music theory tool
 const musicTheoryTool = tool({
   name: 'music_theory_help',
@@ -908,6 +941,9 @@ You have access to memories from previous conversations. When the session starts
 # Guitar Tab Display
 When the user asks to see or display a chord (e.g. "show me G minor", "display A major"), use display_guitar_chord with the chord name. When they ask for a scale (e.g. "show me the G major scale", "display A dorian scale"), use display_guitar_chord with a value that includes the word "scale" (e.g. "G major scale", "A dorian scale") so the diagram shows scale positions. If they ask to close or hide the display, use display_guitar_chord with close: true.
 
+# Tuner Display
+When the user asks to open, show, or start the tuner, use display_tuner. If they ask to close or hide the tuner, use display_tuner with close: true.
+
 # How to Use Your Tools
 - When a tool returns say_aloud, prefer using it as your spoken reply - it is already brief and speech-optimized.
 - When a tool returns multiple items (e.g. progressions, chords), pick the single best one to mention aloud. Do not enumerate all of them. The user can ask for more.
@@ -955,7 +991,7 @@ When the user asks to see or display a chord (e.g. "show me G minor", "display A
 - Be enthusiastic and encouraging. Use musical terminology when it helps, but keep the main reply concise.
 - Suggest creative ideas and next steps in a sentence or two; don't over-explain unless asked.
 `,
-  tools: [recognizeChordTool, suggestChordProgressionTool, songwritingSuggestionTool, musicTheoryTool, setMetronomeBpmTool, displayGuitarChordTool, playSpotifyTrackTool, spotifyQueueAddTool, spotifyQueueGetTool, spotifyQueuePlayTool, spotifyQueueRemoveTool, spotifyQueueReorderTool, spotifyQueueClearTool, listBackingTracksTool, playBackingTrackTool, webSearchTool, ...createMemoryTools('musicalCompanion')],
+  tools: [recognizeChordTool, suggestChordProgressionTool, songwritingSuggestionTool, musicTheoryTool, setMetronomeBpmTool, displayGuitarChordTool, displayTunerTool, playSpotifyTrackTool, spotifyQueueAddTool, spotifyQueueGetTool, spotifyQueuePlayTool, spotifyQueueRemoveTool, spotifyQueueReorderTool, spotifyQueueClearTool, listBackingTracksTool, playBackingTrackTool, webSearchTool, ...createMemoryTools('musicalCompanion')],
   handoffs: [],
   handoffDescription: 'Musical companion AI for guitar, songwriting, and music theory',
 });

@@ -15,7 +15,7 @@ interface RealtimeBridgeProps {
   onEmotionChange: (emotion: Emotion) => void;
   currentEmotion: Emotion;
   onGuitarTabDisplayCommand?: (action: 'show' | 'close', description?: string) => void;
-  onTunerCommand?: (action: 'close') => void;
+  onTunerCommand?: (action: 'show' | 'close') => void;
   onSpotifyPlaybackStateChange?: (state: PlaybackState | null) => void;
   onSpotifyStop?: () => void;
 }
@@ -88,6 +88,8 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
   const startMetronomeFromBackendBpmRef = useRef<(bpm: number) => void>(() => {});
   /** Backend can command chord display; ref so message handler can call the callback. */
   const onGuitarTabDisplayCommandRef = useRef<((action: 'show' | 'close', description?: string) => void) | undefined>(undefined);
+  /** Backend can command tuner display; ref so message handler can call the callback. */
+  const onTunerCommandRef = useRef<((action: 'show' | 'close') => void) | undefined>(undefined);
   /** Ref for handleMicCommand so message handler (which runs before it's defined) can trigger mic off. */
   const handleMicCommandRef = useRef<(payload: { type: 'set_backend_mic_enabled'; enabled: boolean }) => void>(() => {});
   /** Set when metronome starts (voice or backend); voice hook ignores stop/pause for a few seconds to avoid false triggers. */
@@ -347,7 +349,7 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
       const data = event.data;
-      const isClientAction = data?.type === 'play_spotify_track' || data?.type === 'spotify_stop' || data?.type === 'music_play_track' || data?.type === 'music_add_to_queue' || data?.type === 'music_next' || data?.type === 'music_previous' || data?.type === 'music_pause' || data?.type === 'music_resume' || data?.type === 'music_clear' || data?.type === 'music_play_index' || data?.type === 'music_remove_at' || data?.type === 'music_move' || data?.type === 'play_backing_track' || data?.type === 'metronome_set_bpm' || data?.type === 'guitar_tab_display' || data?.type === 'backend_auto_mic_off';
+      const isClientAction = data?.type === 'play_spotify_track' || data?.type === 'spotify_stop' || data?.type === 'music_play_track' || data?.type === 'music_add_to_queue' || data?.type === 'music_next' || data?.type === 'music_previous' || data?.type === 'music_pause' || data?.type === 'music_resume' || data?.type === 'music_clear' || data?.type === 'music_play_index' || data?.type === 'music_remove_at' || data?.type === 'music_move' || data?.type === 'play_backing_track' || data?.type === 'metronome_set_bpm' || data?.type === 'guitar_tab_display' || data?.type === 'tuner_display' || data?.type === 'backend_auto_mic_off';
       if (isClientAction) {
         console.log('[RealtimeBridge] Client action received:', data?.type, 'origin=', event.origin, 'expected~', backendOrigin);
       }
@@ -573,6 +575,19 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
                 lastGuitarTabDisplayFromBackendTimeRef.current = Date.now();
                 handler('show', String(data.chord));
                 console.log('RealtimeBridge: guitar_tab_display show from backend', data.chord);
+              }
+              break;
+            }
+
+            case 'tuner_display': {
+              const handler = onTunerCommandRef.current;
+              if (typeof handler !== 'function') break;
+              if (data.action === 'show') {
+                handler('show');
+                console.log('RealtimeBridge: tuner_display show from backend');
+              } else if (data.action === 'close') {
+                handler('close');
+                console.log('RealtimeBridge: tuner_display close from backend');
               }
               break;
             }
@@ -846,6 +861,9 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
   const handleMicCommand = useCallback((payload: { type: 'set_backend_mic_enabled'; enabled: boolean }) => {
     const mode = activeModeRef.current;
     if (payload.enabled) {
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/6aae1c4b-c2f3-4f12-bcce-d9a7131e841e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({runId:'tuner-micon-debug',hypothesisId:'MO2_MO3',location:'RealtimeBridge.tsx:861',message:'handleMicCommand enable branch entered',data:{mode,currentEmotion,lastKnownMicEnabled:lastKnownMicEnabledRef.current,iframeReady:Boolean(iframeRef.current?.contentWindow)},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
       // "microphone on" when in backing_track: only when paused (when playing, mic stays off)
       if (mode === 'backing_track') {
         if (!backingTrackPausedRef.current) {
@@ -872,6 +890,9 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
         clearTimeout(metronomeStartTimeoutRef.current);
         metronomeStartTimeoutRef.current = null;
       }
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/6aae1c4b-c2f3-4f12-bcce-d9a7131e841e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({runId:'tuner-micon-debug',hypothesisId:'MO2',location:'RealtimeBridge.tsx:890',message:'handleMicCommand forcing neutral during mic on',data:{mode,currentEmotion,nextMode:'backend_mic'},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
       onEmotionChange('neutral');
       lastKnownMicEnabledRef.current = true;
       sendMessageToIframe({ type: 'set_backend_mic_enabled', enabled: true });
@@ -1114,12 +1135,22 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
   );
 
   const handleTunerCommand = useCallback(
-    (action: 'close') => {
+    (action: 'show' | 'close') => {
+      if (action === 'show') {
+        setActiveModeAndRef(null);
+        lastKnownMicEnabledRef.current = false;
+        sendMessageToIframe({ type: 'set_backend_mic_enabled', enabled: false });
+      } else {
+        setActiveModeAndRef('backend_mic');
+        lastKnownMicEnabledRef.current = true;
+        sendMessageToIframe({ type: 'set_backend_mic_enabled', enabled: true });
+      }
       if (!onTunerCommand) return;
       onTunerCommand(action);
     },
-    [onTunerCommand]
+    [onTunerCommand, setActiveModeAndRef]
   );
+  onTunerCommandRef.current = handleTunerCommand;
 
   const handleSpotifyCommand = useCallback((action: 'pause' | 'play' | 'stop' | 'restart' | 'rewind' | 'forward' | 'skip', seconds?: number) => {
     if (action === 'stop') {
