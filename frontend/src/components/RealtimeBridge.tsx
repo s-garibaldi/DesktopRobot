@@ -1163,7 +1163,9 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
     backingTrackPausedRef.current = false;
     clearBackingTrackPausedMicIdleTimer();
     setActiveModeAndRef('backing_track');
-    savedMicBeforeBackingTrackRef.current = lastKnownMicEnabledRef.current;
+    if (activeModeRef.current !== 'backing_track') {
+      savedMicBeforeBackingTrackRef.current = lastKnownMicEnabledRef.current;
+    }
     sendMessageToIframe({ type: 'set_backend_mic_enabled', enabled: false });
   }, [setActiveModeAndRef, clearBackingTrackPausedMicIdleTimer]);
 

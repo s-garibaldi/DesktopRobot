@@ -101,7 +101,9 @@ export function useRealtimeSession(callbacks: RealtimeSessionCallbacks = {}) {
         break;
       }
       case "response.audio_transcript.delta": {
-        if (suppressingBackingTrackResponseRef.current) suppressingBackingTrackResponseRef.current = false;
+        if (suppressingBackingTrackResponseRef.current) {
+          suppressingBackingTrackResponseRef.current = false;
+        }
         historyHandlers.handleTranscriptionDelta(event);
         // Track the time of the last audio delta for smart delay calculation
         lastAudioDeltaTimeRef.current = Date.now();
