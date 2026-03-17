@@ -1103,10 +1103,15 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
 
   const handleGuitarTabDisplayCommand = useCallback(
     (action: 'show' | 'close', description?: string) => {
+      if (action === 'close') {
+        setActiveModeAndRef('backend_mic');
+        lastKnownMicEnabledRef.current = true;
+        sendMessageToIframe({ type: 'set_backend_mic_enabled', enabled: true });
+      }
       if (!onGuitarTabDisplayCommand) return;
       onGuitarTabDisplayCommand(action, description);
     },
-    [onGuitarTabDisplayCommand]
+    [onGuitarTabDisplayCommand, setActiveModeAndRef]
   );
 
   const handleTunerCommand = useCallback(
@@ -1156,7 +1161,8 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
     currentEmotion === 'spotify',
     currentEmotion === 'tuner',
     currentEmotion === 'metronome',
-    activeMode === 'backing_track'
+    activeMode === 'backing_track',
+    currentEmotion === 'guitarTabs'
   );
 
   const handleBackingTrackPlayingStart = useCallback(() => {

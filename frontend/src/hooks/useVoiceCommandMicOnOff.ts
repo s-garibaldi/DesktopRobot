@@ -141,6 +141,10 @@ function isStopOrCloseCommand(transcript: string): boolean {
   return t === 'stop' || t.startsWith('stop ') || t === 'close' || t.startsWith('close ');
 }
 
+function isCloseCommand(transcript: string): boolean {
+  return normalize(transcript) === 'close';
+}
+
 function isPauseCommand(transcript: string): boolean {
   const t = normalize(transcript);
   return t === 'pause' || t.startsWith('pause ');
@@ -274,7 +278,8 @@ export function useVoiceCommandMicOnOff(
   isSpotifyActive?: boolean,
   isTunerActive?: boolean,
   isMetronomeActive?: boolean,
-  isBackingTrackActive?: boolean
+  isBackingTrackActive?: boolean,
+  isGuitarTabActive?: boolean
 ) {
   const onCommandRef = useRef(onCommand);
   const onMetronomeCommandRef = useRef(onMetronomeCommand);
@@ -286,6 +291,7 @@ export function useVoiceCommandMicOnOff(
   const isTunerActiveRef = useRef(isTunerActive ?? false);
   const isMetronomeActiveRef = useRef(isMetronomeActive ?? false);
   const isBackingTrackActiveRef = useRef(isBackingTrackActive ?? false);
+  const isGuitarTabActiveRef = useRef(isGuitarTabActive ?? false);
   const lastCommandTimeRef = useRef(0);
   onSpotifyCommandRef.current = onSpotifyCommand;
   onTunerCommandRef.current = onTunerCommand;
@@ -293,6 +299,7 @@ export function useVoiceCommandMicOnOff(
   isTunerActiveRef.current = isTunerActive ?? false;
   isMetronomeActiveRef.current = isMetronomeActive ?? false;
   isBackingTrackActiveRef.current = isBackingTrackActive ?? false;
+  isGuitarTabActiveRef.current = isGuitarTabActive ?? false;
 
   const lastMetronomeStartTimeRef = voiceCooldownRefs?.lastMetronomeStartTime;
   const lastGuitarTabDisplayFromBackendTimeRef = voiceCooldownRefs?.lastGuitarTabDisplayFromBackendTime;
@@ -439,6 +446,45 @@ export function useVoiceCommandMicOnOff(
             console.log('Voice command (interim): tuner close');
             continue;
           }
+          if (
+            isGuitarTabActiveRef.current &&
+            onGuitarTabDisplayCommandRef.current &&
+            (isCloseDisplayCommand(transcript) || isCloseCommand(transcript))
+          ) {
+            if (isInGuitarTabCloseCooldown(now)) {
+              console.log('Voice command (interim): ignoring close display (backend cooldown)');
+              continue;
+            }
+            lastCommandTimeRef.current = now;
+            playChimeDown();
+            onGuitarTabDisplayCommandRef.current('close');
+            console.log('Voice command (interim): close display');
+            continue;
+          }
+          if (isMetronomeActiveRef.current && onMetronomeCommandRef.current) {
+            const metronome = onMetronomeCommandRef.current;
+            if (isPlayOrResumeCommand(transcript)) {
+              lastCommandTimeRef.current = now;
+              playChime();
+              metronome('play');
+              console.log('Voice command (interim): metronome play/resume');
+              continue;
+            }
+            if (isPauseCommand(transcript) && !isInMetronomeStopCooldown(now)) {
+              lastCommandTimeRef.current = now;
+              playChimeDown();
+              metronome('pause');
+              console.log('Voice command (interim): metronome pause');
+              continue;
+            }
+            if (isStopOrCloseCommand(transcript) && !isInMetronomeStopCooldown(now)) {
+              lastCommandTimeRef.current = now;
+              playChimeDown();
+              metronome('stop');
+              console.log('Voice command (interim): metronome stop/close');
+              continue;
+            }
+          }
           // Only handle backing track pause/resume/stop when backing track is actually active
           if (isBackingTrackActiveRef.current && onBackingTrackCommandRef.current) {
             if (isPauseCommand(transcript) && !isInMetronomeStopCooldown(now)) {
@@ -477,7 +523,7 @@ export function useVoiceCommandMicOnOff(
             clearTimeout(displayDescriptionTimeoutRef.current);
             displayDescriptionTimeoutRef.current = null;
           }
-          if (isCloseDisplayCommand(transcript)) {
+          if (isCloseDisplayCommand(transcript) || isCloseCommand(transcript)) {
             lastCommandTimeRef.current = now;
             playChimeDown();
             onGuitarTabDisplayCommandRef.current('close');
@@ -809,7 +855,11 @@ export function useVoiceCommandMicOnOff(
           console.log('Voice command: microphone on');
           return;
         }
-        if (onGuitarTabDisplayCommandRef.current && isCloseDisplayCommand(transcript)) {
+        if (
+          isGuitarTabActiveRef.current &&
+          onGuitarTabDisplayCommandRef.current &&
+          (isCloseDisplayCommand(transcript) || isCloseCommand(transcript))
+        ) {
           if (isInGuitarTabCloseCooldown(now)) {
             console.log('Voice command: ignoring close display (backend cooldown)');
             return;
