@@ -65,7 +65,6 @@ export async function loadBackingTracksFromDisk(): Promise<BackingTrackRecord[]>
   } catch {
     return [];
   }
-
   return entries
     .map((e) => {
       const meta = metadataMap[e.name] ?? {};

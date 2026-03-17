@@ -71,6 +71,7 @@ export function useRealtimeSession(callbacks: RealtimeSessionCallbacks = {}) {
   const speakingSignalSentRef = useRef(false);
   const speakingEndTimerRef = useRef<NodeJS.Timeout | null>(null);
   const lastAudioDeltaTimeRef = useRef<number>(0);
+  const suppressingBackingTrackResponseRef = useRef(false);
 
   // Helper to send speaking end to parent window (fallback for WebRTC)
   const sendSpeakingEndToParent = () => {
@@ -100,6 +101,7 @@ export function useRealtimeSession(callbacks: RealtimeSessionCallbacks = {}) {
         break;
       }
       case "response.audio_transcript.delta": {
+        if (suppressingBackingTrackResponseRef.current) suppressingBackingTrackResponseRef.current = false;
         historyHandlers.handleTranscriptionDelta(event);
         // Track the time of the last audio delta for smart delay calculation
         lastAudioDeltaTimeRef.current = Date.now();
@@ -199,6 +201,7 @@ export function useRealtimeSession(callbacks: RealtimeSessionCallbacks = {}) {
   useEffect(() => {
     const onMessage = (event: MessageEvent) => {
       if (event.data?.type === 'backing_track_voice_handled') {
+        suppressingBackingTrackResponseRef.current = true;
         sessionRef.current?.interrupt();
       }
     };

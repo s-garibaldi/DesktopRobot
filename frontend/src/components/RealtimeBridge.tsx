@@ -96,9 +96,8 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
   const lastMetronomeStartTimeRef = useRef(0);
   /** Set when chord display is shown from backend; voice hook ignores "close display" for a few seconds so AI saying it doesn't dismiss. */
   const lastGuitarTabDisplayFromBackendTimeRef = useRef(0);
-  /** When metronome is paused and mic is on: turn off mic after this long with no backend audio input. */
+  /** When metronome is paused, keep backend mic on until the user explicitly resumes/stops/turns it off. */
   const metronomePausedMicIdleTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const scheduleMetronomePausedMicIdleOffRef = useRef<() => void>(() => {});
 
   // Check if realtime service is available (optionally try alternate host if first attempt fails)
   const checkRealtimeService = async (tryAlternateHost = true) => {
@@ -379,10 +378,6 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
             // Check for audio input events (user speaking)
             const audioState = deriveAudioInputStateFromBackendLog(log.payload);
             if (audioState === 'start') {
-              // When metronome is paused with mic on: any backend audio input resets the 5s idle-off timer
-              if (activeModeRef.current === 'metronome' && getMetronomePaused()) {
-                scheduleMetronomePausedMicIdleOffRef.current?.();
-              }
               // Backing track paused idle condition commented out
               // if (activeModeRef.current === 'backing_track' && backingTrackPausedRef.current) {
               //   scheduleBackingTrackPausedMicIdleOffRef.current?.();
@@ -534,6 +529,11 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
               break;
 
             case 'backend_auto_mic_off':
+              // Ignore auto mic-off while paused metronome is waiting for the next command.
+              if (activeModeRef.current === 'metronome' && getMetronomePaused()) {
+                console.log('[RealtimeBridge] ignoring backend_auto_mic_off while metronome is paused');
+                break;
+              }
               // Backend detected 5s of no audio input — play chime and turn off mic (same as "microphone off" voice command)
               playChimeDown();
               handleMicCommandRef.current?.({ type: 'set_backend_mic_enabled', enabled: false });
@@ -846,9 +846,6 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
 
   /** Duration to show "thinking" while "generating" metronome sound/timing before switching to metronome face. */
   const METRONOME_PREPARE_MS = 600;
-  const METRONOME_PAUSED_MIC_IDLE_MS = 5000;
-  const BACKING_TRACK_PAUSED_MIC_IDLE_MS = 5000;
-
   const backingTrackPausedRef = useRef(false);
   const backingTrackPausedMicIdleTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scheduleBackingTrackPausedMicIdleOffRef = useRef<() => void>(() => {});
@@ -861,9 +858,6 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
   const handleMicCommand = useCallback((payload: { type: 'set_backend_mic_enabled'; enabled: boolean }) => {
     const mode = activeModeRef.current;
     if (payload.enabled) {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/6aae1c4b-c2f3-4f12-bcce-d9a7131e841e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({runId:'tuner-micon-debug',hypothesisId:'MO2_MO3',location:'RealtimeBridge.tsx:861',message:'handleMicCommand enable branch entered',data:{mode,currentEmotion,lastKnownMicEnabled:lastKnownMicEnabledRef.current,iframeReady:Boolean(iframeRef.current?.contentWindow)},timestamp:Date.now()})}).catch(()=>{});
-      // #endregion
       // "microphone on" when in backing_track: only when paused (when playing, mic stays off)
       if (mode === 'backing_track') {
         if (!backingTrackPausedRef.current) {
@@ -890,9 +884,6 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
         clearTimeout(metronomeStartTimeoutRef.current);
         metronomeStartTimeoutRef.current = null;
       }
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/6aae1c4b-c2f3-4f12-bcce-d9a7131e841e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({runId:'tuner-micon-debug',hypothesisId:'MO2',location:'RealtimeBridge.tsx:890',message:'handleMicCommand forcing neutral during mic on',data:{mode,currentEmotion,nextMode:'backend_mic'},timestamp:Date.now()})}).catch(()=>{});
-      // #endregion
       onEmotionChange('neutral');
       lastKnownMicEnabledRef.current = true;
       sendMessageToIframe({ type: 'set_backend_mic_enabled', enabled: true });
@@ -979,17 +970,6 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
     }
   }, []);
 
-  const scheduleMetronomePausedMicIdleOff = useCallback(() => {
-    clearMetronomePausedMicIdleTimer();
-    metronomePausedMicIdleTimeoutRef.current = setTimeout(() => {
-      metronomePausedMicIdleTimeoutRef.current = null;
-      lastKnownMicEnabledRef.current = false;
-      sendMessageToIframe({ type: 'set_backend_mic_enabled', enabled: false });
-      console.log('[METRONOME] paused mic idle 5s — backend mic off');
-    }, METRONOME_PAUSED_MIC_IDLE_MS);
-  }, [clearMetronomePausedMicIdleTimer]);
-  scheduleMetronomePausedMicIdleOffRef.current = scheduleMetronomePausedMicIdleOff;
-
   const clearBackingTrackPausedMicIdleTimer = useCallback(() => {
     if (backingTrackPausedMicIdleTimeoutRef.current) {
       clearTimeout(backingTrackPausedMicIdleTimeoutRef.current);
@@ -1039,10 +1019,10 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
     if (action === 'pause') {
       if (mode !== 'metronome') return;
       console.log('[METRONOME] handleMetronomeCommand(pause) — stay in metronome face, backend mic on for input');
+      clearMetronomePausedMicIdleTimer();
       setMetronomePaused(true);
       lastKnownMicEnabledRef.current = true;
       sendMessageToIframe({ type: 'set_backend_mic_enabled', enabled: true });
-      scheduleMetronomePausedMicIdleOff();
       return;
     }
     if (action === 'play') {
@@ -1075,7 +1055,7 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
         handleStartMetronome();
       }
     }
-  }, [setActiveModeAndRef, onEmotionChange, clearMetronomePausedMicIdleTimer, scheduleMetronomePausedMicIdleOff]);
+  }, [setActiveModeAndRef, onEmotionChange, clearMetronomePausedMicIdleTimer]);
 
   // Keep ref current so message handler (metronome_set_bpm) can call it; sync assign so it's set before any postMessage is processed
   handleMetronomeCommandRef.current = handleMetronomeCommand;
@@ -1083,11 +1063,6 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
   const handleBackingTrackCommand = useCallback(
     (action: 'describe' | 'pause' | 'play' | 'save' | 'stop', description?: string) => {
       const mode = activeModeRef.current;
-      if (action === 'stop') {
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/6aae1c4b-c2f3-4f12-bcce-d9a7131e841e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({runId:'backing-stop-routing',hypothesisId:'H3',location:'RealtimeBridge.tsx:1064',message:'backing track handler received stop',data:{mode,currentEmotion,backingTrackPaused:backingTrackPausedRef.current},timestamp:Date.now()})}).catch(()=>{});
-        // #endregion
-      }
       if (mode === 'metronome' || mode === 'backend_mic') return;
       const h = backingTrackHandlersRef.current;
       if (!h) return;
@@ -1153,11 +1128,6 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
   onTunerCommandRef.current = handleTunerCommand;
 
   const handleSpotifyCommand = useCallback((action: 'pause' | 'play' | 'stop' | 'restart' | 'rewind' | 'forward' | 'skip', seconds?: number) => {
-    if (action === 'stop') {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/6aae1c4b-c2f3-4f12-bcce-d9a7131e841e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({runId:'backing-stop-routing',hypothesisId:'H4',location:'RealtimeBridge.tsx:1119',message:'spotify handler received stop',data:{currentEmotion,activeMode:activeModeRef.current,backingTrackPaused:backingTrackPausedRef.current},timestamp:Date.now()})}).catch(()=>{});
-      // #endregion
-    }
     if (action === 'play') {
       setActiveModeAndRef(null);
       lastKnownMicEnabledRef.current = false;
@@ -1331,7 +1301,7 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
           <div>
             <strong>Connection Error:</strong> {error}
           </div>
-          <button onClick={checkRealtimeService} className="retry-button">
+          <button onClick={() => void checkRealtimeService()} className="retry-button">
             Retry Connection
           </button>
         </div>
@@ -1396,7 +1366,7 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
               placeholder="http://localhost:3000"
             />
           </label>
-          <button onClick={checkRealtimeService} className="check-button">
+          <button onClick={() => void checkRealtimeService()} className="check-button">
             Check Service
           </button>
         </div>
@@ -1432,7 +1402,7 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
                   <li>Wait for the service to start on port 3000</li>
                 </ol>
               </div>
-              <button onClick={checkRealtimeService} className="retry-button">
+              <button onClick={() => void checkRealtimeService()} className="retry-button">
                 Check Again
               </button>
             </div>

@@ -282,7 +282,6 @@ export async function searchBackingTracks(criteria: SearchCriteria): Promise<Sco
   
   // Sort by score (highest first)
   scored.sort((a, b) => b.score - a.score);
-  
   return scored;
 }
 
