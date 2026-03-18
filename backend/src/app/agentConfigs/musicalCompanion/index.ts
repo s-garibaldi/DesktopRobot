@@ -786,13 +786,13 @@ const spotifyQueuePlayTool = tool({
     if (status === 'playing') {
       return { success: true, message: 'Already playing.' };
     }
-    if (queue.length > 0) {
-      postClientAction('music_play_index', { index: 0 });
-      return { success: true, message: 'Playing from the queue.' };
-    }
     if (status === 'paused' && nowPlaying) {
       postClientAction('music_resume');
       return { success: true, message: 'Resuming playback.' };
+    }
+    if (queue.length > 0) {
+      postClientAction('music_play_index', { index: 0 });
+      return { success: true, message: 'Playing from the queue.' };
     }
     return { success: false, message: 'Queue is empty. Add songs first (e.g. "play Song A, Song B").' };
   },

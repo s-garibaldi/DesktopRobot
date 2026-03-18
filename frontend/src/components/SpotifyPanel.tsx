@@ -215,15 +215,17 @@ export default function SpotifyPanel({ backendUrl, onPlaybackStateChange, onStop
 
   const handleStartPlayback = useCallback(async () => {
     activateElement();
-    if (music.queue.items.length > 0) {
-      await music.playIndex(0);
-    } else if (music.nowPlaying) {
+    if (music.status === 'paused' && music.nowPlaying) {
       if (autoplayBlocked) {
         await music.togglePause();
         await music.resume();
       } else {
         await music.resume();
       }
+    } else if (music.queue.items.length > 0) {
+      await music.playIndex(0);
+    } else if (music.nowPlaying) {
+      await music.resume();
     }
   }, [activateElement, music, autoplayBlocked]);
 

@@ -537,6 +537,16 @@ function App() {
     return;
   }
 
+  useEffect(() => {
+    if (sessionStatus !== "CONNECTED") return;
+
+    const interval = setInterval(() => {
+      updateSession(false);
+    }, 15000);
+
+    return () => clearInterval(interval);
+  }, [sessionStatus, selectedAgentName, selectedAgentConfigSet, isPTTActive]);
+
   const handleSendTextMessage = () => {
     if (!userText.trim()) return;
     interrupt();
