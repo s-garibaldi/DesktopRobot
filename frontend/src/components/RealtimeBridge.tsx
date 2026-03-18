@@ -714,7 +714,7 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
               break;
 
             case 'music_clear':
-              musicController.clear();
+              musicController.clearQueue();
               break;
 
             case 'music_play_index': {

@@ -104,7 +104,7 @@ export function useMusicController(options: UseMusicControllerOptions) {
     }
 
     const fireTrackEnded = () => {
-      if (isTrackEndedSuppressed()) return;
+      if (isTrackEndedSuppressed(uri)) return;
       if (trackEndedFiredForUriRef.current === uri) return;
       trackEndedFiredForUriRef.current = uri ?? 'unknown';
       musicController.onTrackEnded();
@@ -158,8 +158,16 @@ export function useMusicController(options: UseMusicControllerOptions) {
     musicController.move(from, to);
   }, []);
 
+  const clearQueue = useCallback(() => {
+    musicController.clearQueue();
+  }, []);
+
   const clear = useCallback(() => {
     musicController.clear();
+  }, []);
+
+  const stop = useCallback(() => {
+    musicController.stop();
   }, []);
 
   const next = useCallback(() => musicController.next(), []);
@@ -209,6 +217,8 @@ export function useMusicController(options: UseMusicControllerOptions) {
     removeAt,
     move,
     clear,
+    clearQueue,
+    stop,
     next,
     previous,
     playIndex,

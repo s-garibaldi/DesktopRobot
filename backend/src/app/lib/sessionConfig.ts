@@ -20,6 +20,8 @@ function toolToApiFormat(t: { name?: string; description?: string; parameters?: 
   };
 }
 
+export { toolToApiFormat };
+
 /** Instructions string for the session (system prompt). */
 export function getSessionInstructions(): string {
   const instr = musicalCompanionAgent.instructions;

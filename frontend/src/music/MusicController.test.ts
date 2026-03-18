@@ -14,7 +14,7 @@ const mockAdapter = {
 describe('MusicController queue operations', () => {
   beforeEach(() => {
     musicController.setPlaybackAdapter(mockAdapter);
-    musicController.clear();
+    musicController.stop();
   });
 
   it('addToQueue adds items', () => {
@@ -67,12 +67,15 @@ describe('MusicController queue operations', () => {
     expect(musicController.move(0, 0)).toBe(false);
   });
 
-  it('clear empties the queue', () => {
+  it('clearQueue empties the upcoming queue but keeps now playing intact', async () => {
     musicController.addToQueue({ title: 'A', artist: 'X', uri: 'spotify:track:1' });
     musicController.addToQueue({ title: 'B', artist: 'X', uri: 'spotify:track:2' });
-    musicController.clear();
+    await musicController.next();
+    musicController.clearQueue();
     const q = musicController.getQueue();
     expect(q.items.length).toBe(0);
+    expect(musicController.getNowPlaying()?.item.title).toBe('A');
+    expect(musicController.getPlaybackStatus()).toBe('playing');
   });
 
   it('next removes first from queue and plays it', async () => {
@@ -147,5 +150,42 @@ describe('MusicController queue operations', () => {
     expect(ok).toBe(true);
     const np = musicController.getNowPlaying();
     expect(np?.item.title).toBe('B');
+  });
+
+  it('stop clears queue and now playing', async () => {
+    musicController.addToQueue({ title: 'A', artist: 'X', uri: 'spotify:track:1' });
+    await musicController.next();
+
+    musicController.stop();
+
+    expect(musicController.getQueue().items).toEqual([]);
+    expect(musicController.getNowPlaying()).toBeNull();
+    expect(musicController.getPlaybackStatus()).toBe('stopped');
+  });
+
+  it('restores previous state when playIndex playback fails', async () => {
+    const playUri = vi
+      .fn<(...args: any[]) => Promise<boolean>>()
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(false);
+    musicController.setPlaybackAdapter({
+      playUri,
+      pause: async () => {},
+      resume: async () => {},
+      seek: async () => {},
+    });
+
+    await musicController.addAndPlay([
+      { id: 'now', title: 'Now', artist: 'X', uri: 'spotify:track:now' },
+      { id: 'next', title: 'Next', artist: 'X', uri: 'spotify:track:next' },
+      { id: 'later', title: 'Later', artist: 'X', uri: 'spotify:track:later' },
+    ]);
+
+    const ok = await musicController.playIndex(1);
+
+    expect(ok).toBe(false);
+    expect(musicController.getNowPlaying()?.item.title).toBe('Now');
+    expect(musicController.getQueue().items.map((item) => item.title)).toEqual(['Next', 'Later']);
+    expect(musicController.getPlaybackStatus()).toBe('playing');
   });
 });

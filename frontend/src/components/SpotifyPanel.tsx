@@ -583,7 +583,7 @@ export default function SpotifyPanel({ backendUrl, onPlaybackStateChange, onStop
 
   const handleStop = useCallback(async () => {
     onStop?.();
-    music.clear();
+    music.stop();
     try {
       await pause();
       await seek(0);
@@ -734,7 +734,7 @@ export default function SpotifyPanel({ backendUrl, onPlaybackStateChange, onStop
         queue={music.queue}
         onRemoveAt={music.removeAt}
         onMove={music.move}
-        onClear={music.clear}
+        onClear={music.clearQueue}
         onPlayItem={(item) => {
           activateElement();
           music.playItem(item);

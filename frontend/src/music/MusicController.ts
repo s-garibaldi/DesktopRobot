@@ -65,7 +65,7 @@ class MusicControllerImpl {
   getQueue(): MusicQueue {
     return {
       items: [...this.items],
-      currentIndex: -1,
+      currentIndex: this.nowPlayingItem ? 0 : -1,
     };
   }
 
@@ -133,7 +133,16 @@ class MusicControllerImpl {
     return true;
   }
 
+  clearQueue(): void {
+    this.items = [];
+    this.notifyQueue();
+  }
+
   clear(): void {
+    this.clearQueue();
+  }
+
+  stop(): void {
     this.items = [];
     this.nowPlayingItem = null;
     this.playbackStatus = 'stopped';
@@ -150,7 +159,7 @@ class MusicControllerImpl {
     const now = Date.now();
     if (now - this.lastNextAt < MusicControllerImpl.NEXT_DEBOUNCE_MS) return true;
     this.lastNextAt = now;
-    setSuppressTrackEnded();
+    setSuppressTrackEnded(this.nowPlayingItem?.uri ?? null);
 
     if (this.items.length === 0) {
       this.nowPlayingItem = null;
@@ -207,6 +216,9 @@ class MusicControllerImpl {
       return false;
     }
     const item = this.items[index];
+    const previousNowPlaying = this.nowPlayingItem;
+    const previousStatus = this.playbackStatus;
+    setSuppressTrackEnded(this.nowPlayingItem?.uri ?? null);
     this.items.splice(index, 1);
     const queueUris = this.items.map((i) => i.uri);
     this.nowPlayingItem = item;
@@ -216,8 +228,8 @@ class MusicControllerImpl {
     const ok = await this.adapter.playUri(item.uri, 0, queueUris);
     if (!ok) {
       this.items.splice(index, 0, item);
-      this.nowPlayingItem = null;
-      this.playbackStatus = 'stopped';
+      this.nowPlayingItem = previousNowPlaying;
+      this.playbackStatus = previousStatus;
       this.notifyQueue();
       this.notifyNowPlaying();
       return false;
@@ -239,6 +251,9 @@ class MusicControllerImpl {
       this.playbackStatus = 'stopped';
       return false;
     }
+    const previousItems = [...this.items];
+    const previousNowPlaying = this.nowPlayingItem;
+    const previousStatus = this.playbackStatus;
     const queueItem: QueueItem = item
       ? {
           id: item.id ?? generateId(),
@@ -253,6 +268,7 @@ class MusicControllerImpl {
           artist: '',
           uri,
         };
+    setSuppressTrackEnded(this.nowPlayingItem?.uri ?? null);
     this.items = [];
     this.nowPlayingItem = queueItem;
     this.playbackStatus = 'playing';
@@ -260,7 +276,10 @@ class MusicControllerImpl {
     this.notifyNowPlaying();
     const ok = await this.adapter.playUri(uri, 0);
     if (!ok) {
-      this.playbackStatus = 'stopped';
+      this.items = previousItems;
+      this.nowPlayingItem = previousNowPlaying;
+      this.playbackStatus = previousStatus;
+      this.notifyQueue();
       this.notifyNowPlaying();
       return false;
     }
@@ -273,7 +292,11 @@ class MusicControllerImpl {
       console.warn('[MusicController] addAndPlay failed: no playback adapter (Spotify not connected?)');
       return false;
     }
+    const previousItems = [...this.items];
+    const previousNowPlaying = this.nowPlayingItem;
+    const previousStatus = this.playbackStatus;
     const [first, ...rest] = items;
+    setSuppressTrackEnded(this.nowPlayingItem?.uri ?? null);
     this.nowPlayingItem = first;
     this.items = rest;
     this.playbackStatus = 'playing';
@@ -281,7 +304,10 @@ class MusicControllerImpl {
     this.notifyNowPlaying();
     const ok = await this.adapter.playUri(first.uri, 0, rest.map((i) => i.uri));
     if (!ok) {
-      this.playbackStatus = 'stopped';
+      this.items = previousItems;
+      this.nowPlayingItem = previousNowPlaying;
+      this.playbackStatus = previousStatus;
+      this.notifyQueue();
       this.notifyNowPlaying();
       return false;
     }

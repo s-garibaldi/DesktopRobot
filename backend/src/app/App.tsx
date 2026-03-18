@@ -36,15 +36,7 @@ import { useMemoryExtraction } from "./hooks/useMemoryExtraction";
 import { getMemoriesForAgent, formatMemoriesAsContext } from "./lib/memoryStorage";
 import { setMusicState } from "./lib/musicState";
 import { SpotifyPlayerBridge } from "./components/SpotifyPlayerBridge";
-
-function toolToApiFormat(t: { name?: string; description?: string; parameters?: unknown }) {
-  return {
-    type: 'function' as const,
-    name: t.name ?? 'unknown',
-    description: typeof t.description === 'string' ? t.description : '',
-    parameters: t.parameters ?? { type: 'object', properties: {} },
-  };
-}
+import { getSessionInstructions, getSessionTools, toolToApiFormat } from "./lib/sessionConfig";
 
 function App() {
   const searchParams = useSearchParams()!;
@@ -475,6 +467,7 @@ function App() {
             } : {}),
           },
         });
+        setTimeout(() => updateSession(), 250);
       } catch (err) {
         console.error("Error connecting via SDK:", err);
         setSessionStatus("DISCONNECTED");
@@ -508,12 +501,12 @@ function App() {
   const updateSession = (shouldTriggerResponse: boolean = false) => {
     const currentAgent = selectedAgentConfigSet?.find((a) => a.name === selectedAgentName) ?? selectedAgentConfigSet?.[0] ?? null;
     const instructions =
-      typeof currentAgent?.instructions === 'string' ? currentAgent.instructions : undefined;
+      typeof currentAgent?.instructions === 'string' ? currentAgent.instructions : getSessionInstructions();
     const tools = Array.isArray(currentAgent?.tools)
       ? currentAgent.tools.map((t: unknown) =>
           toolToApiFormat(t as { name?: string; description?: string; parameters?: unknown })
         )
-      : undefined;
+      : getSessionTools();
 
     // Reflect Push-to-Talk UI state by (de)activating server VAD on the
     // backend. The Realtime SDK supports live session updates via the
