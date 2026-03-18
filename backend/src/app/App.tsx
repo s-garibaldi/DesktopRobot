@@ -36,7 +36,7 @@ import { useMemoryExtraction } from "./hooks/useMemoryExtraction";
 import { getMemoriesForAgent, formatMemoriesAsContext } from "./lib/memoryStorage";
 import { setMusicState } from "./lib/musicState";
 import { SpotifyPlayerBridge } from "./components/SpotifyPlayerBridge";
-import { getSessionInstructions, getSessionTools, toolToApiFormat } from "./lib/sessionConfig";
+import { getSessionInstructions, getSessionTools } from "./lib/sessionConfig";
 
 function App() {
   const searchParams = useSearchParams()!;
@@ -467,7 +467,9 @@ function App() {
             } : {}),
           },
         });
-        setTimeout(() => updateSession(), 250);
+        [250, 1000, 3000].forEach((delay) => {
+          setTimeout(() => updateSession(), delay);
+        });
       } catch (err) {
         console.error("Error connecting via SDK:", err);
         setSessionStatus("DISCONNECTED");
@@ -499,14 +501,8 @@ function App() {
   };
 
   const updateSession = (shouldTriggerResponse: boolean = false) => {
-    const currentAgent = selectedAgentConfigSet?.find((a) => a.name === selectedAgentName) ?? selectedAgentConfigSet?.[0] ?? null;
-    const instructions =
-      typeof currentAgent?.instructions === 'string' ? currentAgent.instructions : getSessionInstructions();
-    const tools = Array.isArray(currentAgent?.tools)
-      ? currentAgent.tools.map((t: unknown) =>
-          toolToApiFormat(t as { name?: string; description?: string; parameters?: unknown })
-        )
-      : getSessionTools();
+    const instructions = getSessionInstructions();
+    const tools = getSessionTools();
 
     // Reflect Push-to-Talk UI state by (de)activating server VAD on the
     // backend. The Realtime SDK supports live session updates via the
@@ -540,11 +536,16 @@ function App() {
   useEffect(() => {
     if (sessionStatus !== "CONNECTED") return;
 
+    updateSession(false);
+    const earlyRefresh = setTimeout(() => updateSession(false), 2000);
     const interval = setInterval(() => {
       updateSession(false);
     }, 15000);
 
-    return () => clearInterval(interval);
+    return () => {
+      clearTimeout(earlyRefresh);
+      clearInterval(interval);
+    };
   }, [sessionStatus, selectedAgentName, selectedAgentConfigSet, isPTTActive]);
 
   const handleSendTextMessage = () => {
