@@ -369,6 +369,27 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
         return;
       }
       try {
+          // Backend requests music state on load (ensures queue/nowPlaying available after HMR or reconnect)
+          if (data?.type === 'backend_request_music_state' && iframeRef.current?.contentWindow) {
+            const q = musicController.getQueue();
+            const np = musicController.getNowPlaying();
+            const status = musicController.getPlaybackStatus();
+            const origin = (() => {
+              try { return new URL(realtimeUrl).origin; } catch { return '*'; }
+            })();
+            iframeRef.current.contentWindow.postMessage(
+              {
+                type: 'music_state_update',
+                queue: q.items,
+                currentIndex: q.currentIndex,
+                nowPlaying: np ? { title: np.item.title, artist: np.item.artist } : null,
+                status,
+              },
+              origin
+            );
+            return;
+          }
+
           console.log('Processing message from realtime service:', data);
 
           // Backend log bridge events (sanitized, high-volume). We only map selected ones to emotions.
@@ -556,9 +577,6 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
               const bpm = data.bpm;
               // Flow: backend decided one BPM → we set it in the metronome and start (no voice-command path)
               if (typeof bpm === 'number' && bpm >= 40 && bpm <= 240) {
-                // #region agent log
-                fetch('http://127.0.0.1:7242/ingest/6aae1c4b-c2f3-4f12-bcce-d9a7131e841e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({runId:'tool-bridge-debug',hypothesisId:'H18',location:'frontend/src/components/RealtimeBridge.tsx:558',message:'frontend received metronome_set_bpm',data:{bpm,hasHandler:typeof startMetronomeFromBackendBpmRef.current === 'function'},timestamp:Date.now()})}).catch(()=>{});
-                // #endregion
                 const startFromBackend = startMetronomeFromBackendBpmRef.current;
                 if (typeof startFromBackend === 'function') {
                   startFromBackend(bpm);
@@ -615,27 +633,31 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
             case 'music_play_track': {
               const uri = data.uri;
               if (typeof uri === 'string' && uri.startsWith('spotify:track:')) {
-                // #region agent log
-                fetch('http://127.0.0.1:7242/ingest/6aae1c4b-c2f3-4f12-bcce-d9a7131e841e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({runId:'spotify-autoplay-debug',hypothesisId:'H1',location:'frontend/src/components/RealtimeBridge.tsx:615',message:'ai requested single track playback',data:{messageType:data.type,hasAlbumArt:typeof data.albumArtUrl === 'string',hasDuration:typeof data.durationMs === 'number'},timestamp:Date.now()})}).catch(()=>{});
-                // #endregion
                 console.log('[RealtimeBridge] music_play_track from backend', uri, data.trackName);
                 onEmotionChange('spotify');
                 lastKnownMicEnabledRef.current = false;
                 sendMessageToIframe({ type: 'set_backend_mic_enabled', enabled: false });
-                // Notify SpotifyPanel that AI requested playback (browsers need user click for audio)
                 window.dispatchEvent(new CustomEvent('spotify-agent-requested-playback'));
                 const albumArtUrl = typeof data.albumArtUrl === 'string' ? data.albumArtUrl : undefined;
                 const durationMs = typeof data.durationMs === 'number' && data.durationMs > 0 ? data.durationMs : undefined;
-                musicController.playUri(uri, {
+                const item = {
+                  uri,
                   title: typeof data.trackName === 'string' ? data.trackName : 'Unknown',
                   artist: typeof data.artists === 'string' ? data.artists : '',
                   albumArtUrl,
                   durationMs,
-                }).then((ok) => {
-                  if (!ok) {
-                    window.dispatchEvent(new CustomEvent('spotify-playback-failed', { detail: { reason: 'not_connected' } }));
-                  }
-                });
+                };
+                const nowPlaying = musicController.getNowPlaying();
+                // If any current song is active in the controller, append behind it instead of replacing it.
+                if (nowPlaying) {
+                  musicController.addToQueue(item);
+                } else {
+                  musicController.playUri(uri, item).then((ok) => {
+                    if (!ok) {
+                      window.dispatchEvent(new CustomEvent('spotify-playback-failed', { detail: { reason: 'not_connected' } }));
+                    }
+                  });
+                }
               }
               break;
             }
@@ -644,9 +666,6 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
               const items = data.items;
               console.log('[RealtimeBridge] music_add_to_queue received:', Array.isArray(items) ? items.length : 'invalid');
               if (Array.isArray(items) && items.length > 0) {
-                // #region agent log
-                fetch('http://127.0.0.1:7242/ingest/6aae1c4b-c2f3-4f12-bcce-d9a7131e841e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({runId:'spotify-autoplay-debug',hypothesisId:'H1',location:'frontend/src/components/RealtimeBridge.tsx:640',message:'ai requested queue playback',data:{itemCount:items.length},timestamp:Date.now()})}).catch(()=>{});
-                // #endregion
                 const valid = items.filter(
                   (it: unknown) =>
                     it &&
@@ -1173,6 +1192,30 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
     activeMode === 'backing_track',
     currentEmotion === 'guitarTabs'
   );
+
+  // When Spotify track is paused or stopped, auto-enable backend mic so user can talk to AI
+  useEffect(() => {
+    const onPaused = () => {
+      if (isConnected && iframeLoaded) {
+        setActiveModeAndRef('backend_mic');
+        lastKnownMicEnabledRef.current = true;
+        sendMessageToIframe({ type: 'set_backend_mic_enabled', enabled: true });
+      }
+    };
+    const onPlaying = () => {
+      if (isConnected && iframeLoaded) {
+        setActiveModeAndRef(null);
+        lastKnownMicEnabledRef.current = false;
+        sendMessageToIframe({ type: 'set_backend_mic_enabled', enabled: false });
+      }
+    };
+    window.addEventListener('music-playback-paused', onPaused);
+    window.addEventListener('music-playback-playing', onPlaying);
+    return () => {
+      window.removeEventListener('music-playback-paused', onPaused);
+      window.removeEventListener('music-playback-playing', onPlaying);
+    };
+  }, [isConnected, iframeLoaded, setActiveModeAndRef]);
 
   const handleBackingTrackPlayingStart = useCallback(() => {
     backingTrackPausedRef.current = false;

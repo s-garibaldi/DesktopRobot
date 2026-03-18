@@ -64,7 +64,7 @@ export const drawSpeaking: EmotionDrawFunction = (ctx, time, breathingPhase, tra
   const secondaryGlow = 0.9 + Math.sin(time * 2.1) * 0.1;
   const tertiaryGlow = 0.95 + Math.sin(time * 3.3) * 0.05;
 
-  const faceWidth = 200;
+  const faceWidth = 225;
   const faceHeight = 150;
   const cornerRadius = 20;
   const eyeSpacing = 50;

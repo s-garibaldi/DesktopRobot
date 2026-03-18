@@ -16,6 +16,8 @@ function App() {
   const [isEmotionFullscreen, setIsEmotionFullscreen] = useState(false);
   const [spotifyPlaybackState, setSpotifyPlaybackState] = useState<PlaybackState | null>(null);
   const [spotifyUserStopped, setSpotifyUserStopped] = useState(false);
+  const [showSpotifyStartPlaybackButton, setShowSpotifyStartPlaybackButton] = useState(false);
+  const [spotifyStartPlaybackPressed, setSpotifyStartPlaybackPressed] = useState(false);
   const [guitarTabsInput, setGuitarTabsInput] = useState('');
   const [guitarTabsVoicingIndex, setGuitarTabsVoicingIndex] = useState(0);
 
@@ -83,6 +85,22 @@ function App() {
     }
   };
 
+  useEffect(() => {
+    const handleRequest = () => {
+      if (!spotifyStartPlaybackPressed) {
+        setShowSpotifyStartPlaybackButton(true);
+      }
+    };
+    window.addEventListener('spotify-agent-requested-playback', handleRequest);
+    return () => window.removeEventListener('spotify-agent-requested-playback', handleRequest);
+  }, [spotifyStartPlaybackPressed]);
+
+  const handleSpotifyFaceStartPlayback = useCallback(() => {
+    setSpotifyStartPlaybackPressed(true);
+    setShowSpotifyStartPlaybackButton(false);
+    window.dispatchEvent(new CustomEvent('spotify-start-playback-request'));
+  }, []);
+
   return (
     <div className="app">
       <div className={isEmotionFullscreen ? 'app-fullscreen' : undefined}>
@@ -106,7 +124,11 @@ function App() {
                   voicingIndex={guitarTabsVoicingIndex}
                 />
               ) : currentEmotion === 'spotify' ? (
-                <SpotifyFace playbackState={spotifyPlaybackState} />
+                <SpotifyFace
+                  playbackState={spotifyPlaybackState}
+                  showStartPlaybackButton={showSpotifyStartPlaybackButton}
+                  onStartPlayback={handleSpotifyFaceStartPlayback}
+                />
               ) : currentEmotion === 'tuner' ? (
                 <TunerFace />
               ) : (

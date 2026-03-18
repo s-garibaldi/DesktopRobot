@@ -16,7 +16,9 @@ backend/node_modules
 dist
 frontend/dist
 backend/.next
+backend/.next-dev
 backend/out
+backend/tsconfig.tsbuildinfo
 frontend/src-tauri/target
 
 # Environment variables

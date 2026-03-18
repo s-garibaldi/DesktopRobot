@@ -289,9 +289,6 @@ const setMetronomeBpmTool = tool({
   execute: async (input: any) => {
     let bpm: number;
     const { bpm: inputBpm, genre } = input as { bpm?: number; genre?: string };
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/6aae1c4b-c2f3-4f12-bcce-d9a7131e841e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({runId:'tool-bridge-debug',hypothesisId:'H16',location:'backend/src/app/agentConfigs/musicalCompanion/index.ts:291',message:'metronome tool execute started',data:{hasBpm:typeof inputBpm === 'number',hasGenre:Boolean(genre?.trim())},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
     if (genre?.trim()) {
       const genreBpm = getTempoBpmForGenre(genre.trim());
       if (genreBpm != null) {
@@ -314,9 +311,6 @@ const setMetronomeBpmTool = tool({
     }
     const clamped = Math.max(40, Math.min(240, bpm));
     postClientAction('metronome_set_bpm', { bpm: clamped });
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/6aae1c4b-c2f3-4f12-bcce-d9a7131e841e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({runId:'tool-bridge-debug',hypothesisId:'H16',location:'backend/src/app/agentConfigs/musicalCompanion/index.ts:313',message:'metronome tool posted client action',data:{bpm:clamped},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
     return {
       success: true,
       bpm: clamped,
@@ -605,7 +599,6 @@ const spotifyQueueAddTool = tool({
   execute: async (input: any) => {
     const { queries } = input as { queries: string };
     const list = parseQueueQueries((queries ?? '').trim());
-    console.log('[spotify_queue_add] input:', queries, 'parsed:', list);
     if (list.length === 0) {
       return { success: false, message: 'Specify at least one song to add (e.g. "Blinding Lights" or "Song A, Song B").' };
     }
@@ -618,7 +611,6 @@ const spotifyQueueAddTool = tool({
     if (items.length === 0) {
       return { success: false, message: 'No tracks found. Try different song names.' };
     }
-    console.log('[spotify_queue_add] posting items:', items.length);
     postClientAction('music_add_to_queue', {
       items: items.map((it) => ({
         uri: it.uri,
@@ -960,6 +952,7 @@ When the user asks to open, show, or start the tuner, use display_tuner. If they
 - Use music_theory_help for theory explanations (scales, intervals, harmony, chord construction, circle of fifths)
 - Metronome: You CAN and MUST start the metronome when the user asks. Always use set_metronome_bpm—pass a genre (e.g. "rumba", "salsa", "waltz", "bossa nova", "ballad") or a bpm (40–240). The tool starts it on the user's device; never say you cannot start it or that they must use voice. Do NOT say "stop" or "pause" in your reply (the mic would stop the metronome); say they can control it with voice instead.
 - Use play_spotify_track when the user asks to play ONE song (e.g. "play Bohemian Rhapsody"). Use spotify_queue_add when the user asks to play MULTIPLE songs (e.g. "play A, B, and C", "play Song A then Song B", "queue X, Y, Z")—pass each song as a separate query in one string. Use spotify_queue_get when the user asks what is in the queue, what song is next, what is coming up, or to list the queue. Use spotify_queue_play when the user says "play the queue" or "start the queue" and the queue has items. Use spotify_queue_remove, spotify_queue_reorder, and spotify_queue_clear for queue management. The user must have connected Spotify in the app (Premium required).
+- Spotify tool policy: Spotify tools are available to you in this session. For any request to play, queue, skip, pause, resume, inspect, reorder, or clear Spotify music, you MUST call the matching Spotify tool or client action path before replying. Do not say you cannot access Spotify, cannot control Spotify, or do not have Spotify functions unless a Spotify tool call actually fails. If a Spotify tool fails, briefly explain the failure and suggest connecting Spotify in the app.
 - Backing tracks: Use list_backing_tracks when the user asks what backing tracks are available, wants to browse or choose (e.g. "what do you have for blues?", "what backing tracks do I have?"). You get the full list from the library and can suggest options. Only call play_backing_track when the user has given an explicit affirmative to play (e.g. "yes", "play it", "that one", "sounds good", "go ahead"). When suggesting a track, describe it and ask if they want it; once they say yes, use play_backing_track with the agreed description (e.g. "blues in A minor around 90 bpm"). The track loops until they say "stop" or use voice controls.
 - Use search_web to find current information, recent music news, new songs, artist information, or any up-to-date content
 - Use store_memory to save user preferences, favorite chords, musical interests, or skill level

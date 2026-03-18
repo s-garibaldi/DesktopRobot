@@ -4,6 +4,7 @@
  * All queue operations are local, deterministic, and unit-testable.
  */
 import type { QueueItem, MusicQueue, NowPlaying, PlaybackStatus } from './types';
+import { setSuppressTrackEnded } from './skipSuppress';
 
 function generateId(): string {
   return `q-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
@@ -140,7 +141,16 @@ class MusicControllerImpl {
     this.notifyNowPlaying();
   }
 
+  /** Min ms between next() calls to prevent double-skip from rapid duplicate triggers. */
+  private lastNextAt = 0;
+  private static NEXT_DEBOUNCE_MS = 800;
+
   async next(): Promise<boolean> {
+    const now = Date.now();
+    if (now - this.lastNextAt < MusicControllerImpl.NEXT_DEBOUNCE_MS) return true;
+    this.lastNextAt = now;
+    setSuppressTrackEnded();
+
     if (this.items.length === 0) {
       this.nowPlayingItem = null;
       this.playbackStatus = 'stopped';
@@ -149,16 +159,22 @@ class MusicControllerImpl {
       this.notifyNowPlaying();
       return false;
     }
+    const previousNowPlaying = this.nowPlayingItem;
+    const previousStatus = this.playbackStatus;
     const item = this.items[0];
     this.items.splice(0, 1);
+    const queueUris = this.items.map((queuedItem) => queuedItem.uri);
     this.nowPlayingItem = item;
     this.playbackStatus = 'playing';
     this.notifyQueue();
     this.notifyNowPlaying();
     if (this.adapter) {
-      const ok = await this.adapter.playUri(item.uri, 0);
+      const ok = await this.adapter.playUri(item.uri, 0, queueUris);
       if (!ok) {
-        this.playbackStatus = 'stopped';
+        this.items.splice(0, 0, item);
+        this.nowPlayingItem = previousNowPlaying;
+        this.playbackStatus = previousStatus;
+        this.notifyQueue();
         this.notifyNowPlaying();
         return false;
       }
@@ -275,7 +291,7 @@ class MusicControllerImpl {
     for (const it of items) {
       this.addToQueue(it);
     }
-    if (this.playbackStatus === 'stopped' && this.items.length > 0) {
+    if (this.playbackStatus === 'stopped' && !this.nowPlayingItem && this.items.length > 0) {
       return this.playIndex(0);
     }
     return true;

@@ -95,11 +95,11 @@ const AnimatedFace: React.FC<AnimatedFaceProps> = ({ emotion, fillContainer = fa
       }
     }
     
-    // Enhanced breathing animation
-    state.breathingPhase += 0.025; // Slightly faster breathing
+    // Breathing: slower for smoother outer box motion
+    state.breathingPhase += 0.015;
     
-    // Very subtle micro-movements for life
-    state.microMovements.headTilt = Math.sin(time * 0.3) * 0.001; // Gentle sway
+    // Micro-movements (head tilt disabled for smoother outer box)
+    state.microMovements.headTilt = 0;
     state.microMovements.eyeMovement.x = Math.sin(time * 0.2) * 0.2; // Gentle eye drift
     state.microMovements.eyeMovement.y = Math.cos(time * 0.25) * 0.1;
     state.microMovements.mouthMovement = Math.sin(time * 0.15) * 0.3;

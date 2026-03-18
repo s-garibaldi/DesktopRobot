@@ -36,7 +36,7 @@ function EmptyTabChart() {
           y1={EMPTY_PADDING + i * EMPTY_FRET_SPACING}
           x2={EMPTY_PADDING + 5 * EMPTY_STRING_SPACING}
           y2={EMPTY_PADDING + i * EMPTY_FRET_SPACING}
-          className="diagram-line"
+          className="diagram-line diagram-line-fret diagram-line-empty"
         />
       ))}
       {Array.from({ length: 6 }, (_, i) => (
@@ -46,7 +46,7 @@ function EmptyTabChart() {
           y1={EMPTY_PADDING}
           x2={stringX(i)}
           y2={EMPTY_PADDING + EMPTY_NUM_FRETS * EMPTY_FRET_SPACING}
-          className="diagram-line"
+          className="diagram-line diagram-line-string diagram-line-empty"
         />
       ))}
     </svg>
@@ -92,7 +92,7 @@ function ChordDiagram({ shape }: { shape: ChordShape }) {
           y1={padding + i * fretSpacing}
           x2={padding + 5 * stringSpacing}
           y2={padding + i * fretSpacing}
-          className="diagram-line"
+          className="diagram-line diagram-line-fret"
         />
       ))}
       {/* String lines */}
@@ -103,7 +103,7 @@ function ChordDiagram({ shape }: { shape: ChordShape }) {
           y1={padding}
           x2={stringX(i)}
           y2={padding + numFrets * fretSpacing}
-          className="diagram-line"
+          className="diagram-line diagram-line-string"
         />
       ))}
       <text x={padding - 2 - FRET_LABEL_X_OFFSET} y={padding + fretSpacing * 0.5} className="fret-label fret-label-left" textAnchor="end">
@@ -119,6 +119,7 @@ function ChordDiagram({ shape }: { shape: ChordShape }) {
             height={20}
             rx={10}
             className="barre"
+            data-string-index={shape.barre.fromString}
             filter="url(#glow)"
           />
         )}
@@ -194,7 +195,7 @@ function ScaleDiagram({ shape }: { shape: ScaleShape }) {
           y1={padding + i * fretSpacing}
           x2={padding + 5 * stringSpacing}
           y2={padding + i * fretSpacing}
-          className="diagram-line"
+          className="diagram-line diagram-line-fret"
         />
       ))}
       {Array.from({ length: 6 }, (_, i) => (
@@ -204,7 +205,7 @@ function ScaleDiagram({ shape }: { shape: ScaleShape }) {
           y1={padding}
           x2={stringX(i)}
           y2={padding + numFrets * fretSpacing}
-          className="diagram-line"
+          className="diagram-line diagram-line-string"
         />
       ))}
       <text x={padding - 2 - FRET_LABEL_X_OFFSET} y={padding + fretSpacing * 0.5} className="fret-label fret-label-left" textAnchor="end">
@@ -223,6 +224,7 @@ function ScaleDiagram({ shape }: { shape: ScaleShape }) {
               cy={y}
               r={dotRadius}
               className="scale-dot"
+              data-string-index={stringIndex}
               filter="url(#glow-scale)"
             />
           );
@@ -263,14 +265,17 @@ export default function GuitarTabsFace({ input, voicingIndex = 0 }: GuitarTabsFa
       <div className="guitar-tabs-display">
         <div className="guitar-tabs-inner-box" aria-hidden>
           {result ? (
-            <div className="guitar-tabs-diagram-wrap">
+            <div
+              className="guitar-tabs-diagram-wrap"
+              key={`diagram-${input}-${voicingIndex}`}
+            >
               {result.type === 'chord' && chordShape && <ChordDiagram shape={chordShape} />}
               {result.type === 'scale' && scaleShape && (
                 <ScaleDiagram key={`scale-${voicingIndex}`} shape={scaleShape} />
               )}
             </div>
           ) : (
-            <div className="guitar-tabs-diagram-wrap">
+            <div className="guitar-tabs-diagram-wrap guitar-tabs-diagram-wrap--empty">
               <EmptyTabChart />
             </div>
           )}

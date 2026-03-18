@@ -15,7 +15,7 @@ export const drawHappy: EmotionDrawFunction = (ctx, time, breathingPhase, transi
   ctx.scale(breathingScale, breathingScale);
   
   // Set up proportions
-  const faceWidth = 200;
+  const faceWidth = 225;
   const faceHeight = 150;
   const cornerRadius = 20;
   
@@ -224,8 +224,8 @@ export const drawHappy: EmotionDrawFunction = (ctx, time, breathingPhase, transi
     sparklePositions.forEach((pos, index) => {
       // Calculate absolute position relative to face center
       const absoluteX = -eyeSpacing + pos.x;
-      const faceBoxLeft = -faceWidth / 2; // -100
-      const faceBoxRight = faceWidth / 2; // +100
+      const faceBoxLeft = -faceWidth / 2; // -112.5
+      const faceBoxRight = faceWidth / 2; // +112.5
       const maxShadowBlur = 20; // Maximum shadow blur extent
       const sparkleSize = pos.size + Math.sin(time * 4.5 + index) * 0.8;
       const maxExtent = maxShadowBlur + sparkleSize; // Total extent including size
@@ -327,8 +327,8 @@ export const drawHappy: EmotionDrawFunction = (ctx, time, breathingPhase, transi
     sparklePositions.forEach((pos, index) => {
       // Calculate absolute position relative to face center
       const absoluteX = eyeSpacing + pos.x;
-      const faceBoxLeft = -faceWidth / 2; // -100
-      const faceBoxRight = faceWidth / 2; // +100
+      const faceBoxLeft = -faceWidth / 2; // -112.5
+      const faceBoxRight = faceWidth / 2; // +112.5
       const maxShadowBlur = 20; // Maximum shadow blur extent
       const sparkleSize = pos.size + Math.sin(time * 4.5 + index) * 0.8;
       const maxExtent = maxShadowBlur + sparkleSize; // Total extent including size

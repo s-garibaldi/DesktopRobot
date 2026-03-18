@@ -28,13 +28,13 @@ neutral: {
 ### 1. **Head Shape** (Rounded Rectangle)
 
 ```typescript
-const faceWidth = 200;
+const faceWidth = 225;
 const faceHeight = 150;
 const cornerRadius = 20; // Rounded corners
 ```
 
 - **Shape**: Rounded rectangular head (not circular)
-- **Dimensions**: 200px wide × 150px tall
+- **Dimensions**: 225px wide × 150px tall
 - **Corner Radius**: 20px for rounded corners
 - **Style**: Cyan outline with pulsing glow
 

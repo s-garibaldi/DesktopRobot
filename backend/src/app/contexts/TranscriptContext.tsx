@@ -10,6 +10,8 @@ import React, {
 import { v4 as uuidv4 } from "uuid";
 import { TranscriptItem } from "@/app/types";
 
+const MAX_TRANSCRIPT_ITEMS = 300;
+
 type TranscriptContextValue = {
   transcriptItems: TranscriptItem[];
   addTranscriptMessage: (
@@ -28,6 +30,12 @@ const TranscriptContext = createContext<TranscriptContextValue | undefined>(unde
 
 export const TranscriptProvider: FC<PropsWithChildren> = ({ children }) => {
   const [transcriptItems, setTranscriptItems] = useState<TranscriptItem[]>([]);
+
+  function capTranscriptItems(items: TranscriptItem[]): TranscriptItem[] {
+    return items.length > MAX_TRANSCRIPT_ITEMS
+      ? items.slice(items.length - MAX_TRANSCRIPT_ITEMS)
+      : items;
+  }
 
   function newTimestampPretty(): string {
     const now = new Date();
@@ -60,7 +68,7 @@ export const TranscriptProvider: FC<PropsWithChildren> = ({ children }) => {
         isHidden,
       };
 
-      return [...prev, newItem];
+      return capTranscriptItems([...prev, newItem]);
     });
   };
 
@@ -79,20 +87,22 @@ export const TranscriptProvider: FC<PropsWithChildren> = ({ children }) => {
   };
 
   const addTranscriptBreadcrumb: TranscriptContextValue["addTranscriptBreadcrumb"] = (title, data) => {
-    setTranscriptItems((prev) => [
-      ...prev,
-      {
-        itemId: `breadcrumb-${uuidv4()}`,
-        type: "BREADCRUMB",
-        title,
-        data,
-        expanded: false,
-        timestamp: newTimestampPretty(),
-        createdAtMs: Date.now(),
-        status: "DONE",
-        isHidden: false,
-      },
-    ]);
+    setTranscriptItems((prev) =>
+      capTranscriptItems([
+        ...prev,
+        {
+          itemId: `breadcrumb-${uuidv4()}`,
+          type: "BREADCRUMB",
+          title,
+          data,
+          expanded: false,
+          timestamp: newTimestampPretty(),
+          createdAtMs: Date.now(),
+          status: "DONE",
+          isHidden: false,
+        },
+      ])
+    );
   };
 
   const toggleTranscriptItemExpand: TranscriptContextValue["toggleTranscriptItemExpand"] = (itemId) => {

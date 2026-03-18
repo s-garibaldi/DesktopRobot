@@ -2,7 +2,6 @@
 
 import React, { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
-import { TranscriptItem } from "@/app/types";
 import Image from "next/image";
 import { useTranscript } from "@/app/contexts/TranscriptContext";
 import { DownloadIcon, ClipboardCopyIcon } from "@radix-ui/react-icons";
@@ -25,7 +24,7 @@ function Transcript({
 }: TranscriptProps) {
   const { transcriptItems, toggleTranscriptItemExpand } = useTranscript();
   const transcriptRef = useRef<HTMLDivElement | null>(null);
-  const [prevLogs, setPrevLogs] = useState<TranscriptItem[]>([]);
+  const prevItemCountRef = useRef(0);
   const [justCopied, setJustCopied] = useState(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
@@ -36,20 +35,11 @@ function Transcript({
   }
 
   useEffect(() => {
-    const hasNewMessage = transcriptItems.length > prevLogs.length;
-    const hasUpdatedMessage = transcriptItems.some((newItem, index) => {
-      const oldItem = prevLogs[index];
-      return (
-        oldItem &&
-        (newItem.title !== oldItem.title || newItem.data !== oldItem.data)
-      );
-    });
-
-    if (hasNewMessage || hasUpdatedMessage) {
+    const hasNewMessage = transcriptItems.length >= prevItemCountRef.current;
+    if (hasNewMessage) {
       scrollToBottom();
     }
-
-    setPrevLogs(transcriptItems);
+    prevItemCountRef.current = transcriptItems.length;
   }, [transcriptItems]);
 
   // Autofocus on text box input on load
@@ -98,9 +88,7 @@ function Transcript({
           ref={transcriptRef}
           className="overflow-auto p-4 flex flex-col gap-y-4 h-full"
         >
-          {[...transcriptItems]
-            .sort((a, b) => a.createdAtMs - b.createdAtMs)
-            .map((item) => {
+          {transcriptItems.map((item) => {
               const {
                 itemId,
                 type,

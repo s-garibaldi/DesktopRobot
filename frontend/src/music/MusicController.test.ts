@@ -1,7 +1,7 @@
 /**
  * Unit tests for MusicController queue operations.
  */
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { musicController } from './MusicController';
 
 const mockAdapter = {
@@ -85,6 +85,58 @@ describe('MusicController queue operations', () => {
     expect(np?.item.title).toBe('A');
     expect(q.items.length).toBe(1);
     expect(q.items[0].title).toBe('B');
+  });
+
+  it('addToQueueAndStartIfIdle appends without replacing an active song', async () => {
+    const playUri = vi.fn(async () => true);
+    musicController.setPlaybackAdapter({
+      playUri,
+      pause: async () => {},
+      resume: async () => {},
+      seek: async () => {},
+    });
+
+    await musicController.addAndPlay([
+      { id: 'now', title: 'Now', artist: 'X', uri: 'spotify:track:now' },
+      { id: 'queued', title: 'Queued', artist: 'X', uri: 'spotify:track:queued' },
+    ]);
+
+    playUri.mockClear();
+
+    const ok = await musicController.addToQueueAndStartIfIdle([
+      { id: 'later-1', title: 'Later 1', artist: 'Y', uri: 'spotify:track:later-1' },
+      { id: 'later-2', title: 'Later 2', artist: 'Y', uri: 'spotify:track:later-2' },
+    ]);
+
+    expect(ok).toBe(true);
+    expect(playUri).not.toHaveBeenCalled();
+    expect(musicController.getNowPlaying()?.item.title).toBe('Now');
+    expect(musicController.getQueue().items.map((item) => item.title)).toEqual(['Queued', 'Later 1', 'Later 2']);
+  });
+
+  it('next starts the next queued song and preserves the remaining queue order', async () => {
+    const playUri = vi.fn(async () => true);
+    musicController.setPlaybackAdapter({
+      playUri,
+      pause: async () => {},
+      resume: async () => {},
+      seek: async () => {},
+    });
+
+    await musicController.addAndPlay([
+      { id: 'now', title: 'Now', artist: 'X', uri: 'spotify:track:now' },
+      { id: 'next', title: 'Next', artist: 'X', uri: 'spotify:track:next' },
+      { id: 'later', title: 'Later', artist: 'X', uri: 'spotify:track:later' },
+    ]);
+
+    playUri.mockClear();
+
+    const ok = await musicController.next();
+
+    expect(ok).toBe(true);
+    expect(playUri).toHaveBeenCalledWith('spotify:track:next', 0, ['spotify:track:later']);
+    expect(musicController.getNowPlaying()?.item.title).toBe('Next');
+    expect(musicController.getQueue().items.map((item) => item.title)).toEqual(['Later']);
   });
 
   it('previous restarts current song', async () => {

@@ -287,9 +287,6 @@ export function useSpotifyPlayer(
 
       player.addListener('autoplay_failed', () => {
         if (!cancelled) {
-          // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/6aae1c4b-c2f3-4f12-bcce-d9a7131e841e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({runId:'spotify-autoplay-debug',hypothesisId:'H3',location:'frontend/src/spotify/useSpotifyPlayer.ts:289',message:'spotify frontend autoplay failed',data:{hadDeviceId:Boolean(deviceId)},timestamp:Date.now()})}).catch(()=>{});
-          // #endregion
           setAutoplayBlocked(true);
         }
       });

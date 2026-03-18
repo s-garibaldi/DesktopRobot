@@ -36,7 +36,8 @@ export async function searchSpotifyTrack(
     const durationMs = typeof track.duration_ms === 'number' ? track.duration_ms : undefined;
     return { uri, trackName, artists, albumArtUrl, durationMs };
   } catch (e) {
-    console.error('[spotifySearch] Search failed:', e instanceof Error ? e.message : String(e));
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error('[spotifySearch] Search failed:', msg);
     return null;
   }
 }

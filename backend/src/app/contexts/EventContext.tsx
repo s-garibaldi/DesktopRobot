@@ -5,6 +5,8 @@ import { v4 as uuidv4 } from "uuid";
 import { LoggedEvent } from "@/app/types";
 import { postBridgeMessage, type BridgeLogLevel } from "@/app/lib/bridge";
 
+const MAX_LOGGED_EVENTS = 400;
+
 type EventContextValue = {
   loggedEvents: LoggedEvent[];
   logClientEvent: (eventObj: Record<string, any>, eventNameSuffix?: string) => void;
@@ -54,17 +56,22 @@ export const EventProvider: FC<PropsWithChildren> = ({ children }) => {
 
   function addLoggedEvent(direction: "client" | "server", eventName: string, eventData: Record<string, any>) {
     const id = eventData.event_id || uuidv4();
-    setLoggedEvents((prev) => [
-      ...prev,
-      {
-        id,
-        direction,
-        eventName,
-        eventData,
-        timestamp: new Date().toLocaleTimeString(),
-        expanded: false,
-      },
-    ]);
+    setLoggedEvents((prev) => {
+      const next = [
+        ...prev,
+        {
+          id,
+          direction,
+          eventName,
+          eventData,
+          timestamp: new Date().toLocaleTimeString(),
+          expanded: false,
+        },
+      ];
+      return next.length > MAX_LOGGED_EVENTS
+        ? next.slice(next.length - MAX_LOGGED_EVENTS)
+        : next;
+    });
 
     // Forward a minimal, sanitized version to the parent (Tauri frontend) when embedded.
     postBridgeMessage({

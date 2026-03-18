@@ -273,6 +273,13 @@ function App() {
     }
   }, [isPTTActive]);
 
+  // Request music state from parent on mount (ensures spotify_queue_get works after HMR/reload)
+  useEffect(() => {
+    if (window.parent && window.parent !== window) {
+      window.parent.postMessage({ type: 'backend_request_music_state' }, '*');
+    }
+  }, []);
+
   // Listen for voice commands from Tauri frontend: "microphone off" / "microphone on"
   // Also listen for Spotify track events for queue controller
   useEffect(() => {

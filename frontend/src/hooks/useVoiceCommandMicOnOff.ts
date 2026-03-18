@@ -39,6 +39,8 @@ export type SpotifyVoiceAction = 'pause' | 'play' | 'stop' | 'restart' | 'rewind
 export type TunerVoiceAction = 'close';
 
 const COOLDOWN_MS = 2500;
+/** Extra cooldown for skip to prevent double-skip (interim+final or rapid duplicates). */
+const SPOTIFY_SKIP_COOLDOWN_MS = 2500;
 /** Min ms between acting on interim results to avoid double-fire from rapid interims. */
 const INTERIM_DEBOUNCE_MS = 400;
 /** Min ms between backing-track chimes so conversation about "carrot" doesn't trigger repeated chimes. */
@@ -158,6 +160,19 @@ function isPlayCommand(transcript: string): boolean {
 function isResumeCommand(transcript: string): boolean {
   const t = normalize(transcript);
   return t === 'resume' || t.startsWith('resume ');
+}
+
+/** Stricter play/resume for Spotify: avoids false positives when mic is on during pause.
+ * Rejects conversational phrases like "I want to play" or "play guitar".
+ * Prefer "play music" or "resume" over bare "play" for robustness. */
+function isSpotifyPlayOrResumeCommand(transcript: string): boolean {
+  const t = normalize(transcript);
+  const allowed = [
+    'play', 'play music', 'play song', 'play the music', 'play the song', 'play it',
+    'resume', 'resume music', 'resume song', 'resume playback',
+    'resume the music', 'resume the song', 'resume it',
+  ];
+  return allowed.includes(t);
 }
 
 function isPlayOrResumeCommand(transcript: string): boolean {
@@ -293,6 +308,7 @@ export function useVoiceCommandMicOnOff(
   const isBackingTrackActiveRef = useRef(isBackingTrackActive ?? false);
   const isGuitarTabActiveRef = useRef(isGuitarTabActive ?? false);
   const lastCommandTimeRef = useRef(0);
+  const lastSpotifySkipTimeRef = useRef(0);
   onSpotifyCommandRef.current = onSpotifyCommand;
   onTunerCommandRef.current = onTunerCommand;
   isSpotifyActiveRef.current = isSpotifyActive ?? false;
@@ -417,13 +433,7 @@ export function useVoiceCommandMicOnOff(
               console.log('Voice command (interim): Spotify pause');
               continue;
             }
-            if (isPlayCommand(transcript)) {
-              lastCommandTimeRef.current = now;
-              playChime();
-              spotify('play');
-              console.log('Voice command (interim): Spotify play');
-              continue;
-            }
+            // No interim handling for play/resume - only final results; reduces false positives when mic is on during pause
             if (isStopCommand(transcript)) {
               lastCommandTimeRef.current = now;
               playChimeDown();
@@ -431,13 +441,7 @@ export function useVoiceCommandMicOnOff(
               console.log('Voice command (interim): Spotify stop');
               continue;
             }
-            if (isSkipCommand(transcript)) {
-              lastCommandTimeRef.current = now;
-              playChime();
-              spotify('skip');
-              console.log('Voice command (interim): Spotify skip');
-              continue;
-            }
+            // No interim handling for skip - only final results; prevents double-skip when interim + final both fire
           }
           if (isTunerActiveRef.current && onTunerCommandRef.current && isCloseTunerCommand(transcript)) {
             lastCommandTimeRef.current = now;
@@ -780,7 +784,7 @@ export function useVoiceCommandMicOnOff(
             console.log('Voice command: Spotify pause');
             return;
           }
-          if (isPlayCommand(transcript)) {
+          if (isSpotifyPlayOrResumeCommand(transcript)) {
             lastCommandTimeRef.current = now;
             playChime();
             spotify('play');
@@ -824,6 +828,8 @@ export function useVoiceCommandMicOnOff(
             return;
           }
           if (isSkipCommand(transcript)) {
+            if (now - lastSpotifySkipTimeRef.current < SPOTIFY_SKIP_COOLDOWN_MS) return;
+            lastSpotifySkipTimeRef.current = now;
             lastCommandTimeRef.current = now;
             playChime();
             spotify('skip');

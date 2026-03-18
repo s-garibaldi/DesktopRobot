@@ -27,7 +27,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(
       {
         success: false,
-        error: 'Spotify not configured or request failed. Set SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET.',
+        error: 'Spotify not configured or request failed. Add SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET to backend/.env, then restart the backend. See SPOTIFY_INTEGRATION.md.',
       },
       { status: 502 }
     );

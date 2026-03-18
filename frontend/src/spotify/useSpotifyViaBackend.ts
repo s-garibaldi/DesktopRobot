@@ -72,12 +72,7 @@ export function useSpotifyViaBackend({
 
   const play = useCallback(
     async (uriOrUris: string | string[]): Promise<boolean> => {
-      if (!isIframeReady || !sendToIframe) {
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/6aae1c4b-c2f3-4f12-bcce-d9a7131e841e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({runId:'spotify-autoplay-debug',hypothesisId:'H2',location:'frontend/src/spotify/useSpotifyViaBackend.ts:75',message:'backend play skipped before send',data:{isIframeReady:Boolean(isIframeReady),hasSendToIframe:Boolean(sendToIframe)},timestamp:Date.now()})}).catch(()=>{});
-        // #endregion
-        return false;
-      }
+      if (!isIframeReady || !sendToIframe) return false;
       const uris = Array.isArray(uriOrUris) ? uriOrUris : [uriOrUris];
       const uri = uris[0];
       const queueUris = uris.length > 1 ? uris.slice(1) : undefined;
@@ -88,9 +83,6 @@ export function useSpotifyViaBackend({
           settled = true;
           window.removeEventListener('spotify_play_result', handler);
           clearTimeout(t);
-          // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/6aae1c4b-c2f3-4f12-bcce-d9a7131e841e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({runId:'spotify-autoplay-debug',hypothesisId:'H2',location:'frontend/src/spotify/useSpotifyViaBackend.ts:84',message:'backend play result received',data:{ok,queueLength:queueUris?.length ?? 0},timestamp:Date.now()})}).catch(()=>{});
-          // #endregion
           resolve(ok);
         };
         const handler = (e: Event) => {
@@ -107,21 +99,15 @@ export function useSpotifyViaBackend({
 
   const pause = useCallback(async () => {
     if (isIframeReady) {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/6aae1c4b-c2f3-4f12-bcce-d9a7131e841e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({runId:'spotify-autoplay-debug',hypothesisId:'H9',location:'frontend/src/spotify/useSpotifyViaBackend.ts:100',message:'frontend sent spotify_pause',data:{ready:Boolean(ready),hasDeviceId:Boolean(deviceId)},timestamp:Date.now()})}).catch(()=>{});
-      // #endregion
       sendToIframe({ type: 'spotify_pause' });
     }
-  }, [deviceId, isIframeReady, ready, sendToIframe]);
+  }, [isIframeReady, sendToIframe]);
 
   const resume = useCallback(async () => {
     if (isIframeReady) {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/6aae1c4b-c2f3-4f12-bcce-d9a7131e841e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({runId:'spotify-autoplay-debug',hypothesisId:'H9',location:'frontend/src/spotify/useSpotifyViaBackend.ts:108',message:'frontend sent spotify_resume',data:{ready:Boolean(ready),hasDeviceId:Boolean(deviceId)},timestamp:Date.now()})}).catch(()=>{});
-      // #endregion
       sendToIframe({ type: 'spotify_resume' });
     }
-  }, [deviceId, isIframeReady, ready, sendToIframe]);
+  }, [isIframeReady, sendToIframe]);
 
   const seek = useCallback(
     async (positionMs: number) => {

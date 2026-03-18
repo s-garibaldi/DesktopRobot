@@ -53,6 +53,7 @@ export function handleMusicControllerEvent(event: {
           neutralTimeout = null;
         }
         emitFaceEvent('GROOVING');
+        if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('music-playback-playing'));
         if (event.nowPlaying) {
           emitMusicEvent('NOW_PLAYING', {
             title: event.nowPlaying.item.title,
@@ -68,6 +69,7 @@ export function handleMusicControllerEvent(event: {
           emitFaceEvent('NEUTRAL');
         }, NEUTRAL_AFTER_PAUSED_MS);
         emitMusicEvent('PAUSED', {});
+        if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('music-playback-paused'));
       } else if (event.status === 'stopped') {
         if (neutralTimeout) {
           clearTimeout(neutralTimeout);
@@ -75,6 +77,7 @@ export function handleMusicControllerEvent(event: {
         }
         emitFaceEvent('NEUTRAL');
         emitMusicEvent('STOPPED', {});
+        if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('music-playback-paused'));
       }
       break;
 

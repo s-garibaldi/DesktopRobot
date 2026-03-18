@@ -16,7 +16,12 @@ let cachedClientToken: { token: string; expiresAt: number } | null = null;
 export async function getSpotifyClientToken(): Promise<string | null> {
   const clientId = process.env.SPOTIFY_CLIENT_ID;
   const clientSecret = process.env.SPOTIFY_CLIENT_SECRET;
-  if (!clientId || !clientSecret) return null;
+  if (!clientId || !clientSecret) {
+    if (process.env.NODE_ENV !== 'test') {
+      console.warn('[Spotify] Missing SPOTIFY_CLIENT_ID or SPOTIFY_CLIENT_SECRET in backend/.env. Add them and restart the backend. See SPOTIFY_INTEGRATION.md.');
+    }
+    return null;
+  }
 
   if (cachedClientToken && cachedClientToken.expiresAt > Date.now() + 60_000) {
     return cachedClientToken.token;
@@ -165,7 +170,8 @@ export async function spotifyFetch<T>(
   });
 
   if (!res.ok) {
-    console.error('[Spotify] API error:', res.status, path, await res.text());
+    const errText = await res.text();
+    console.error('[Spotify] API error:', res.status, path, errText);
     return null;
   }
 

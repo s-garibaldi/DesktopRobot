@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
+import { getSessionInstructions, getSessionTools } from "@/app/lib/sessionConfig";
 
 export async function GET() {
   try {
     const apiKey = process.env.OPENAI_API_KEY;
-    
+
     if (!apiKey) {
       console.error("OPENAI_API_KEY is not set in environment variables");
       return NextResponse.json(
@@ -11,6 +12,15 @@ export async function GET() {
         { status: 500 }
       );
     }
+
+    const instructions = getSessionInstructions();
+    const tools = getSessionTools();
+
+    const sessionBody: Record<string, unknown> = {
+      model: "gpt-4o-mini-realtime-preview",
+    };
+    if (instructions) sessionBody.instructions = instructions;
+    if (tools.length > 0) sessionBody.tools = tools;
 
     const response = await fetch(
       "https://api.openai.com/v1/realtime/sessions",
@@ -20,9 +30,7 @@ export async function GET() {
           Authorization: `Bearer ${apiKey}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          model: "gpt-4o-mini-realtime-preview",
-        }),
+        body: JSON.stringify(sessionBody),
       }
     );
 

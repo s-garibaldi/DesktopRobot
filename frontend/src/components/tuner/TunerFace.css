@@ -20,7 +20,7 @@
   position: absolute;
   left: 50%;
   top: 50%;
-  width: 200px;
+  width: 225px;
   height: 150px;
   transform: translate(-50%, -50%);
   border: 6px solid #00FFFF;
@@ -31,7 +31,7 @@
 }
 
 .tuner-face__viewport {
-  width: 200px;
+  width: 225px;
   height: 150px;
   border-radius: 20px;
   overflow: hidden;
@@ -40,11 +40,11 @@
 }
 
 .tuner-face__viewport.tuner {
-  width: 200px !important;
+  width: 225px !important;
   height: 150px !important;
   min-width: 0 !important;
   min-height: 0 !important;
-  max-width: 200px !important;
+  max-width: 225px !important;
   max-height: 150px !important;
 }
 

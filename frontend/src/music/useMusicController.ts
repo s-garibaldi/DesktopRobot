@@ -5,6 +5,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { musicController } from './MusicController';
 import { handleMusicControllerEvent } from './events';
+import { isTrackEndedSuppressed } from './skipSuppress';
 import type { MusicQueue, NowPlaying, PlaybackStatus, QueueItem } from './types';
 
 export interface UseMusicControllerOptions {
@@ -103,6 +104,7 @@ export function useMusicController(options: UseMusicControllerOptions) {
     }
 
     const fireTrackEnded = () => {
+      if (isTrackEndedSuppressed()) return;
       if (trackEndedFiredForUriRef.current === uri) return;
       trackEndedFiredForUriRef.current = uri ?? 'unknown';
       musicController.onTrackEnded();

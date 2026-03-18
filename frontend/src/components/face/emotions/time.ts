@@ -79,8 +79,8 @@ export const drawTime: EmotionDrawFunction = (ctx, time, breathingPhase, transit
 
     const mainTime = `${hours12}:${minutes}`;
 
-    // Box: same size and style as neutral face (200×150, corner 20, cyan stroke)
-    const faceWidth = 200;
+    // Box: same size and style as neutral face (225×150, corner 20, cyan stroke)
+    const faceWidth = 225;
     const faceHeight = 150;
     const cornerRadius = 20;
     const primaryGlow = 0.85 + Math.sin(time * 1.2) * 0.15;

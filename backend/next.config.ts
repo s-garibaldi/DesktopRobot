@@ -1,6 +1,13 @@
 import type { NextConfig } from "next";
+import path from "path";
 
 const nextConfig: NextConfig = {
+  // Force tracing root to this workspace to avoid lockfile/root mis-detection
+  // that can lead to inconsistent server chunk outputs.
+  outputFileTracingRoot: path.join(__dirname, ".."),
+  // Keep dev artifacts isolated from production build artifacts to avoid
+  // intermittent ENOENT errors when .next contents are churned.
+  distDir: process.env.NEXT_DEV_DIST_DIR || ".next",
   experimental: {
     serverActions: {
       bodySizeLimit: '50mb',

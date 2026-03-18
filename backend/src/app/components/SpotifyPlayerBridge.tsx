@@ -6,7 +6,7 @@
  * Receives token + commands via postMessage from the parent (Tauri frontend).
  * The backend iframe has allow="autoplay" and plays Realtime AI audio - Spotify uses the same context.
  */
-import React, { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 const SDK_URL = "https://sdk.scdn.co/spotify-player.js";
 
@@ -25,17 +25,6 @@ function fixSpotifyIframeAudio() {
     iframe.style.setProperty("opacity", "0.01", "important");
     iframe.style.setProperty("pointer-events", "none", "important");
   });
-}
-
-function getSpotifyIframeDebugInfo() {
-  if (typeof document === "undefined") {
-    return { count: 0, allowValues: [] as string[] };
-  }
-  const iframes = Array.from(document.querySelectorAll<HTMLIFrameElement>('iframe[src*="sdk.scdn.co"], iframe[src*="spotify.com"]'));
-  return {
-    count: iframes.length,
-    allowValues: iframes.map((iframe) => iframe.getAttribute("allow") ?? ""),
-  };
 }
 
 declare global {
@@ -66,6 +55,24 @@ declare global {
   }
 }
 
+type SpotifySdkState = {
+  track_window?: {
+    current_track?: {
+      name?: string;
+      uri?: string;
+      artists?: { name: string }[];
+      album?: { images?: { url: string }[] };
+    };
+  };
+  position?: number;
+  duration?: number;
+  paused?: boolean;
+} | null;
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function postToParent(type: string, payload?: Record<string, unknown>) {
   if (typeof window !== "undefined" && window.parent && window.parent !== window) {
     window.parent.postMessage({ type, ...payload }, "*");
@@ -77,22 +84,94 @@ export function SpotifyPlayerBridge() {
   const deviceIdRef = useRef<string | null>(null);
   const observePlaybackReasonRef = useRef<"play" | "resume" | null>(null);
   const observePlaybackRemainingRef = useRef(0);
-  const autoResumeAfterPlayAttemptedRef = useRef(false);
+  const autoResumeAttemptsRef = useRef(0);
   const monitorAutoResumeUntilRef = useRef(0);
+  const stuckPausedPositionRef = useRef<number | null>(null);
+  const stuckPausedCountRef = useRef(0);
   const playerRef = useRef<{
     connect: () => Promise<boolean>;
     disconnect: () => void;
     addListener: (event: string, cb: (s?: unknown) => void) => void;
     getCurrentState: () => Promise<unknown>;
-    getVolume?: () => Promise<number>;
     setVolume: (n: number) => Promise<void>;
     pause: () => Promise<void>;
     resume: () => Promise<void>;
     seek: (ms: number) => Promise<void>;
     activateElement?: () => Promise<void>;
   } | null>(null);
-  const [ready, setReady] = useState(false);
   const [hasToken, setHasToken] = useState(false);
+
+  const startPlaybackViaApi = async (uris?: string[]) => {
+    const token = tokenRef.current;
+    if (!token) return false;
+    const devId = deviceIdRef.current;
+    const playUrl = devId
+      ? `https://api.spotify.com/v1/me/player/play?device_id=${devId}`
+      : "https://api.spotify.com/v1/me/player/play";
+
+    const body = uris?.length ? { uris, position_ms: 0 } : {};
+    const sendPlay = () =>
+      fetch(playUrl, {
+        method: "PUT",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+      });
+
+    let res = await sendPlay();
+    if (res.ok || !devId) return res.ok;
+
+    await fetch("https://api.spotify.com/v1/me/player", {
+      method: "PUT",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ device_ids: [devId], play: true }),
+    }).catch(() => undefined);
+
+    await sleep(600);
+    res = await sendPlay();
+    return res.ok;
+  };
+
+  const ensurePlaybackStarted = async (expectedUri?: string, uris?: string[]) => {
+    const player = playerRef.current;
+    if (!player) return false;
+
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      try {
+        await player.activateElement?.();
+        await player.resume?.();
+      } catch {
+        // ignore and fall back to Web API replay below
+      }
+
+      await sleep(250);
+
+      const state = (await player.getCurrentState?.().catch(() => null)) as SpotifySdkState;
+      const currentUri = state?.track_window?.current_track?.uri ?? null;
+      const isExpectedTrack = !expectedUri || currentUri === expectedUri;
+      if (isExpectedTrack && state?.paused === false) {
+        return true;
+      }
+
+      const shouldReplay =
+        !state ||
+        !currentUri ||
+        !isExpectedTrack ||
+        state.paused === true;
+
+      if (shouldReplay) {
+        const ok = await startPlaybackViaApi(uris).catch(() => false);
+        if (!ok) continue;
+      }
+    }
+
+    return false;
+  };
 
   useEffect(() => {
     const handleMessage = async (event: MessageEvent) => {
@@ -111,12 +190,7 @@ export function SpotifyPlayerBridge() {
         case "spotify_play": {
           const uri = d.uri;
           const queueUris = Array.isArray(d.queueUris) ? d.queueUris : undefined;
-          const token = tokenRef.current;
-          const devId = deviceIdRef.current;
-          // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/6aae1c4b-c2f3-4f12-bcce-d9a7131e841e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({runId:'spotify-autoplay-debug',hypothesisId:'H5',location:'backend/src/app/components/SpotifyPlayerBridge.tsx:99',message:'backend spotify_play received',data:{hasToken:Boolean(token),hasDeviceId:Boolean(devId),queueLength:queueUris?.length ?? 0},timestamp:Date.now()})}).catch(()=>{});
-          // #endregion
-          if (!token || typeof uri !== "string") {
+          if (!tokenRef.current || typeof uri !== "string") {
             postToParent("spotify_play_result", { ok: false });
             return;
           }
@@ -124,48 +198,14 @@ export function SpotifyPlayerBridge() {
           try {
             observePlaybackReasonRef.current = "play";
             observePlaybackRemainingRef.current = 12;
-            autoResumeAfterPlayAttemptedRef.current = false;
+            autoResumeAttemptsRef.current = 0;
             monitorAutoResumeUntilRef.current = Date.now() + 15000;
+            stuckPausedPositionRef.current = null;
+            stuckPausedCountRef.current = 0;
             await playerRef.current?.activateElement?.();
-            const url = devId
-              ? `https://api.spotify.com/v1/me/player/play?device_id=${devId}`
-              : "https://api.spotify.com/v1/me/player/play";
-            const res = await fetch(url, {
-              method: "PUT",
-              headers: {
-                Authorization: `Bearer ${token}`,
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({ uris, position_ms: 0 }),
-            });
-            if (!res.ok && devId) {
-              await fetch("https://api.spotify.com/v1/me/player", {
-                method: "PUT",
-                headers: {
-                  Authorization: `Bearer ${token}`,
-                  "Content-Type": "application/json",
-                },
-                body: JSON.stringify({ device_ids: [devId], play: true }),
-              });
-              await new Promise((r) => setTimeout(r, 600));
-              const retry = await fetch(`https://api.spotify.com/v1/me/player/play?device_id=${devId}`, {
-                method: "PUT",
-                headers: {
-                  Authorization: `Bearer ${token}`,
-                  "Content-Type": "application/json",
-                },
-                body: JSON.stringify({ uris, position_ms: 0 }),
-              });
-              // #region agent log
-              fetch('http://127.0.0.1:7242/ingest/6aae1c4b-c2f3-4f12-bcce-d9a7131e841e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({runId:'spotify-autoplay-debug',hypothesisId:'H5',location:'backend/src/app/components/SpotifyPlayerBridge.tsx:136',message:'backend spotify_play retry completed',data:{initialStatus:res.status,retryStatus:retry.status,ok:retry.ok},timestamp:Date.now()})}).catch(()=>{});
-              // #endregion
-              postToParent("spotify_play_result", { ok: retry.ok });
-            } else {
-              // #region agent log
-              fetch('http://127.0.0.1:7242/ingest/6aae1c4b-c2f3-4f12-bcce-d9a7131e841e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({runId:'spotify-autoplay-debug',hypothesisId:'H5',location:'backend/src/app/components/SpotifyPlayerBridge.tsx:138',message:'backend spotify_play initial completed',data:{status:res.status,ok:res.ok},timestamp:Date.now()})}).catch(()=>{});
-              // #endregion
-              postToParent("spotify_play_result", { ok: res.ok });
-            }
+            const started = await startPlaybackViaApi(uris);
+            const resumed = started ? await ensurePlaybackStarted(uri, uris) : false;
+            postToParent("spotify_play_result", { ok: started && resumed });
           } catch {
             postToParent("spotify_play_result", { ok: false });
           }
@@ -175,27 +215,17 @@ export function SpotifyPlayerBridge() {
         case "spotify_activate":
           try {
             await playerRef.current?.activateElement?.();
-            const state = await playerRef.current?.getCurrentState?.();
-            const track = state?.track_window?.current_track;
-            const volume = await playerRef.current?.getVolume?.().catch?.(() => null);
-            const iframeInfo = getSpotifyIframeDebugInfo();
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/6aae1c4b-c2f3-4f12-bcce-d9a7131e841e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({runId:'spotify-autoplay-debug',hypothesisId:'H13',location:'backend/src/app/components/SpotifyPlayerBridge.tsx:146',message:'backend spotify_activate invoked',data:{ok:true,hasPlayer:Boolean(playerRef.current),hasDeviceId:Boolean(deviceIdRef.current),paused:state?.paused ?? null,hasTrack:Boolean(track?.uri),position:state?.position ?? null,volume:typeof volume === "number" ? volume : null,iframeCount:iframeInfo.count,iframeAllows:iframeInfo.allowValues},timestamp:Date.now()})}).catch(()=>{});
-            // #endregion
           } catch {
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/6aae1c4b-c2f3-4f12-bcce-d9a7131e841e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({runId:'spotify-autoplay-debug',hypothesisId:'H13',location:'backend/src/app/components/SpotifyPlayerBridge.tsx:146',message:'backend spotify_activate invoked',data:{ok:false,hasPlayer:Boolean(playerRef.current),hasDeviceId:Boolean(deviceIdRef.current)},timestamp:Date.now()})}).catch(()=>{});
-            // #endregion
+            // ignore
           }
           break;
 
         case "spotify_pause":
           try {
+            monitorAutoResumeUntilRef.current = 0;
+            stuckPausedPositionRef.current = null;
+            stuckPausedCountRef.current = 0;
             await playerRef.current?.pause?.();
-            const state = await playerRef.current?.getCurrentState?.();
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/6aae1c4b-c2f3-4f12-bcce-d9a7131e841e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({runId:'spotify-autoplay-debug',hypothesisId:'H9',location:'backend/src/app/components/SpotifyPlayerBridge.tsx:159',message:'backend spotify_pause handled',data:{paused:state?.paused ?? null,position:state?.position ?? null,hasTrack:Boolean(state?.track_window?.current_track?.uri)},timestamp:Date.now()})}).catch(()=>{});
-            // #endregion
           } catch {
             // ignore
           }
@@ -205,13 +235,44 @@ export function SpotifyPlayerBridge() {
           try {
             observePlaybackReasonRef.current = "resume";
             observePlaybackRemainingRef.current = 12;
-            monitorAutoResumeUntilRef.current = 0;
+            monitorAutoResumeUntilRef.current = Date.now() + 8000;
+            stuckPausedPositionRef.current = null;
+            stuckPausedCountRef.current = 0;
             await playerRef.current?.activateElement?.();
             await playerRef.current?.resume?.();
-            const state = await playerRef.current?.getCurrentState?.();
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/6aae1c4b-c2f3-4f12-bcce-d9a7131e841e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({runId:'spotify-autoplay-debug',hypothesisId:'H9',location:'backend/src/app/components/SpotifyPlayerBridge.tsx:169',message:'backend spotify_resume handled',data:{paused:state?.paused ?? null,position:state?.position ?? null,hasTrack:Boolean(state?.track_window?.current_track?.uri)},timestamp:Date.now()})}).catch(()=>{});
-            // #endregion
+            const state = (await playerRef.current?.getCurrentState?.()) as SpotifySdkState;
+            const isStuckPausedZero =
+              Boolean(state?.track_window?.current_track?.uri) &&
+              state?.paused === true &&
+              (state?.position ?? 0) === 0;
+            if (isStuckPausedZero) {
+              try {
+                await playerRef.current?.pause?.();
+                await playerRef.current?.activateElement?.();
+                await playerRef.current?.resume?.();
+              } catch {
+                // ignore and try Web API wake below
+              }
+              const token = tokenRef.current;
+              const devId = deviceIdRef.current;
+              if (token) {
+                const wakeUrl = devId
+                  ? `https://api.spotify.com/v1/me/player/play?device_id=${devId}`
+                  : "https://api.spotify.com/v1/me/player/play";
+                try {
+                  await fetch(wakeUrl, {
+                    method: "PUT",
+                    headers: {
+                      Authorization: `Bearer ${token}`,
+                      "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify({}),
+                  });
+                } catch {
+                  // ignore
+                }
+              }
+            }
           } catch {
             // ignore
           }
@@ -240,20 +301,33 @@ export function SpotifyPlayerBridge() {
       const p = playerRef.current;
       if (!p || cancelled) return;
       try {
-        const state = await p.getCurrentState();
+        const state = (await p.getCurrentState()) as SpotifySdkState;
         if (!state || cancelled) return;
         const track = state.track_window?.current_track;
+        const position = state.position ?? 0;
+        if (
+          monitorAutoResumeUntilRef.current > Date.now() &&
+          Boolean(track?.uri) &&
+          state.paused === true
+        ) {
+          if (stuckPausedPositionRef.current === position) {
+            stuckPausedCountRef.current += 1;
+          } else {
+            stuckPausedPositionRef.current = position;
+            stuckPausedCountRef.current = 1;
+          }
+        } else {
+          stuckPausedPositionRef.current = null;
+          stuckPausedCountRef.current = 0;
+        }
         if (
           observePlaybackReasonRef.current === "play" &&
-          !autoResumeAfterPlayAttemptedRef.current &&
+          autoResumeAttemptsRef.current < 2 &&
           Boolean(track?.uri) &&
           state.paused === true &&
-          (state.position ?? 0) === 0
+          (position === 0 || stuckPausedCountRef.current >= 2)
         ) {
-          autoResumeAfterPlayAttemptedRef.current = true;
-          // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/6aae1c4b-c2f3-4f12-bcce-d9a7131e841e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({runId:'spotify-autoplay-debug',hypothesisId:'H12',location:'backend/src/app/components/SpotifyPlayerBridge.tsx:279',message:'backend auto resume triggered after play collapsed to paused zero',data:{paused:state.paused ?? null,position:state.position ?? null,hasTrack:Boolean(track?.uri)},timestamp:Date.now()})}).catch(()=>{});
-          // #endregion
+          autoResumeAttemptsRef.current += 1;
           try {
             await p.activateElement?.();
             await p.resume?.();
@@ -284,15 +358,12 @@ export function SpotifyPlayerBridge() {
         }
         if (
           monitorAutoResumeUntilRef.current > Date.now() &&
-          !autoResumeAfterPlayAttemptedRef.current &&
+          autoResumeAttemptsRef.current < 2 &&
           Boolean(track?.uri) &&
           state.paused === true &&
-          (state.position ?? 0) === 0
+          (position === 0 || stuckPausedCountRef.current >= 2)
         ) {
-          autoResumeAfterPlayAttemptedRef.current = true;
-          // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/6aae1c4b-c2f3-4f12-bcce-d9a7131e841e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({runId:'spotify-autoplay-debug',hypothesisId:'H12',location:'backend/src/app/components/SpotifyPlayerBridge.tsx:268',message:'backend auto resume triggered after play collapsed to paused zero',data:{paused:state.paused ?? null,position:state.position ?? null,hasTrack:Boolean(track?.uri)},timestamp:Date.now()})}).catch(()=>{});
-          // #endregion
+          autoResumeAttemptsRef.current += 1;
           try {
             await p.activateElement?.();
             await p.resume?.();
@@ -320,15 +391,12 @@ export function SpotifyPlayerBridge() {
           }
           observePlaybackReasonRef.current = "resume";
           observePlaybackRemainingRef.current = Math.max(observePlaybackRemainingRef.current, 12);
-          monitorAutoResumeUntilRef.current = 0;
+          if (autoResumeAttemptsRef.current >= 2) {
+            monitorAutoResumeUntilRef.current = 0;
+          }
         }
-        const volume = await playerRef.current?.getVolume?.().catch?.(() => null);
-        const iframeInfo = getSpotifyIframeDebugInfo();
         if (observePlaybackRemainingRef.current > 0) {
           observePlaybackRemainingRef.current -= 1;
-          // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/6aae1c4b-c2f3-4f12-bcce-d9a7131e841e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({runId:'spotify-autoplay-debug',hypothesisId:'H14',location:'backend/src/app/components/SpotifyPlayerBridge.tsx:274',message:'backend observed playback state after command',data:{reason:observePlaybackReasonRef.current,paused:state.paused ?? null,position:state.position ?? null,duration:state.duration ?? null,hasTrack:Boolean(track?.uri),volume:typeof volume === "number" ? volume : null,iframeCount:iframeInfo.count,iframeAllows:iframeInfo.allowValues},timestamp:Date.now()})}).catch(()=>{});
-          // #endregion
           if (observePlaybackRemainingRef.current === 0) {
             observePlaybackReasonRef.current = null;
           }
@@ -365,7 +433,6 @@ export function SpotifyPlayerBridge() {
         const { device_id } = (state ?? {}) as { device_id?: string };
         if (!cancelled && device_id) {
           deviceIdRef.current = device_id;
-          setReady(true);
           fixSpotifyIframeAudio();
           postToParent("spotify_ready", { deviceId: device_id });
           updateState();
@@ -375,7 +442,7 @@ export function SpotifyPlayerBridge() {
       });
 
       player.addListener("not_ready", () => {
-        if (!cancelled) setReady(false);
+        if (!cancelled) deviceIdRef.current = null;
       });
 
       player.addListener("player_state_changed", () => {

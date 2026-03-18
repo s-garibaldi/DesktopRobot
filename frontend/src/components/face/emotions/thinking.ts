@@ -36,7 +36,7 @@ export const drawThinking: EmotionDrawFunction = (ctx, time, breathingPhase, tra
   ctx.scale(breathingScale, breathingScale);
   
   // Set up proportions
-  const faceWidth = 200;
+  const faceWidth = 225;
   const faceHeight = 150;
   const cornerRadius = 20;
   
