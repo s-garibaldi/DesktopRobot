@@ -630,7 +630,7 @@ const spotifyQueueAddTool = tool({
 
 /** Get music state; retries once after 300ms if empty (handles race with music_state_update after queue-add). */
 async function getMusicStateWithRetry(): Promise<ReturnType<typeof getMusicState>> {
-  let state = getMusicState();
+  const state = getMusicState();
   if (state.queue.length > 0 || state.nowPlaying) return state;
   await new Promise((r) => setTimeout(r, 300));
   return getMusicState();
@@ -643,7 +643,7 @@ const spotifyQueueGetTool = tool({
     'Get the current Spotify queue. Use when the user asks what is in the queue, what song is next, what is coming up, list the queue, show me the queue, or similar questions about what songs are queued.',
   parameters: { type: 'object', properties: {}, required: [], additionalProperties: false },
   execute: async () => {
-    const { queue, currentIndex, nowPlaying, status } = await getMusicStateWithRetry();
+    const { queue, nowPlaying, status } = await getMusicStateWithRetry();
     const isPlaying = status === 'playing';
     const list = queue.map((item, i) => ({
       position: i + 1,

@@ -14,7 +14,6 @@ export function getBackingTracksDir(): string {
   }
   // When running "npm run dev" from backend/, cwd is backend/
   const fromBackend = path.join(process.cwd(), '..', 'frontend', 'public', 'backing-tracks');
-  const fromRoot = path.join(process.cwd(), 'frontend', 'public', 'backing-tracks');
   return fromBackend;
 }
 

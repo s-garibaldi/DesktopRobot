@@ -185,7 +185,7 @@ export function scoreGenreMatch(userGenre: string, trackGenre: string): number {
   if (user === track) return 1.0;
   
   // Check if they're in the same genre group
-  for (const [group, genres] of Object.entries(GENRE_GROUPS)) {
+  for (const [, genres] of Object.entries(GENRE_GROUPS)) {
     const userInGroup = genres.includes(user);
     const trackInGroup = genres.includes(track);
     if (userInGroup && trackInGroup) return 0.7;

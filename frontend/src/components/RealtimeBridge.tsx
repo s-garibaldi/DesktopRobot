@@ -795,7 +795,11 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
     };
     sendState();
     const unsub = musicController.subscribe((event) => {
-      if (event.type === 'QUEUE_UPDATED' || event.type === 'NOW_PLAYING') {
+      if (
+        event.type === 'QUEUE_UPDATED' ||
+        event.type === 'NOW_PLAYING' ||
+        event.type === 'PLAYBACK_STATUS'
+      ) {
         sendState();
       }
     });

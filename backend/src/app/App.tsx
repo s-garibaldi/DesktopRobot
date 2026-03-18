@@ -35,10 +35,16 @@ import { useVoiceCommandDetection } from "./hooks/useVoiceCommandDetection";
 import { useMemoryExtraction } from "./hooks/useMemoryExtraction";
 import { getMemoriesForAgent, formatMemoriesAsContext } from "./lib/memoryStorage";
 import { setMusicState } from "./lib/musicState";
-import { postClientAction } from "./lib/bridge";
 import { SpotifyPlayerBridge } from "./components/SpotifyPlayerBridge";
 
-const MIC_IDLE_AUTO_OFF_MS = 8000;
+function toolToApiFormat(t: { name?: string; description?: string; parameters?: unknown }) {
+  return {
+    type: 'function' as const,
+    name: t.name ?? 'unknown',
+    description: typeof t.description === 'string' ? t.description : '',
+    parameters: t.parameters ?? { type: 'object', properties: {} },
+  };
+}
 
 function App() {
   const searchParams = useSearchParams()!;
@@ -159,14 +165,6 @@ function App() {
       idleTimeoutRef.current = null;
     }
   }, []);
-
-  const scheduleIdleAutoOff = React.useCallback(() => {
-    clearIdleTimer();
-    idleTimeoutRef.current = setTimeout(() => {
-      idleTimeoutRef.current = null;
-      postClientAction('backend_auto_mic_off');
-    }, MIC_IDLE_AUTO_OFF_MS);
-  }, [clearIdleTimer]);
 
   const {
     connect,
@@ -508,6 +506,15 @@ function App() {
   };
 
   const updateSession = (shouldTriggerResponse: boolean = false) => {
+    const currentAgent = selectedAgentConfigSet?.find((a) => a.name === selectedAgentName) ?? selectedAgentConfigSet?.[0] ?? null;
+    const instructions =
+      typeof currentAgent?.instructions === 'string' ? currentAgent.instructions : undefined;
+    const tools = Array.isArray(currentAgent?.tools)
+      ? currentAgent.tools.map((t: unknown) =>
+          toolToApiFormat(t as { name?: string; description?: string; parameters?: unknown })
+        )
+      : undefined;
+
     // Reflect Push-to-Talk UI state by (de)activating server VAD on the
     // backend. The Realtime SDK supports live session updates via the
     // `session.update` event.
@@ -525,6 +532,8 @@ function App() {
       type: 'session.update',
       session: {
         turn_detection: turnDetection,
+        ...(instructions ? { instructions } : {}),
+        ...(tools && tools.length > 0 ? { tools } : {}),
       },
     });
 

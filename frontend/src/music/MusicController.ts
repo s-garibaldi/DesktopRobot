@@ -137,6 +137,7 @@ class MusicControllerImpl {
     this.items = [];
     this.nowPlayingItem = null;
     this.playbackStatus = 'stopped';
+    this.lastNextAt = 0;
     this.notifyQueue();
     this.notifyNowPlaying();
   }

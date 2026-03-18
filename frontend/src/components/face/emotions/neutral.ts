@@ -28,7 +28,6 @@ export const drawNeutral: EmotionDrawFunction = (ctx, time, breathingPhase, tran
   const breathingScale = 1 + (breathEase - 0.5) * 0.04; // ±2% with smooth easing
   
   // Multi-layered glow - slow, harmonious frequencies (avoid harsh beats)
-  const primaryGlow = smoothPulse(time, 0.5, 0.88, 1);
   const secondaryGlow = smoothPulse(time, 0.6, 0.9, 1);
   const tertiaryGlow = smoothPulse(time, 0.7, 0.93, 1);
   
