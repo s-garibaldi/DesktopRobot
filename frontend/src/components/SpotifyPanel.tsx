@@ -558,7 +558,7 @@ export default function SpotifyPanel({ backendUrl, onPlaybackStateChange, onStop
     setSearchResults(tracks);
   }, [searchQuery, searchTracks]);
 
-  const playTrack = useCallback(
+  const addTrackToQueue = useCallback(
     (track: SpotifyTrack) => {
       activateElement();
       const uri = `spotify:track:${track.id}`;
@@ -570,7 +570,7 @@ export default function SpotifyPanel({ backendUrl, onPlaybackStateChange, onStop
         albumArtUrl: track.album?.images?.[0]?.url,
         durationMs: track.duration_ms,
       };
-      music.addAndPlay([item]);
+      void music.addToQueueAndStartIfIdle([item]);
     },
     [music, activateElement]
   );
@@ -803,10 +803,10 @@ export default function SpotifyPanel({ backendUrl, onPlaybackStateChange, onStop
               <button
                 type="button"
                 className="spotify-play-track-btn"
-                onClick={() => playTrack(track)}
-                title={`Play ${track.name}`}
+                onClick={() => addTrackToQueue(track)}
+                title={`Add ${track.name} to queue`}
               >
-                ▶ Play
+                + Queue
               </button>
             )}
           </li>
