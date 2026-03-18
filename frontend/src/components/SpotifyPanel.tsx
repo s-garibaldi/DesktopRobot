@@ -612,10 +612,14 @@ export default function SpotifyPanel({ backendUrl, onPlaybackStateChange, onStop
       const dur = playbackState?.duration ?? 0;
       switch (action) {
         case 'pause':
-          void music.togglePause();
+          if (music.status === 'playing') {
+            void music.pause();
+          }
           break;
         case 'play':
-          void music.resume();
+          if (music.status !== 'playing') {
+            void music.resume();
+          }
           break;
         case 'stop':
           void handleStop();

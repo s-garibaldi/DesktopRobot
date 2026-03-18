@@ -811,7 +811,6 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
     const handler = (e: Event) => {
       const state = (e as CustomEvent<{ state: 'GROOVING' | 'NEUTRAL' }>).detail?.state;
       if (state === 'GROOVING') onEmotionChange('spotify');
-      if (state === 'NEUTRAL' && currentEmotion === 'spotify') onEmotionChange('neutral');
     };
     window.addEventListener('FACE_EVENT', handler);
     return () => window.removeEventListener('FACE_EVENT', handler);

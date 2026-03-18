@@ -7,6 +7,7 @@ import { describe, it, expect } from 'vitest';
 import {
   isCloseDisplayCommand,
   isCloseTunerCommand,
+  isSpotifyPlayOrResumeCommand,
 } from './useVoiceCommandMicOnOff';
 
 describe('isCloseTunerCommand', () => {
@@ -73,5 +74,21 @@ describe('tuner and chord display parity', () => {
 
     expect(isCloseTunerCommand('close tuner')).toBe(true);
     expect(isCloseDisplayCommand('close tuner')).toBe(false);
+  });
+});
+
+describe('isSpotifyPlayOrResumeCommand', () => {
+  it('accepts explicit Spotify resume phrases', () => {
+    expect(isSpotifyPlayOrResumeCommand('resume')).toBe(true);
+    expect(isSpotifyPlayOrResumeCommand('resume playback')).toBe(true);
+    expect(isSpotifyPlayOrResumeCommand('play music')).toBe(true);
+    expect(isSpotifyPlayOrResumeCommand('play spotify')).toBe(true);
+  });
+
+  it('rejects loose conversational phrases that cause accidental resumes', () => {
+    expect(isSpotifyPlayOrResumeCommand('play')).toBe(false);
+    expect(isSpotifyPlayOrResumeCommand('play it')).toBe(false);
+    expect(isSpotifyPlayOrResumeCommand('i want to play guitar')).toBe(false);
+    expect(isSpotifyPlayOrResumeCommand('can you play something else')).toBe(false);
   });
 });

@@ -202,6 +202,7 @@ export function useMusicController(options: UseMusicControllerOptions) {
     }
   }, [status, nowPlaying]);
 
+  const pausePlayback = useCallback(() => musicController.pause(), []);
   const resumePlayback = useCallback(() => musicController.resume(), []);
 
   const seekTo = useCallback((positionMs: number) => {
@@ -227,6 +228,7 @@ export function useMusicController(options: UseMusicControllerOptions) {
     addAndPlay,
     addToQueueAndStartIfIdle,
     togglePause,
+    pause: pausePlayback,
     resume: resumePlayback,
     seekTo,
   };

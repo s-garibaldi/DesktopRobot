@@ -164,13 +164,21 @@ function isResumeCommand(transcript: string): boolean {
 
 /** Stricter play/resume for Spotify: avoids false positives when mic is on during pause.
  * Rejects conversational phrases like "I want to play" or "play guitar".
- * Prefer "play music" or "resume" over bare "play" for robustness. */
-function isSpotifyPlayOrResumeCommand(transcript: string): boolean {
+ * Bare "play" and "play it" are intentionally rejected because they are too easy
+ * to hallucinate during normal conversation while the backend mic is open. */
+export function isSpotifyPlayOrResumeCommand(transcript: string): boolean {
   const t = normalize(transcript);
   const allowed = [
-    'play', 'play music', 'play song', 'play the music', 'play the song', 'play it',
-    'resume', 'resume music', 'resume song', 'resume playback',
-    'resume the music', 'resume the song', 'resume it',
+    'play music',
+    'play the music',
+    'play spotify',
+    'resume',
+    'resume music',
+    'resume song',
+    'resume playback',
+    'resume spotify',
+    'resume the music',
+    'resume the song',
   ];
   return allowed.includes(t);
 }
