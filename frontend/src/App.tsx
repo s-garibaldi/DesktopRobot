@@ -193,8 +193,6 @@ function App() {
     setCurrentEmotion(emotion);
   }, [currentEmotion, spotifyPlaybackState]);
 
-  // Auto-show Spotify face when a track is loaded (playing or paused); only go back to neutral when track is stopped.
-  // If user pressed Stop, don't switch back to Spotify until they play again (no active track).
   useEffect(() => {
     const hasActiveTrack =
       spotifyPlaybackState &&

@@ -189,6 +189,7 @@ function App() {
       handoffTriggeredRef.current = true;
       setSelectedAgentName(agentName);
     },
+    onUserSpeechStart: clearIdleTimer,
     onUserInputTranscription: clearIdleTimer,
     onAIOutputComplete: scheduleIdleAutoOff,
   });

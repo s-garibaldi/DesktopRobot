@@ -26,6 +26,8 @@ export interface RealtimeSessionCallbacks {
   onAgentHandoff?: (agentName: string) => void;
   /** When user input is detected as "microphone off" or "microphone on" (e.g. to play a short ack). */
   onMicCommandTranscription?: (transcript: string) => void;
+  /** Called when server VAD detects the user has started speaking. */
+  onUserSpeechStart?: () => void;
   /** Called when any user speech is transcribed (e.g. for other features). */
   onUserInputTranscription?: () => void;
   /** Called when AI has finished outputting audio (resets idle timer for auto mic-off). */
@@ -61,6 +63,8 @@ export function useRealtimeSession(callbacks: RealtimeSessionCallbacks = {}) {
   const historyHandlers = useHandleSessionHistory().current;
   const onMicCommandTranscriptionRef = useRef(callbacks.onMicCommandTranscription);
   onMicCommandTranscriptionRef.current = callbacks.onMicCommandTranscription;
+  const onUserSpeechStartRef = useRef(callbacks.onUserSpeechStart);
+  onUserSpeechStartRef.current = callbacks.onUserSpeechStart;
   const onUserInputTranscriptionRef = useRef(callbacks.onUserInputTranscription);
   onUserInputTranscriptionRef.current = callbacks.onUserInputTranscription;
   const onAIOutputCompleteRef = useRef(callbacks.onAIOutputComplete);
@@ -84,6 +88,11 @@ export function useRealtimeSession(callbacks: RealtimeSessionCallbacks = {}) {
   function handleTransportEvent(event: any) {
     // Handle additional server events that aren't managed by the session
     switch (event.type) {
+      case "input_audio_buffer.speech_started": {
+        onUserSpeechStartRef.current?.();
+        logServerEvent(event);
+        break;
+      }
       case "conversation.item.input_audio_transcription.completed": {
         const transcript = (event.transcript ?? '').trim();
         onUserInputTranscriptionRef.current?.();
