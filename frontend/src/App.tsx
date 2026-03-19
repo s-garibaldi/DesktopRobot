@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import AnimatedFace from './components/face/AnimatedFace';
 import EmotionControls from './components/face/EmotionControls';
 import GuitarTabsFace from './components/guitarTabs/GuitarTabsFace';
@@ -18,8 +18,23 @@ function App() {
   const [spotifyUserStopped, setSpotifyUserStopped] = useState(false);
   const [showSpotifyStartPlaybackButton, setShowSpotifyStartPlaybackButton] = useState(false);
   const [spotifyStartPlaybackPressed, setSpotifyStartPlaybackPressed] = useState(false);
+  const [spotifyExitTransition, setSpotifyExitTransition] = useState<{
+    active: boolean;
+    fromEmotion: Emotion | null;
+    toEmotion: Emotion | null;
+    playbackState: PlaybackState | null;
+    showStartPlaybackButton: boolean;
+  }>({
+    active: false,
+    fromEmotion: null,
+    toEmotion: null,
+    playbackState: null,
+    showStartPlaybackButton: false,
+  });
   const [guitarTabsInput, setGuitarTabsInput] = useState('');
   const [guitarTabsVoicingIndex, setGuitarTabsVoicingIndex] = useState(0);
+  const previousEmotionRef = useRef<Emotion>(currentEmotion);
+  const spotifyExitTimerRef = useRef<number | null>(null);
 
   const chordVoicings = getChordVoicings(guitarTabsInput);
   const scaleVoicings = getScaleVoicings(guitarTabsInput);
@@ -32,6 +47,67 @@ function App() {
   useEffect(() => {
     setGuitarTabsVoicingIndex(0);
   }, [guitarTabsInput]);
+
+  useEffect(() => {
+    const previousEmotion = previousEmotionRef.current;
+    const isManagedTransition =
+      (previousEmotion === 'spotify' && currentEmotion === 'neutral') ||
+      (previousEmotion === 'thinking' && currentEmotion === 'spotify');
+
+    if (isManagedTransition) {
+      setSpotifyExitTransition({
+        active: true,
+        fromEmotion: previousEmotion,
+        toEmotion: currentEmotion,
+        playbackState: spotifyPlaybackState,
+        showStartPlaybackButton: showSpotifyStartPlaybackButton,
+      });
+      if (spotifyExitTimerRef.current) {
+        window.clearTimeout(spotifyExitTimerRef.current);
+      }
+      spotifyExitTimerRef.current = window.setTimeout(() => {
+        setSpotifyExitTransition({
+          active: false,
+          fromEmotion: null,
+          toEmotion: null,
+          playbackState: null,
+          showStartPlaybackButton: false,
+        });
+        spotifyExitTimerRef.current = null;
+      }, 520);
+    } else if (
+      spotifyExitTransition.active &&
+      (currentEmotion !== spotifyExitTransition.toEmotion || previousEmotion !== spotifyExitTransition.fromEmotion)
+    ) {
+      setSpotifyExitTransition({
+        active: false,
+        fromEmotion: null,
+        toEmotion: null,
+        playbackState: null,
+        showStartPlaybackButton: false,
+      });
+      if (spotifyExitTimerRef.current) {
+        window.clearTimeout(spotifyExitTimerRef.current);
+        spotifyExitTimerRef.current = null;
+      }
+    }
+    previousEmotionRef.current = currentEmotion;
+  }, [
+    currentEmotion,
+    spotifyPlaybackState,
+    showSpotifyStartPlaybackButton,
+    spotifyExitTransition.active,
+    spotifyExitTransition.fromEmotion,
+    spotifyExitTransition.toEmotion,
+  ]);
+
+  useEffect(() => {
+    return () => {
+      if (spotifyExitTimerRef.current) {
+        window.clearTimeout(spotifyExitTimerRef.current);
+      }
+    };
+  }, []);
 
   // Destroy tuner when switching away to prevent it from updating detached DOM (crashes)
   const handleEmotionChange = useCallback((emotion: Emotion) => {
@@ -101,6 +177,74 @@ function App() {
     window.dispatchEvent(new CustomEvent('spotify-start-playback-request'));
   }, []);
 
+  const renderPrimaryFace = () => {
+    if (currentEmotion === 'guitarTabs') {
+      return (
+        <GuitarTabsFace
+          input={guitarTabsInput}
+          voicingIndex={guitarTabsVoicingIndex}
+        />
+      );
+    }
+    if (currentEmotion === 'spotify') {
+      return (
+        <SpotifyFace
+          playbackState={spotifyPlaybackState}
+          showStartPlaybackButton={showSpotifyStartPlaybackButton}
+          onStartPlayback={handleSpotifyFaceStartPlayback}
+        />
+      );
+    }
+    if (currentEmotion === 'tuner') {
+      return <TunerFace />;
+    }
+    return <AnimatedFace emotion={currentEmotion} fillContainer={isEmotionFullscreen} />;
+  };
+
+  const renderTransitionFace = () => {
+    if (!spotifyExitTransition.active) return null;
+
+    const { fromEmotion, toEmotion, playbackState, showStartPlaybackButton } = spotifyExitTransition;
+
+    if (fromEmotion === 'spotify' && toEmotion === 'neutral') {
+      return (
+        <div className="face-transition-shell">
+          <div className="face-layer face-layer-neutral-enter">
+            <AnimatedFace emotion="neutral" showFrame={false} />
+          </div>
+          <div className="face-layer face-layer-spotify-exit">
+            <SpotifyFace
+              playbackState={playbackState}
+              showStartPlaybackButton={showStartPlaybackButton}
+              onStartPlayback={handleSpotifyFaceStartPlayback}
+              showShell={false}
+            />
+          </div>
+        </div>
+      );
+    }
+
+    if (fromEmotion === 'thinking' && toEmotion === 'spotify') {
+      return (
+        <div className="face-transition-shell">
+          <div className="face-layer face-layer-thinking-exit">
+            <AnimatedFace emotion="thinking" showFrame={false} />
+          </div>
+          <div className="face-layer face-layer-spotify-enter">
+            <SpotifyFace
+              playbackState={playbackState}
+              showStartPlaybackButton={showStartPlaybackButton}
+              onStartPlayback={handleSpotifyFaceStartPlayback}
+              showShell={false}
+            />
+          </div>
+        </div>
+      );
+    }
+
+    return null;
+  };
+
   return (
     <div className="app">
       <div className={isEmotionFullscreen ? 'app-fullscreen' : undefined}>
@@ -118,22 +262,15 @@ function App() {
         <div className={`robot-container${currentEmotion === 'guitarTabs' ? ' guitar-tabs-active' : ''}${currentEmotion === 'spotify' ? ' spotify-active' : ''}${currentEmotion === 'tuner' ? ' tuner-active' : ''}`}>
           <div className="left-panel">
             <div className="animated-face-wrapper">
-              {currentEmotion === 'guitarTabs' ? (
-                <GuitarTabsFace
-                  input={guitarTabsInput}
-                  voicingIndex={guitarTabsVoicingIndex}
-                />
-              ) : currentEmotion === 'spotify' ? (
-                <SpotifyFace
-                  playbackState={spotifyPlaybackState}
-                  showStartPlaybackButton={showSpotifyStartPlaybackButton}
-                  onStartPlayback={handleSpotifyFaceStartPlayback}
-                />
-              ) : currentEmotion === 'tuner' ? (
-                <TunerFace />
-              ) : (
-                <AnimatedFace emotion={currentEmotion} fillContainer={isEmotionFullscreen} />
-              )}
+              <div className={`face-stage${spotifyExitTransition.active ? ' face-stage-spotify-to-neutral' : ''}`}>
+                {spotifyExitTransition.active ? (
+                  renderTransitionFace()
+                ) : (
+                  <div className="face-layer face-layer-current">
+                    {renderPrimaryFace()}
+                  </div>
+                )}
+              </div>
               {!isEmotionFullscreen && currentEmotion !== 'guitarTabs' && currentEmotion !== 'spotify' && currentEmotion !== 'tuner' && (
                 <button
                   type="button"

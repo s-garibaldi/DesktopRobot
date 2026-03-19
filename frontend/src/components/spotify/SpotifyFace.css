@@ -16,6 +16,17 @@
   flex-shrink: 0;
 }
 
+.spotify-face--shell-less {
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  justify-content: center;
+}
+
 /* Inner box: same as neutral face (225×150, radius 20, 6px stroke, glow) */
 .spotify-face-inner {
   display: flex;
