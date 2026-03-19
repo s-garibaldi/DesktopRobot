@@ -103,6 +103,17 @@ export const drawTime: EmotionDrawFunction = (ctx, time, breathingPhase, transit
     ctx.globalAlpha = timeAlpha;
     ctx.scale(breathingScale, breathingScale);
 
+    // Atmospheric top bloom to keep the time face from feeling flat.
+    const topBloom = ctx.createRadialGradient(0, -faceHeight * 0.52, 8, 0, -faceHeight * 0.52, faceWidth * 0.62);
+    topBloom.addColorStop(0, 'rgba(170, 255, 255, 0.1)');
+    topBloom.addColorStop(0.45, 'rgba(0, 255, 255, 0.045)');
+    topBloom.addColorStop(1, 'rgba(0, 255, 255, 0)');
+    ctx.save();
+    ctx.globalAlpha = timeAlpha * (0.45 + boxGlow * 0.08);
+    ctx.fillStyle = topBloom;
+    ctx.fillRect(-faceWidth * 0.72, -faceHeight * 0.78, faceWidth * 1.44, faceHeight * 0.95);
+    ctx.restore();
+
     // 1. Outer ambient glow (synced to breathing)
     ctx.save();
     ctx.shadowBlur = 48 + boxGlow * 14;
@@ -122,11 +133,24 @@ export const drawTime: EmotionDrawFunction = (ctx, time, breathingPhase, transit
     ctx.fill();
     ctx.restore();
 
-    // 3. Main outline with gradient stroke (brighter at top, match neutral)
+    // 3. Dark glass fill with a gentle vertical falloff for more depth.
+    const panelFill = ctx.createLinearGradient(0, -faceHeight / 2, 0, faceHeight / 2);
+    panelFill.addColorStop(0, 'rgba(4, 24, 28, 0.24)');
+    panelFill.addColorStop(0.55, 'rgba(0, 10, 14, 0.1)');
+    panelFill.addColorStop(1, 'rgba(0, 0, 0, 0.03)');
+    ctx.save();
+    ctx.globalAlpha = timeAlpha * 0.95;
+    ctx.fillStyle = panelFill;
+    boxPath();
+    ctx.fill();
+    ctx.restore();
+
+    // 4. Main outline with gradient stroke (brighter at top, match neutral)
     const gradient = ctx.createLinearGradient(0, -faceHeight / 2, 0, faceHeight / 2);
-    gradient.addColorStop(0, 'rgba(150, 255, 255, 1)');
-    gradient.addColorStop(0.5, '#00FFFF');
-    gradient.addColorStop(1, 'rgba(0, 200, 255, 0.95)');
+    gradient.addColorStop(0, 'rgba(188, 255, 255, 0.98)');
+    gradient.addColorStop(0.34, 'rgba(72, 242, 248, 0.96)');
+    gradient.addColorStop(0.7, '#00FFFF');
+    gradient.addColorStop(1, 'rgba(0, 194, 246, 0.92)');
     ctx.shadowBlur = 28 + boxGlow * 14;
     ctx.shadowColor = '#00FFFF';
     ctx.strokeStyle = gradient;
@@ -136,12 +160,22 @@ export const drawTime: EmotionDrawFunction = (ctx, time, breathingPhase, transit
     ctx.stroke();
     ctx.restore();
 
+    // 5. Subtle inner stroke to sharpen the glass-card edge.
+    ctx.save();
+    ctx.strokeStyle = 'rgba(218, 255, 255, 0.14)';
+    ctx.lineWidth = 1.5;
+    ctx.globalAlpha = timeAlpha * (0.55 + boxGlow * 0.1);
+    ctx.beginPath();
+    ctx.roundRect(-faceWidth / 2 + 7, -faceHeight / 2 + 7, faceWidth - 14, faceHeight - 14, cornerRadius - 7);
+    ctx.stroke();
+    ctx.restore();
+
     // Measure time display at base font size to compute scale to fit inside box
     const padding = 28;
     const innerWidth = faceWidth - padding * 2;
     const innerHeight = faceHeight - padding * 2;
 
-    const baseFontMain = 80;
+    const baseFontMain = 86;
     const fontFamily = 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace';
     ctx.save();
     ctx.font = `600 ${baseFontMain}px ${fontFamily}`;
@@ -158,7 +192,7 @@ export const drawTime: EmotionDrawFunction = (ctx, time, breathingPhase, transit
     const scale = Math.min(innerWidth / totalContentWidth, innerHeight / totalContentHeight, 1);
 
     // Colon blink: smooth pulse every second (smoothPulse for phase continuity, no snap)
-    const colonAlpha = smoothPulse(time, Math.PI * 2, 0.25, 1);
+    const colonAlpha = smoothPulse(time, Math.PI * 2, 0.35, 1);
 
     ctx.save();
     ctx.textAlign = 'left';
@@ -172,18 +206,22 @@ export const drawTime: EmotionDrawFunction = (ctx, time, breathingPhase, transit
     const totalTimeWidth = hoursWidth + colonWidth + minutesWidth;
     const startX = -totalTimeWidth / 2;
 
-    // Light text glow for depth (reduced for crisper look)
-    ctx.shadowBlur = 4;
-    ctx.shadowColor = 'rgba(0, 255, 255, 0.4)';
+    // Layered text glow for a more premium digital display look.
+    const textGradient = ctx.createLinearGradient(0, -mainHeight * 0.55, 0, mainHeight * 0.55);
+    textGradient.addColorStop(0, 'rgba(222, 255, 255, 0.98)');
+    textGradient.addColorStop(0.5, 'rgba(74, 244, 248, 0.96)');
+    textGradient.addColorStop(1, 'rgba(0, 232, 255, 0.9)');
+    ctx.shadowBlur = 6;
+    ctx.shadowColor = 'rgba(0, 255, 255, 0.24)';
 
     // Subtle outline for legibility
-    ctx.strokeStyle = 'rgba(0, 120, 180, 0.5)';
-    ctx.lineWidth = 1;
+    ctx.strokeStyle = 'rgba(0, 86, 120, 0.4)';
+    ctx.lineWidth = 1.1;
     ctx.lineJoin = 'round';
+    ctx.fillStyle = textGradient;
 
     // Draw hours
     ctx.strokeText(hoursStr, startX, 0);
-    ctx.fillStyle = '#00FFFF';
     ctx.fillText(hoursStr, startX, 0);
 
     // Draw colon with blink
@@ -202,4 +240,3 @@ export const drawTime: EmotionDrawFunction = (ctx, time, breathingPhase, transit
     ctx.restore();
   }
 };
-

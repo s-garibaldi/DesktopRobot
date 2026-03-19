@@ -51,18 +51,18 @@
   width: 100%;
 }
 
-/* Inner box: 25% larger than base (281×188) */
+/* Inner box: same shared card scale as the other faces */
 .guitar-tabs-inner-box {
-  width: 281px;
-  height: 188px;
-  border-radius: 25px;
+  width: 225px;
+  height: 150px;
+  border-radius: 20px;
   border: 6px solid #00FFFF;
   box-shadow: 0 0 30px rgba(0, 255, 255, 0.4);
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: flex-end;
-  padding: 4px;
+  padding: 6px;
   box-sizing: border-box;
   flex-shrink: 0;
   overflow: hidden;
@@ -92,11 +92,11 @@
   top: 50%;
   left: 0;
   right: 0;
-  transform: translate(40px, -50%);
+  transform: translate(37px, -49%);
   min-height: 0;
   width: 100%;
   max-width: none;
-  max-height: calc(100% - 2.2rem);
+  max-height: calc(100% - 1.95rem);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -112,37 +112,37 @@
 
 .guitar-tabs-inner-box .guitar-tabs-diagram-wrap:hover {
   filter: drop-shadow(0 0 16px rgba(0, 255, 255, 0.35)) !important;
-  transform: translate(40px, -50%) scale(1.02);
+  transform: translate(37px, -49%) scale(1.02);
   animation: none;
 }
 
 .guitar-tabs-inner-box .guitar-tabs-diagram-wrap--empty:hover {
-  transform: translate(40px, -50%) scale(1.02);
+  transform: translate(37px, -49%) scale(1.02);
 }
 
-/* Diagram scaled up 25% within inner box (SVG preserveAspectRatio xMidYMid meet) */
+/* Diagram scale tuned to fit the shared 225×150 card */
 .guitar-tabs-inner-box .guitar-tabs-diagram {
   width: 100%;
   height: 100%;
   display: block;
-  transform: scale(1.25);
+  transform: scale(1.5);
   transform-origin: center center;
   animation: guitar-tabs-diagram-fade-in 0.25s ease-out;
 }
 
 @keyframes guitar-tabs-diagram-fade-in {
-  from { opacity: 0; transform: scale(1.2); }
-  to { opacity: 1; transform: scale(1.25); }
+  from { opacity: 0; transform: scale(1.3); }
+  to { opacity: 1; transform: scale(1.5); }
 }
 
 /* Chord name row: diagram rests just above this */
 .guitar-tabs-inner-box .guitar-tabs-name {
   margin: 0;
-  padding: 3px 4px 4px;
-  font-size: 0.82rem;
+  padding: 2px 4px 3px;
+  font-size: 0.74rem;
   line-height: 1.2;
-  height: 1.3rem;
-  min-height: 1.3rem;
+  height: 1.1rem;
+  min-height: 1.1rem;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -181,7 +181,7 @@
 
 .guitar-tabs-diagram-wrap {
   width: 100%;
-  max-width: 280px;
+  max-width: 220px;
   aspect-ratio: 280 / 220;
 }
 
