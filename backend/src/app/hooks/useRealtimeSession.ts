@@ -91,12 +91,12 @@ export function useRealtimeSession(callbacks: RealtimeSessionCallbacks = {}) {
           sessionRef.current?.interrupt();
           onMicCommandTranscriptionRef.current?.(transcript);
         }
-        historyHandlers.handleTranscriptionCompleted(event);
+        historyHandlers.handleTranscriptionCompleted(event, 'user');
         logServerEvent(event); // Forward to bridge for emotion sync
         break;
       }
       case "response.audio_transcript.done": {
-        historyHandlers.handleTranscriptionCompleted(event);
+        historyHandlers.handleTranscriptionCompleted(event, 'assistant');
         logServerEvent(event); // Forward to bridge for emotion sync
         break;
       }
@@ -104,7 +104,7 @@ export function useRealtimeSession(callbacks: RealtimeSessionCallbacks = {}) {
         if (suppressingBackingTrackResponseRef.current) {
           suppressingBackingTrackResponseRef.current = false;
         }
-        historyHandlers.handleTranscriptionDelta(event);
+        historyHandlers.handleTranscriptionDelta(event, 'assistant');
         // Track the time of the last audio delta for smart delay calculation
         lastAudioDeltaTimeRef.current = Date.now();
         // Only log the FIRST delta event to trigger speaking face (avoid flooding)

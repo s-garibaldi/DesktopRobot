@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
 import { useTranscript } from "@/app/contexts/TranscriptContext";
 import { useEvent } from "@/app/contexts/EventContext";
 
@@ -12,6 +12,10 @@ export function useHandleSessionHistory() {
     updateTranscriptMessage,
     updateTranscriptItem,
   } = useTranscript();
+  const transcriptItemsRef = useRef(transcriptItems);
+  useEffect(() => {
+    transcriptItemsRef.current = transcriptItems;
+  }, [transcriptItems]);
 
   const { logServerEvent } = useEvent();
 
@@ -51,6 +55,36 @@ export function useHandleSessionHistory() {
     return val;
   };
 
+  const hasTranscriptMessage = (itemId: string) =>
+    transcriptItemsRef.current.some((item) => item.itemId === itemId && item.type === "MESSAGE");
+
+  const ensureTranscriptMessage = (
+    itemId: string,
+    role: "user" | "assistant",
+    text: string,
+    isHidden = false
+  ) => {
+    if (!hasTranscriptMessage(itemId)) {
+      addTranscriptMessage(itemId, role, text, isHidden);
+    }
+  };
+
+  const extractToolResultMessage = (result: any): string => {
+    const parsed = maybeParseJson(result);
+    if (typeof parsed === "string") return parsed.trim();
+    if (!parsed || typeof parsed !== "object") return "";
+
+    const candidates = [
+      parsed.say_aloud,
+      parsed.said,
+      parsed.message,
+      parsed.error,
+    ];
+
+    const text = candidates.find((value) => typeof value === "string" && value.trim());
+    return typeof text === "string" ? text.trim() : "";
+  };
+
   const extractLastAssistantMessage = (history: any[] = []): any => {
     if (!Array.isArray(history)) return undefined;
     return history.reverse().find((c: any) => c.type === 'message' && c.role === 'assistant');
@@ -82,10 +116,35 @@ export function useHandleSessionHistory() {
   }
   function handleAgentToolEnd(details: any, _agent: any, _functionCall: any, result: any) {
     const lastFunctionCall = extractFunctionCallByName(_functionCall.name, details?.context?.history);
+    const parsedResult = maybeParseJson(result);
     addTranscriptBreadcrumb(
       `function call result: ${lastFunctionCall?.name}`,
-      maybeParseJson(result)
+      parsedResult
     );
+
+    const fallbackText = extractToolResultMessage(parsedResult);
+    if (!fallbackText) return;
+
+    const syntheticItemId =
+      lastFunctionCall?.call_id ||
+      _functionCall?.call_id ||
+      `tool-result-${lastFunctionCall?.name ?? _functionCall?.name ?? "assistant"}`;
+
+    window.setTimeout(() => {
+      const recentAssistantWithText = transcriptItemsRef.current.some(
+        (item) =>
+          item.type === "MESSAGE" &&
+          item.role === "assistant" &&
+          typeof item.title === "string" &&
+          item.title.trim().length > 0 &&
+          Date.now() - item.createdAtMs < 2000
+      );
+
+      if (recentAssistantWithText || hasTranscriptMessage(syntheticItemId)) return;
+
+      addTranscriptMessage(syntheticItemId, "assistant", fallbackText);
+      updateTranscriptItem(syntheticItemId, { status: "DONE" });
+    }, 900);
   }
 
   function handleHistoryAdded(item: any) {
@@ -107,7 +166,7 @@ export function useHandleSessionHistory() {
       if (guardrailMessage) {
         const failureDetails = JSON.parse(guardrailMessage);
         addTranscriptBreadcrumb('Output Guardrail Active', { details: failureDetails });
-      } else {
+      } else if (isUser || text) {
         addTranscriptMessage(itemId, role, text);
       }
     }
@@ -123,20 +182,22 @@ export function useHandleSessionHistory() {
       const text = extractMessageText(content);
 
       if (text) {
+        ensureTranscriptMessage(itemId, item.role === "user" ? "user" : "assistant", text);
         updateTranscriptMessage(itemId, text, false);
       }
     });
   }
 
-  function handleTranscriptionDelta(item: any) {
+  function handleTranscriptionDelta(item: any, role: "assistant" | "user" = "assistant") {
     const itemId = item.item_id;
     const deltaText = item.delta || "";
     if (itemId) {
+      ensureTranscriptMessage(itemId, role, "");
       updateTranscriptMessage(itemId, deltaText, true);
     }
   }
 
-  function handleTranscriptionCompleted(item: any) {
+  function handleTranscriptionCompleted(item: any, role: "assistant" | "user" = "assistant") {
     // History updates don't reliably end in a completed item, 
     // so we need to handle finishing up when the transcription is completed.
     const itemId = item.item_id;
@@ -145,9 +206,10 @@ export function useHandleSessionHistory() {
         ? "[inaudible]"
         : item.transcript;
     if (itemId) {
+      ensureTranscriptMessage(itemId, role, finalTranscript);
       updateTranscriptMessage(itemId, finalTranscript, false);
       // Use the ref to get the latest transcriptItems
-      const transcriptItem = transcriptItems.find((i) => i.itemId === itemId);
+      const transcriptItem = transcriptItemsRef.current.find((i) => i.itemId === itemId);
       updateTranscriptItem(itemId, { status: 'DONE' });
 
       // If guardrailResult still pending, mark PASS.
