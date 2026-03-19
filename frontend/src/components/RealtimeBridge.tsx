@@ -346,9 +346,40 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
 
   // Listen for messages from the iframe
   useEffect(() => {
+    const BACKEND_IFRAME_MESSAGE_TYPES = new Set([
+      'play_spotify_track',
+      'spotify_stop',
+      'spotify_playback_state',
+      'spotify_ready',
+      'spotify_play_result',
+      'spotify_token_received',
+      'music_play_track',
+      'music_add_to_queue',
+      'music_next',
+      'music_previous',
+      'music_pause',
+      'music_resume',
+      'music_clear',
+      'music_play_index',
+      'music_remove_at',
+      'music_move',
+      'play_backing_track',
+      'metronome_set_bpm',
+      'guitar_tab_display',
+      'tuner_display',
+      'backend_auto_mic_off',
+      'backend_request_music_state',
+      'bridge_log',
+      'ptt_state',
+      'error',
+      'ai_speaking_start',
+      'ai_speaking_end',
+    ]);
+
     const handleMessage = (event: MessageEvent) => {
       const data = event.data;
-      const isClientAction = data?.type === 'play_spotify_track' || data?.type === 'spotify_stop' || data?.type === 'music_play_track' || data?.type === 'music_add_to_queue' || data?.type === 'music_next' || data?.type === 'music_previous' || data?.type === 'music_pause' || data?.type === 'music_resume' || data?.type === 'music_clear' || data?.type === 'music_play_index' || data?.type === 'music_remove_at' || data?.type === 'music_move' || data?.type === 'play_backing_track' || data?.type === 'metronome_set_bpm' || data?.type === 'guitar_tab_display' || data?.type === 'tuner_display' || data?.type === 'backend_auto_mic_off';
+      const messageType = typeof data?.type === 'string' ? data.type : '';
+      const isClientAction = BACKEND_IFRAME_MESSAGE_TYPES.has(messageType);
       if (isClientAction) {
         console.log('[RealtimeBridge] Client action received:', data?.type, 'origin=', event.origin, 'expected~', backendOrigin);
       }
@@ -358,7 +389,7 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
       const nullOrigin = originStr === '' || originStr === 'null';
       const fromIframe = event.source === iframeRef.current?.contentWindow;
       // Some WebViews report origin as "null" or custom schemes (tauri://, asset://).
-      // For client actions, accept any message that originates from our iframe.
+      // For known backend iframe messages, accept any message that originates from our iframe.
       const accept =
         isAcceptedOrigin(event.origin) ||
         (isClientAction && (fromIframe || fromLocalhost || nullOrigin));

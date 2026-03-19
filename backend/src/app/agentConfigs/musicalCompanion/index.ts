@@ -23,28 +23,6 @@ const OPEN_FINGERINGS: Record<string, string> = {
   Fmaj7: '1-3-2-2-1-1', Gmaj7: '3-2-0-0-0-2',
 };
 
-// Passthrough tool for speech-optimized replies. When other tools return say_aloud,
-// the model may call this to speak that text. Prevents "Tool say_aloud not found" errors.
-const sayAloudTool = tool({
-  name: 'say_aloud',
-  description: 'Speak a brief, speech-optimized reply to the user. Use when you have a short phrase to say (e.g. from a tool\'s say_aloud field). Do not use for long explanations.',
-  parameters: {
-    type: 'object',
-    properties: {
-      text: {
-        type: 'string',
-        description: 'The brief text to speak aloud to the user.',
-      },
-    },
-    required: ['text'],
-    additionalProperties: false,
-  },
-  execute: async (input: any) => {
-    const { text } = input as { text: string };
-    return { success: true, said: text ?? '' };
-  },
-});
-
 // Guitar chord recognition tool — uses music knowledge for notes/theory; fingerings when available
 const recognizeChordTool = tool({
   name: 'recognize_guitar_chord',
@@ -973,7 +951,7 @@ When the user asks to see or display a chord (e.g. "show me G minor", "display A
 When the user asks to open, show, or start the tuner, use display_tuner. If they ask to close or hide the tuner, use display_tuner with close: true.
 
 # How to Use Your Tools
-- When a tool returns say_aloud, prefer using it as your spoken reply - it is already brief and speech-optimized.
+- When a tool returns a 'say_aloud' field, use that text directly in your spoken reply. Do not call another helper tool for it.
 - When a tool returns multiple items (e.g. progressions, chords), pick the single best one to mention aloud. Do not enumerate all of them. The user can ask for more.
 - For tools that return progressions[], explanation objects, or tips[]: summarize in one sentence, do not read the full structure.
 - Use recognize_guitar_chord for chord information, notes, and theory (supports triads, 7ths, maj7, m7, dim, aug, sus2, sus4, add9, 9, 11, 13)
@@ -983,6 +961,7 @@ When the user asks to open, show, or start the tuner, use display_tuner. If they
 - Metronome: You CAN and MUST start the metronome when the user asks. Always use set_metronome_bpm—pass a genre (e.g. "rumba", "salsa", "waltz", "bossa nova", "ballad") or a bpm (40–240). The tool starts it on the user's device; never say you cannot start it or that they must use voice. Do NOT say "stop" or "pause" in your reply (the mic would stop the metronome); say they can control it with voice instead.
 - Use play_spotify_track when the user asks to play ONE song (e.g. "play Bohemian Rhapsody"). Use spotify_queue_add when the user asks to play MULTIPLE songs (e.g. "play A, B, and C", "play Song A then Song B", "queue X, Y, Z")—pass each song as a separate query in one string. Use spotify_queue_get when the user asks what is in the queue, what song is next, what is coming up, or to list the queue. Use spotify_queue_play when the user says "play the queue" or "start the queue" and the queue has items. Use spotify_queue_remove, spotify_queue_reorder, and spotify_queue_clear for queue management. The user must have connected Spotify in the app (Premium required).
 - Spotify tool policy: Spotify tools are available to you in this session. For any request to play, queue, skip, pause, resume, inspect, reorder, or clear Spotify music, you MUST call the matching Spotify tool or client action path before replying. Do not say you cannot access Spotify, cannot control Spotify, or do not have Spotify functions unless a Spotify tool call actually fails. If a Spotify tool fails, briefly explain the failure and suggest connecting Spotify in the app.
+- If the user asks to queue songs, add songs to the queue, play multiple songs, or play something next, do not answer with plain text first. Call 'spotify_queue_add'.
 - Backing tracks: Use list_backing_tracks when the user asks what backing tracks are available, wants to browse or choose (e.g. "what do you have for blues?", "what backing tracks do I have?"). You get the full list from the library and can suggest options. Only call play_backing_track when the user has given an explicit affirmative to play (e.g. "yes", "play it", "that one", "sounds good", "go ahead"). When suggesting a track, describe it and ask if they want it; once they say yes, use play_backing_track with the agreed description (e.g. "blues in A minor around 90 bpm"). The track loops until they say "stop" or use voice controls.
 - Use search_web to find current information, recent music news, new songs, artist information, or any up-to-date content
 - Use store_memory to save user preferences, favorite chords, musical interests, or skill level
@@ -1004,6 +983,7 @@ When the user asks to open, show, or start the tuner, use display_tuner. If they
 - "What chords go well with Am?" → Use recognize_guitar_chord for Am, then suggest_chord_progression in A minor or related key
 - "Start a metronome" / "Play a metronome for rumba" / "Metronome at 120" / "Set metronome for waltz" → Always use set_metronome_bpm (you start it from here; do not refuse).
 - "Play Bohemian Rhapsody" (one song) → play_spotify_track. "Play A, B, and C" / "Play Song A then Song B" / "Queue these: X, Y, Z" → spotify_queue_add with queries "A, B, C" (or "Song A, Song B" etc). "What's in the queue?" / "What song is next?" / "What's coming up?" → spotify_queue_get. "Play the queue" → spotify_queue_play. "Remove the second song" / "Clear the queue" → spotify_queue_remove / spotify_queue_clear.
+- "Add Shape of You to the queue" / "Queue Shape of You next" / "Play Shape of You, then Blinding Lights" → spotify_queue_add, not say_aloud.
 - "What backing tracks do you have?" / "What do you have for blues?" / "What can I jam to?" → Use list_backing_tracks (with optional query like "blues"); then summarize 1–2 options and ask if they want one. "Play a blues backing track" / "Yes, play it" / "That one" / "I want to jam in A minor" (direct request or affirmative) → Use play_backing_track. Do NOT call play_backing_track until they say yes or equivalent.
 - User says "I love jazz" → Use store_memory to save this preference
 - User asks "What's my favorite genre?" → Use retrieve_memories to recall
@@ -1020,7 +1000,7 @@ When the user asks to open, show, or start the tuner, use display_tuner. If they
 - Be enthusiastic and encouraging. Use musical terminology when it helps, but keep the main reply concise.
 - Suggest creative ideas and next steps in a sentence or two; don't over-explain unless asked.
 `,
-  tools: [sayAloudTool, recognizeChordTool, suggestChordProgressionTool, songwritingSuggestionTool, musicTheoryTool, setMetronomeBpmTool, displayGuitarChordTool, displayTunerTool, playSpotifyTrackTool, spotifyQueueAddTool, spotifyQueueGetTool, spotifyQueuePlayTool, spotifyQueueRemoveTool, spotifyQueueReorderTool, spotifyQueueClearTool, listBackingTracksTool, playBackingTrackTool, webSearchTool, ...createMemoryTools('musicalCompanion')],
+  tools: [recognizeChordTool, suggestChordProgressionTool, songwritingSuggestionTool, musicTheoryTool, setMetronomeBpmTool, displayGuitarChordTool, displayTunerTool, playSpotifyTrackTool, spotifyQueueAddTool, spotifyQueueGetTool, spotifyQueuePlayTool, spotifyQueueRemoveTool, spotifyQueueReorderTool, spotifyQueueClearTool, listBackingTracksTool, playBackingTrackTool, webSearchTool, ...createMemoryTools('musicalCompanion')],
   handoffs: [],
   handoffDescription: 'Musical companion AI for guitar, songwriting, and music theory',
 });
