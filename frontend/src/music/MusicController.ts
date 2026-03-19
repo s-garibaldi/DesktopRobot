@@ -25,12 +25,14 @@ export type MusicControllerEvent =
   | { type: 'PLAYBACK_STATUS'; status: PlaybackStatus };
 
 class MusicControllerImpl {
-  /** Queue = upcoming songs only. Currently playing is in nowPlayingItem. */
+  /** Queue contains the current track plus upcoming tracks. */
   private items: QueueItem[] = [];
   private nowPlayingItem: QueueItem | null = null;
+  private currentIndex = -1;
   private playbackStatus: PlaybackStatus = 'stopped';
   private adapter: PlaybackAdapter | null = null;
   private listeners: Set<MusicControllerListener> = new Set();
+  private trackChangePromise: Promise<boolean> | null = null;
 
   setPlaybackAdapter(adapter: PlaybackAdapter | null): void {
     this.adapter = adapter;
@@ -65,7 +67,7 @@ class MusicControllerImpl {
   getQueue(): MusicQueue {
     return {
       items: [...this.items],
-      currentIndex: this.nowPlayingItem ? 0 : -1,
+      currentIndex: this.currentIndex,
     };
   }
 
@@ -106,13 +108,30 @@ class MusicControllerImpl {
   addNext(item: Omit<QueueItem, 'id'> | QueueItem): void {
     const full: QueueItem = 'id' in item ? item : { ...item, id: generateId() };
     if (!full.uri?.startsWith('spotify:track:')) return;
-    this.items.splice(0, 0, full);
+    const insertAt = this.currentIndex >= 0 ? this.currentIndex + 1 : 0;
+    this.items.splice(insertAt, 0, full);
     this.notifyQueue();
   }
 
   removeAt(index: number): boolean {
     if (index < 0 || index >= this.items.length) return false;
     this.items.splice(index, 1);
+    if (index < this.currentIndex) {
+      this.currentIndex -= 1;
+    } else if (index === this.currentIndex) {
+      if (this.currentIndex >= this.items.length) {
+        this.currentIndex = this.items.length - 1;
+      }
+      this.nowPlayingItem =
+        this.currentIndex >= 0 && this.currentIndex < this.items.length
+          ? this.items[this.currentIndex]
+          : null;
+      if (!this.nowPlayingItem) {
+        this.playbackStatus = 'stopped';
+        this.currentIndex = -1;
+      }
+      this.notifyNowPlaying();
+    }
     this.notifyQueue();
     return true;
   }
@@ -129,12 +148,27 @@ class MusicControllerImpl {
     }
     const [item] = this.items.splice(fromIndex, 1);
     this.items.splice(toIndex, 0, item);
+    if (fromIndex === this.currentIndex) {
+      this.currentIndex = toIndex;
+      this.nowPlayingItem = this.items[this.currentIndex] ?? null;
+      this.notifyNowPlaying();
+    } else if (fromIndex < this.currentIndex && toIndex >= this.currentIndex) {
+      this.currentIndex -= 1;
+    } else if (fromIndex > this.currentIndex && toIndex <= this.currentIndex) {
+      this.currentIndex += 1;
+    }
     this.notifyQueue();
     return true;
   }
 
   clearQueue(): void {
-    this.items = [];
+    if (this.nowPlayingItem && this.currentIndex >= 0) {
+      this.items = [this.nowPlayingItem];
+      this.currentIndex = 0;
+    } else {
+      this.items = [];
+      this.currentIndex = -1;
+    }
     this.notifyQueue();
   }
 
@@ -145,8 +179,10 @@ class MusicControllerImpl {
   stop(): void {
     this.items = [];
     this.nowPlayingItem = null;
+    this.currentIndex = -1;
     this.playbackStatus = 'stopped';
     this.lastNextAt = 0;
+    this.trackChangePromise = null;
     this.notifyQueue();
     this.notifyNowPlaying();
   }
@@ -155,41 +191,61 @@ class MusicControllerImpl {
   private lastNextAt = 0;
   private static NEXT_DEBOUNCE_MS = 800;
 
+  private async runTrackChange(change: () => Promise<boolean>): Promise<boolean> {
+    if (this.trackChangePromise) {
+      return this.trackChangePromise;
+    }
+
+    const pending = change().finally(() => {
+      if (this.trackChangePromise === pending) {
+        this.trackChangePromise = null;
+      }
+    });
+    this.trackChangePromise = pending;
+    return pending;
+  }
+
   async next(): Promise<boolean> {
     const now = Date.now();
     if (now - this.lastNextAt < MusicControllerImpl.NEXT_DEBOUNCE_MS) return true;
     this.lastNextAt = now;
-    setSuppressTrackEnded(this.nowPlayingItem?.uri ?? null);
 
-    if (this.items.length === 0) {
-      this.nowPlayingItem = null;
-      this.playbackStatus = 'stopped';
-      if (this.adapter) await this.adapter.pause();
-      this.notifyQueue();
-      this.notifyNowPlaying();
-      return false;
-    }
-    const previousNowPlaying = this.nowPlayingItem;
-    const previousStatus = this.playbackStatus;
-    const item = this.items[0];
-    this.items.splice(0, 1);
-    const queueUris = this.items.map((queuedItem) => queuedItem.uri);
-    this.nowPlayingItem = item;
-    this.playbackStatus = 'playing';
-    this.notifyQueue();
-    this.notifyNowPlaying();
-    if (this.adapter) {
-      const ok = await this.adapter.playUri(item.uri, 0, queueUris);
-      if (!ok) {
-        this.items.splice(0, 0, item);
-        this.nowPlayingItem = previousNowPlaying;
-        this.playbackStatus = previousStatus;
+    return this.runTrackChange(async () => {
+      setSuppressTrackEnded(this.nowPlayingItem?.uri ?? null);
+
+      const nextIndex = this.currentIndex >= 0 ? this.currentIndex + 1 : 0;
+      if (nextIndex >= this.items.length) {
+        this.nowPlayingItem = null;
+        this.currentIndex = this.items.length > 0 ? this.items.length - 1 : -1;
+        this.playbackStatus = 'stopped';
+        if (this.adapter) await this.adapter.pause();
         this.notifyQueue();
         this.notifyNowPlaying();
         return false;
       }
-    }
-    return true;
+      const previousNowPlaying = this.nowPlayingItem;
+      const previousCurrentIndex = this.currentIndex;
+      const previousStatus = this.playbackStatus;
+      const item = this.items[nextIndex];
+      const queueUris = this.items.slice(nextIndex + 1).map((queuedItem) => queuedItem.uri);
+      this.currentIndex = nextIndex;
+      this.nowPlayingItem = item;
+      this.playbackStatus = 'playing';
+      this.notifyQueue();
+      this.notifyNowPlaying();
+      if (this.adapter) {
+        const ok = await this.adapter.playUri(item.uri, 0, queueUris);
+        if (!ok) {
+          this.nowPlayingItem = previousNowPlaying;
+          this.currentIndex = previousCurrentIndex;
+          this.playbackStatus = previousStatus;
+          this.notifyQueue();
+          this.notifyNowPlaying();
+          return false;
+        }
+      }
+      return true;
+    });
   }
 
   async previous(): Promise<boolean> {
@@ -206,29 +262,30 @@ class MusicControllerImpl {
       console.warn('[MusicController] playIndex failed: no playback adapter (Spotify not connected?)');
       return false;
     }
+    if (index === this.currentIndex && this.nowPlayingItem && this.playbackStatus === 'paused') {
+      this.playbackStatus = 'playing';
+      this.notifyNowPlaying();
+      await this.adapter.resume();
+      return true;
+    }
     if (index >= this.items.length) {
-      if (index === 0 && this.nowPlayingItem && this.playbackStatus === 'paused') {
-        this.playbackStatus = 'playing';
-        this.notifyNowPlaying();
-        await this.adapter.resume();
-        return true;
-      }
       return false;
     }
     const item = this.items[index];
     const previousNowPlaying = this.nowPlayingItem;
+    const previousCurrentIndex = this.currentIndex;
     const previousStatus = this.playbackStatus;
     setSuppressTrackEnded(this.nowPlayingItem?.uri ?? null);
-    this.items.splice(index, 1);
-    const queueUris = this.items.map((i) => i.uri);
+    const queueUris = this.items.slice(index + 1).map((i) => i.uri);
+    this.currentIndex = index;
     this.nowPlayingItem = item;
     this.playbackStatus = 'playing';
     this.notifyQueue();
     this.notifyNowPlaying();
     const ok = await this.adapter.playUri(item.uri, 0, queueUris);
     if (!ok) {
-      this.items.splice(index, 0, item);
       this.nowPlayingItem = previousNowPlaying;
+      this.currentIndex = previousCurrentIndex;
       this.playbackStatus = previousStatus;
       this.notifyQueue();
       this.notifyNowPlaying();
@@ -253,6 +310,7 @@ class MusicControllerImpl {
     }
     const previousItems = [...this.items];
     const previousNowPlaying = this.nowPlayingItem;
+    const previousCurrentIndex = this.currentIndex;
     const previousStatus = this.playbackStatus;
     const queueItem: QueueItem = item
       ? {
@@ -269,7 +327,8 @@ class MusicControllerImpl {
           uri,
         };
     setSuppressTrackEnded(this.nowPlayingItem?.uri ?? null);
-    this.items = [];
+    this.items = [queueItem];
+    this.currentIndex = 0;
     this.nowPlayingItem = queueItem;
     this.playbackStatus = 'playing';
     this.notifyQueue();
@@ -278,6 +337,7 @@ class MusicControllerImpl {
     if (!ok) {
       this.items = previousItems;
       this.nowPlayingItem = previousNowPlaying;
+      this.currentIndex = previousCurrentIndex;
       this.playbackStatus = previousStatus;
       this.notifyQueue();
       this.notifyNowPlaying();
@@ -294,11 +354,13 @@ class MusicControllerImpl {
     }
     const previousItems = [...this.items];
     const previousNowPlaying = this.nowPlayingItem;
+    const previousCurrentIndex = this.currentIndex;
     const previousStatus = this.playbackStatus;
     const [first, ...rest] = items;
     setSuppressTrackEnded(this.nowPlayingItem?.uri ?? null);
+    this.items = [first, ...rest];
+    this.currentIndex = 0;
     this.nowPlayingItem = first;
-    this.items = rest;
     this.playbackStatus = 'playing';
     this.notifyQueue();
     this.notifyNowPlaying();
@@ -306,6 +368,7 @@ class MusicControllerImpl {
     if (!ok) {
       this.items = previousItems;
       this.nowPlayingItem = previousNowPlaying;
+      this.currentIndex = previousCurrentIndex;
       this.playbackStatus = previousStatus;
       this.notifyQueue();
       this.notifyNowPlaying();

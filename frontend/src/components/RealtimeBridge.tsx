@@ -374,14 +374,15 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
             const q = musicController.getQueue();
             const np = musicController.getNowPlaying();
             const status = musicController.getPlaybackStatus();
+            const backendQueue = q.currentIndex >= 0 ? q.items.slice(q.currentIndex + 1) : q.items;
             const origin = (() => {
               try { return new URL(realtimeUrl).origin; } catch { return '*'; }
             })();
             iframeRef.current.contentWindow.postMessage(
               {
                 type: 'music_state_update',
-                queue: q.items,
-                currentIndex: q.currentIndex,
+                queue: backendQueue,
+                currentIndex: -1,
                 nowPlaying: np ? { title: np.item.title, artist: np.item.artist } : null,
                 status,
               },
@@ -780,12 +781,13 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
       const q = musicController.getQueue();
       const np = musicController.getNowPlaying();
       const status = musicController.getPlaybackStatus();
+      const backendQueue = q.currentIndex >= 0 ? q.items.slice(q.currentIndex + 1) : q.items;
       if (iframeRef.current?.contentWindow) {
         iframeRef.current.contentWindow.postMessage(
           {
             type: 'music_state_update',
-            queue: q.items,
-            currentIndex: q.currentIndex,
+            queue: backendQueue,
+            currentIndex: -1,
             nowPlaying: np ? { title: np.item.title, artist: np.item.artist } : null,
             status,
           },

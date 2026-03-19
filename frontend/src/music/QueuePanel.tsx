@@ -23,8 +23,10 @@ export function QueuePanel({
   onPlayItem,
 }: QueuePanelProps) {
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+  const firstUpcomingIndex = queue.currentIndex >= 0 ? queue.currentIndex + 1 : 0;
+  const visibleItems = queue.items.slice(firstUpcomingIndex);
 
-  if (queue.items.length === 0) {
+  if (visibleItems.length === 0) {
     return (
       <div className="queue-panel queue-panel-empty">
         <p>Queue is empty</p>
@@ -43,7 +45,7 @@ export function QueuePanel({
   const handleDrop = (e: React.DragEvent, toIndex: number) => {
     e.preventDefault();
     if (draggedIndex !== null && draggedIndex !== toIndex) {
-      onMove(draggedIndex, toIndex);
+      onMove(firstUpcomingIndex + draggedIndex, firstUpcomingIndex + toIndex);
     }
     setDraggedIndex(null);
   };
@@ -55,13 +57,15 @@ export function QueuePanel({
   return (
     <div className="queue-panel">
       <div className="queue-panel-header">
-        <span>Queue ({queue.items.length})</span>
+        <span>Queue ({visibleItems.length})</span>
         <button type="button" onClick={onClear} className="queue-clear-btn">
           Clear
         </button>
       </div>
       <ul className="queue-list">
-        {queue.items.map((item, index) => (
+        {visibleItems.map((item, index) => {
+          const actualIndex = firstUpcomingIndex + index;
+          return (
           <li
             key={item.id}
             className={`queue-item ${draggedIndex === index ? 'queue-item-dragging' : ''}`}
@@ -70,7 +74,7 @@ export function QueuePanel({
             onDragOver={handleDragOver}
             onDrop={(e) => handleDrop(e, index)}
             onDragEnd={handleDragEnd}
-            onClick={() => (onPlayItem ? onPlayItem(item) : onPlayIndex?.(index))}
+            onClick={() => (onPlayItem ? onPlayItem(item) : onPlayIndex?.(actualIndex))}
           >
             <span className="queue-item-index">{index + 1}</span>
             {item.albumArtUrl ? (
@@ -87,7 +91,7 @@ export function QueuePanel({
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();
-                  onMove(index, Math.max(0, index - 1));
+                  onMove(actualIndex, Math.max(firstUpcomingIndex, actualIndex - 1));
                 }}
                 disabled={index === 0}
                 aria-label="Move up"
@@ -98,9 +102,9 @@ export function QueuePanel({
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();
-                  onMove(index, Math.min(queue.items.length - 1, index + 1));
+                  onMove(actualIndex, Math.min(queue.items.length - 1, actualIndex + 1));
                 }}
-                disabled={index === queue.items.length - 1}
+                disabled={index === visibleItems.length - 1}
                 aria-label="Move down"
               >
                 ↓
@@ -109,7 +113,7 @@ export function QueuePanel({
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();
-                  onRemoveAt(index);
+                  onRemoveAt(actualIndex);
                 }}
                 aria-label="Remove"
               >
@@ -117,7 +121,8 @@ export function QueuePanel({
               </button>
             </div>
           </li>
-        ))}
+          );
+        })}
       </ul>
     </div>
   );

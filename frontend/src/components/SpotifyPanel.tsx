@@ -223,7 +223,7 @@ export default function SpotifyPanel({ backendUrl, onPlaybackStateChange, onStop
         await music.resume();
       }
     } else if (music.queue.items.length > 0) {
-      await music.playIndex(0);
+      await music.playIndex(music.queue.currentIndex >= 0 ? music.queue.currentIndex : 0);
     } else if (music.nowPlaying) {
       await music.resume();
     }

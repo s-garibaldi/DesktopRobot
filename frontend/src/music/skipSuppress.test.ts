@@ -19,7 +19,12 @@ describe('skipSuppress', () => {
   });
 
   it('clears suppression as soon as a different track becomes current', () => {
+    vi.useFakeTimers();
     setSuppressTrackEnded('spotify:track:old');
+
+    expect(isTrackEndedSuppressed('spotify:track:new')).toBe(true);
+
+    vi.advanceTimersByTime(1501);
 
     expect(isTrackEndedSuppressed('spotify:track:new')).toBe(false);
     expect(isTrackEndedSuppressed('spotify:track:new')).toBe(false);
