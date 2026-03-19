@@ -1,5 +1,12 @@
 import type { EmotionDrawFunction } from './types';
+import { smoothEase } from './types';
 import { getPupilFloat } from './neutral';
+
+// Smooth oscillation (match neutral/time/listening)
+const smoothPulse = (t: number, freq: number, min: number, max: number) => {
+  const s = Math.sin(t * freq);
+  return min + (max - min) * (s * 0.5 + 0.5);
+};
 
 const MOUTH_BASE_Y = 35;
 const MOUTH_HALF_WIDTH = 45;
@@ -21,11 +28,11 @@ export function drawSpeakingMouth(
   time: number,
   alpha: number
 ): void {
-  const secondaryGlow = 0.9 + Math.sin(time * 2.1) * 0.1;
+  const secondaryGlow = smoothPulse(time, 2.1, 0.9, 1);
 
   ctx.save();
   ctx.translate(0, MOUTH_BASE_Y);
-  ctx.shadowBlur = 32 + Math.sin(time * 2) * 10;
+  ctx.shadowBlur = 32 + (smoothPulse(time, 2, 0, 1) - 0.5) * 20;
   ctx.shadowColor = '#00FFFF';
   ctx.strokeStyle = '#00FFFF';
   ctx.lineWidth = MOUTH_BAR_WIDTH;
@@ -59,10 +66,12 @@ export function drawSpeakingMouth(
 
 // SPEAKING emotion - neon face with full-circle eyes and animated waveform mouth (sound/speech)
 export const drawSpeaking: EmotionDrawFunction = (ctx, time, breathingPhase, transitionProgress = 1, fromEmotion) => {
-  const breathingScale = 1 + Math.sin(breathingPhase) * 0.03;
-  const primaryGlow = 0.85 + Math.sin(time * 1.2) * 0.15;
-  const secondaryGlow = 0.9 + Math.sin(time * 2.1) * 0.1;
-  const tertiaryGlow = 0.95 + Math.sin(time * 3.3) * 0.05;
+  const breathEase = smoothEase(breathingPhase);
+  const breathingScale = 1 + (breathEase - 0.5) * 0.04;
+  const boxGlow = smoothEase(breathingPhase);
+  const primaryGlow = smoothPulse(time, 0.6, 0.9, 1);
+  const secondaryGlow = smoothPulse(time, 0.65, 0.9, 1);
+  const tertiaryGlow = smoothPulse(time, 0.7, 0.93, 1);
 
   const faceWidth = 225;
   const faceHeight = 150;
@@ -80,20 +89,47 @@ export const drawSpeaking: EmotionDrawFunction = (ctx, time, breathingPhase, tra
   ctx.save();
   ctx.scale(breathingScale, breathingScale);
 
-  // Rounded rectangular head outline (neon cyan)
-  ctx.shadowBlur = 30 + Math.sin(time * 1.5) * 10;
+  const boxPath = () => {
+    ctx.beginPath();
+    ctx.roundRect(-faceWidth / 2, -faceHeight / 2, faceWidth, faceHeight, cornerRadius);
+  };
+
+  // 1. Outer ambient glow (synced to breathing)
+  ctx.save();
+  ctx.shadowBlur = 48 + boxGlow * 14;
+  ctx.shadowColor = 'rgba(0, 255, 255, 0.25)';
+  ctx.strokeStyle = 'rgba(0, 255, 255, 0.15)';
+  ctx.lineWidth = 8;
+  ctx.globalAlpha = 0.58 + boxGlow * 0.12;
+  boxPath();
+  ctx.stroke();
+  ctx.restore();
+
+  // 2. Inner glow (subtle fill)
+  ctx.save();
+  ctx.globalAlpha = 0.025 + boxGlow * 0.025;
+  ctx.fillStyle = '#00FFFF';
+  boxPath();
+  ctx.fill();
+  ctx.restore();
+
+  // 3. Main head outline with gradient stroke (brighter at top)
+  const gradient = ctx.createLinearGradient(0, -faceHeight / 2, 0, faceHeight / 2);
+  gradient.addColorStop(0, 'rgba(150, 255, 255, 1)');
+  gradient.addColorStop(0.5, '#00FFFF');
+  gradient.addColorStop(1, 'rgba(0, 200, 255, 0.95)');
+  ctx.shadowBlur = 28 + boxGlow * 14;
   ctx.shadowColor = '#00FFFF';
-  ctx.strokeStyle = '#00FFFF';
+  ctx.strokeStyle = gradient;
   ctx.lineWidth = 6;
-  ctx.globalAlpha = primaryGlow;
-  ctx.beginPath();
-  ctx.roundRect(-faceWidth / 2, -faceHeight / 2, faceWidth, faceHeight, cornerRadius);
+  ctx.globalAlpha = (0.9 + boxGlow * 0.1) * primaryGlow;
+  boxPath();
   ctx.stroke();
 
   // Left eye: cyan ring, black pupil, cyan highlight (same dimensions as neutral)
   ctx.save();
   ctx.translate(-eyeSpacing, -10);
-  ctx.shadowBlur = 30 + Math.sin(time * 1.8) * 8;
+  ctx.shadowBlur = 30 + (smoothPulse(time, 1.8, 0, 1) - 0.5) * 16;
   ctx.shadowColor = '#00FFFF';
   ctx.strokeStyle = '#00FFFF';
   ctx.lineWidth = 5;
@@ -109,7 +145,7 @@ export const drawSpeaking: EmotionDrawFunction = (ctx, time, breathingPhase, tra
   ctx.arc(0 + fromNeutralPupilOffset.x, 0 + fromNeutralPupilOffset.y, pupilRadius, 0, Math.PI * 2);
   ctx.fill();
   ctx.fillStyle = '#00FFFF';
-  ctx.shadowBlur = 8 + Math.sin(time * 2.5) * 4;
+  ctx.shadowBlur = 8 + (smoothPulse(time, 2.5, 0, 1) - 0.5) * 8;
   ctx.shadowColor = '#00FFFF';
   ctx.globalAlpha = tertiaryGlow;
   ctx.beginPath();
@@ -120,7 +156,7 @@ export const drawSpeaking: EmotionDrawFunction = (ctx, time, breathingPhase, tra
   // Right eye
   ctx.save();
   ctx.translate(eyeSpacing, -10);
-  ctx.shadowBlur = 30 + Math.sin(time * 1.8) * 8;
+  ctx.shadowBlur = 30 + (smoothPulse(time, 1.8, 0, 1) - 0.5) * 16;
   ctx.shadowColor = '#00FFFF';
   ctx.strokeStyle = '#00FFFF';
   ctx.lineWidth = 5;
@@ -136,7 +172,7 @@ export const drawSpeaking: EmotionDrawFunction = (ctx, time, breathingPhase, tra
   ctx.arc(0 + fromNeutralPupilOffset.x, 0 + fromNeutralPupilOffset.y, pupilRadius, 0, Math.PI * 2);
   ctx.fill();
   ctx.fillStyle = '#00FFFF';
-  ctx.shadowBlur = 8 + Math.sin(time * 2.5) * 4;
+  ctx.shadowBlur = 8 + (smoothPulse(time, 2.5, 0, 1) - 0.5) * 8;
   ctx.shadowColor = '#00FFFF';
   ctx.globalAlpha = tertiaryGlow;
   ctx.beginPath();

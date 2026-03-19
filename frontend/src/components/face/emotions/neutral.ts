@@ -1,4 +1,4 @@
-import { EmotionDrawFunction, lerp } from './types';
+import { EmotionDrawFunction, lerp, smoothEase } from './types';
 
 /** Same pupil float as drawNeutral; used by other emotions when transitioning from neutral so pupils drift to center. */
 export function getPupilFloat(time: number): { x: number; y: number } {
@@ -13,12 +13,6 @@ export function getPupilFloat(time: number): { x: number; y: number } {
 const smoothPulse = (t: number, freq: number, min: number, max: number) => {
   const s = Math.sin(t * freq);
   return min + (max - min) * (s * 0.5 + 0.5);
-};
-
-// Extra-smooth easing for box: zero velocity at inhale/exhale peaks (reduces jerkiness)
-const smoothEase = (phase: number) => {
-  const n = Math.sin(phase) * 0.5 + 0.5; // 0 to 1 over half cycle
-  return n * n * (3 - 2 * n); // smoothstep: gentle at peaks
 };
 
 // NEUTRAL emotion - standard neon face with full circle eyes

@@ -1,4 +1,28 @@
 /* Outlining box: same size and style as neutral face (400×400 canvas) */
+.guitar-tabs-face-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+}
+
+.guitar-tabs-face--shell-less {
+  width: 100%;
+  height: 100%;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  padding: 0;
+}
+
+.guitar-tabs-face--shell-less .guitar-tabs-face-inner {
+  width: 400px;
+  height: 400px;
+}
+
 .guitar-tabs-face {
   display: flex;
   flex-direction: column;

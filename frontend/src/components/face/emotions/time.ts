@@ -1,6 +1,12 @@
 import type { EmotionDrawFunction } from './types';
 import { drawNeutral } from './neutral';
-import { lerp, easeInOut } from './types';
+import { lerp, easeInOut, smoothEase } from './types';
+
+// Smooth oscillation (match neutral face)
+const smoothPulse = (t: number, freq: number, min: number, max: number) => {
+  const s = Math.sin(t * freq);
+  return min + (max - min) * (s * 0.5 + 0.5);
+};
 
 // TIME emotion - shows the current local time (no face/background elements)
 export const drawTime: EmotionDrawFunction = (ctx, time, breathingPhase, transitionProgress = 1, fromEmotion) => {
@@ -72,52 +78,87 @@ export const drawTime: EmotionDrawFunction = (ctx, time, breathingPhase, transit
   // Draw time with same box as neutral face, time scaled to fit inside
   if (timeAlpha > 0.01) {
     const now = new Date();
-    const hours24 = now.getHours();
-    const hours12 = hours24 === 0 ? 12 : hours24 > 12 ? hours24 - 12 : hours24;
+    const hours = now.getHours().toString().padStart(2, '0');
     const minutes = now.getMinutes().toString().padStart(2, '0');
-    const ampm = hours24 < 12 ? 'AM' : 'PM';
+    const mainTime = `${hours}:${minutes}`;
+    const hoursStr = hours;
 
-    const mainTime = `${hours12}:${minutes}`;
-
-    // Box: same size and style as neutral face (225×150, corner 20, cyan stroke)
+    // Box: same size and style as neutral face (225×150, corner 20)
     const faceWidth = 225;
     const faceHeight = 150;
     const cornerRadius = 20;
-    const primaryGlow = 0.85 + Math.sin(time * 1.2) * 0.15;
+
+    // Breathing sync: all light pulsations use same phase for smooth, coherent motion (no flicker)
+    const breathEase = smoothEase(breathingPhase);
+    const breathingScale = 1 + (breathEase - 0.5) * 0.04;
+    const boxGlow = breathEase; // Single phase for all layers
+    const primaryGlow = 0.9 + (breathEase - 0.5) * 0.2; // In phase with breathing (0.8–1.0)
+
+    const boxPath = () => {
+      ctx.beginPath();
+      ctx.roundRect(-faceWidth / 2, -faceHeight / 2, faceWidth, faceHeight, cornerRadius);
+    };
 
     ctx.save();
     ctx.globalAlpha = timeAlpha;
+    ctx.scale(breathingScale, breathingScale);
 
-    ctx.shadowBlur = 30 + Math.sin(time * 1.5) * 10;
-    ctx.shadowColor = '#00FFFF';
-    ctx.strokeStyle = '#00FFFF';
-    ctx.lineWidth = 6;
-    ctx.globalAlpha = timeAlpha * primaryGlow; // same pulsing as neutral face box
-    ctx.beginPath();
-    ctx.roundRect(-faceWidth / 2, -faceHeight / 2, faceWidth, faceHeight, cornerRadius);
+    // 1. Outer ambient glow (synced to breathing)
+    ctx.save();
+    ctx.shadowBlur = 48 + boxGlow * 14;
+    ctx.shadowColor = 'rgba(0, 255, 255, 0.25)';
+    ctx.strokeStyle = 'rgba(0, 255, 255, 0.15)';
+    ctx.lineWidth = 8;
+    ctx.globalAlpha = timeAlpha * (0.58 + boxGlow * 0.12);
+    boxPath();
     ctx.stroke();
     ctx.restore();
 
-    // Measure time display at base font size to compute scale to fit inside box (including AM/PM)
+    // 2. Inner glow (subtle fill)
+    ctx.save();
+    ctx.globalAlpha = timeAlpha * (0.025 + boxGlow * 0.025);
+    ctx.fillStyle = '#00FFFF';
+    boxPath();
+    ctx.fill();
+    ctx.restore();
+
+    // 3. Main outline with gradient stroke (brighter at top, match neutral)
+    const gradient = ctx.createLinearGradient(0, -faceHeight / 2, 0, faceHeight / 2);
+    gradient.addColorStop(0, 'rgba(150, 255, 255, 1)');
+    gradient.addColorStop(0.5, '#00FFFF');
+    gradient.addColorStop(1, 'rgba(0, 200, 255, 0.95)');
+    ctx.shadowBlur = 28 + boxGlow * 14;
+    ctx.shadowColor = '#00FFFF';
+    ctx.strokeStyle = gradient;
+    ctx.lineWidth = 6;
+    ctx.globalAlpha = timeAlpha * (0.9 + boxGlow * 0.1) * primaryGlow;
+    boxPath();
+    ctx.stroke();
+    ctx.restore();
+
+    // Measure time display at base font size to compute scale to fit inside box
     const padding = 28;
     const innerWidth = faceWidth - padding * 2;
     const innerHeight = faceHeight - padding * 2;
 
     const baseFontMain = 80;
-    const baseFontAmpm = 24;
+    const fontFamily = 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace';
     ctx.save();
-    ctx.font = `600 ${baseFontMain}px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace`;
+    ctx.font = `600 ${baseFontMain}px ${fontFamily}`;
     const timeMetrics = ctx.measureText(mainTime);
     const mainWidth = timeMetrics.width;
     const mainHeight = (timeMetrics.actualBoundingBoxAscent || 0) + (timeMetrics.actualBoundingBoxDescent || baseFontMain * 0.4);
-    ctx.font = `600 ${baseFontAmpm}px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace`;
-    const ampmWidth = ctx.measureText(ampm).width;
+    const hoursWidth = ctx.measureText(hoursStr).width;
+    const colonWidth = ctx.measureText(':').width;
+    const minutesWidth = ctx.measureText(minutes).width;
     ctx.restore();
 
-    // Full content bounds: main time + gap + AM/PM (width includes AM/PM to the right)
-    const totalContentWidth = Math.max(mainWidth, mainWidth / 2 + 8 + ampmWidth);
-    const totalContentHeight = mainHeight + 10 + baseFontAmpm;
+    const totalContentWidth = mainWidth;
+    const totalContentHeight = mainHeight;
     const scale = Math.min(innerWidth / totalContentWidth, innerHeight / totalContentHeight, 1);
+
+    // Colon blink: smooth pulse every second (smoothPulse for phase continuity, no snap)
+    const colonAlpha = smoothPulse(time, Math.PI * 2, 0.25, 1);
 
     ctx.save();
     ctx.textAlign = 'left';
@@ -125,28 +166,38 @@ export const drawTime: EmotionDrawFunction = (ctx, time, breathingPhase, transit
     ctx.globalAlpha = timeAlpha;
     ctx.scale(scale, scale);
 
-    const scaledFontMain = baseFontMain;
-    const scaledFontAmpm = baseFontAmpm;
-    ctx.font = `600 ${scaledFontMain}px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace`;
-    const timeWidth = ctx.measureText(mainTime).width;
+    ctx.font = `600 ${baseFontMain}px ${fontFamily}`;
 
-    ctx.textAlign = 'center';
-    ctx.strokeStyle = 'rgba(0, 0, 0, 0.5)';
-    ctx.lineWidth = 2;
-    ctx.lineJoin = 'round';
-    ctx.strokeText(mainTime, 0, 0);
-    ctx.fillStyle = '#00FFFF';
-    ctx.fillText(mainTime, 0, 0);
+    // Center the full time string
+    const totalTimeWidth = hoursWidth + colonWidth + minutesWidth;
+    const startX = -totalTimeWidth / 2;
 
-    ctx.font = `600 ${scaledFontAmpm}px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace`;
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'bottom';
-    const timeBottom = (timeMetrics.actualBoundingBoxDescent || 40);
-    ctx.strokeStyle = 'rgba(0, 0, 0, 0.4)';
+    // Light text glow for depth (reduced for crisper look)
+    ctx.shadowBlur = 4;
+    ctx.shadowColor = 'rgba(0, 255, 255, 0.4)';
+
+    // Subtle outline for legibility
+    ctx.strokeStyle = 'rgba(0, 120, 180, 0.5)';
     ctx.lineWidth = 1;
-    ctx.strokeText(ampm, timeWidth / 2 + 8, timeBottom);
+    ctx.lineJoin = 'round';
+
+    // Draw hours
+    ctx.strokeText(hoursStr, startX, 0);
     ctx.fillStyle = '#00FFFF';
-    ctx.fillText(ampm, timeWidth / 2 + 8, timeBottom);
+    ctx.fillText(hoursStr, startX, 0);
+
+    // Draw colon with blink
+    ctx.save();
+    ctx.globalAlpha = ctx.globalAlpha * colonAlpha;
+    ctx.strokeText(':', startX + hoursWidth, 0);
+    ctx.fillText(':', startX + hoursWidth, 0);
+    ctx.restore();
+
+    // Draw minutes
+    ctx.strokeText(minutes, startX + hoursWidth + colonWidth, 0);
+    ctx.fillText(minutes, startX + hoursWidth + colonWidth, 0);
+
+    ctx.shadowBlur = 0;
 
     ctx.restore();
   }

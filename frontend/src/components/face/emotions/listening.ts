@@ -1,11 +1,21 @@
-import { EmotionDrawFunction, lerp } from './types';
+import { EmotionDrawFunction, lerp, smoothEase } from './types';
 import { getPupilFloat } from './neutral';
+
+// Smooth oscillation (match neutral/time face)
+const smoothPulse = (t: number, freq: number, min: number, max: number) => {
+  const s = Math.sin(t * freq);
+  return min + (max - min) * (s * 0.5 + 0.5);
+};
 
 // LISTENING emotion - neutral face with bigger, closer eyes and more dramatic pulsing
 export const drawListening: EmotionDrawFunction = (ctx, time, breathingPhase, transitionProgress = 1, fromEmotion) => {
-  // Enhanced breathing animation
-  const breathingScale = 1 + Math.sin(breathingPhase) * 0.03;
-  
+  // Breathing sync: smooth easing (match neutral face)
+  const breathEase = smoothEase(breathingPhase);
+  const breathingScale = 1 + (breathEase - 0.5) * 0.04;
+
+  // Box glow synced to breathing (match neutral/time)
+  const boxGlow = smoothEase(breathingPhase);
+
   // More dramatic multi-layered glow pulsing (brighter and more intense)
   // Interpolate from neutral to listening values during transition
   // For happy->listening, we go through neutral first
@@ -23,26 +33,26 @@ export const drawListening: EmotionDrawFunction = (ctx, time, breathingPhase, tr
     ? { x: (1 - transitionProgress) * getPupilFloat(time).x, y: (1 - transitionProgress) * getPupilFloat(time).y }
     : { x: 0, y: 0 };
   
-  const neutralPrimaryGlow = 0.85 + Math.sin(time * 1.2) * 0.15;
-  const happyPrimaryGlow = 0.85 + Math.sin(time * 1.2) * 0.15; // Happy uses same as neutral for glow
-  const listeningPrimaryGlow = 0.9 + Math.sin(time * 1.5) * 0.1;
-  const thinkingPrimaryGlow = 0.85 + Math.sin(time * 1.2) * 0.15; // Thinking uses same as neutral
+  const neutralPrimaryGlow = smoothPulse(time, 0.6, 0.9, 1);
+  const happyPrimaryGlow = smoothPulse(time, 0.6, 0.9, 1); // Happy uses same as neutral for glow
+  const listeningPrimaryGlow = smoothPulse(time, 0.7, 0.92, 1);
+  const thinkingPrimaryGlow = smoothPulse(time, 0.6, 0.9, 1); // Thinking uses same as neutral
   const primaryGlow = isHappyTransition
     ? lerp(happyPrimaryGlow, lerp(neutralPrimaryGlow, listeningPrimaryGlow, neutralToListeningPhase), happyToNeutralPhase)
     : (isThinkingTransition ? lerp(thinkingPrimaryGlow, listeningPrimaryGlow, transitionProgress) : (isNeutralTransition ? lerp(neutralPrimaryGlow, listeningPrimaryGlow, transitionProgress) : listeningPrimaryGlow));
   
-  const neutralSecondaryGlow = 0.9 + Math.sin(time * 2.1) * 0.1;
-  const happySecondaryGlow = 0.9 + Math.sin(time * 2.1) * 0.1; // Happy uses same as neutral
-  const thinkingSecondaryGlow = 0.9 + Math.sin(time * 2.1) * 0.1; // Thinking uses same as neutral
-  const listeningSecondaryGlow = 0.95 + Math.sin(time * 2.5) * 0.15;
+  const neutralSecondaryGlow = smoothPulse(time, 0.65, 0.9, 1);
+  const happySecondaryGlow = smoothPulse(time, 0.65, 0.9, 1); // Happy uses same as neutral
+  const thinkingSecondaryGlow = smoothPulse(time, 0.65, 0.9, 1); // Thinking uses same as neutral
+  const listeningSecondaryGlow = smoothPulse(time, 0.8, 0.92, 1);
   const secondaryGlow = isHappyTransition
     ? lerp(happySecondaryGlow, lerp(neutralSecondaryGlow, listeningSecondaryGlow, neutralToListeningPhase), happyToNeutralPhase)
     : (isThinkingTransition ? lerp(thinkingSecondaryGlow, listeningSecondaryGlow, transitionProgress) : (isNeutralTransition ? lerp(neutralSecondaryGlow, listeningSecondaryGlow, transitionProgress) : listeningSecondaryGlow));
   
-  const neutralTertiaryGlow = 0.95 + Math.sin(time * 3.3) * 0.05;
-  const happyTertiaryGlow = 0.95 + Math.sin(time * 3.3) * 0.05; // Happy uses same as neutral
-  const thinkingTertiaryGlow = 0.95 + Math.sin(time * 3.3) * 0.05; // Thinking uses same as neutral
-  const listeningTertiaryGlow = 0.98 + Math.sin(time * 4.0) * 0.12;
+  const neutralTertiaryGlow = smoothPulse(time, 0.7, 0.93, 1);
+  const happyTertiaryGlow = smoothPulse(time, 0.7, 0.93, 1); // Happy uses same as neutral
+  const thinkingTertiaryGlow = smoothPulse(time, 0.7, 0.93, 1); // Thinking uses same as neutral
+  const listeningTertiaryGlow = smoothPulse(time, 0.9, 0.95, 1);
   const tertiaryGlow = isHappyTransition
     ? lerp(happyTertiaryGlow, lerp(neutralTertiaryGlow, listeningTertiaryGlow, neutralToListeningPhase), happyToNeutralPhase)
     : (isThinkingTransition ? lerp(thinkingTertiaryGlow, listeningTertiaryGlow, transitionProgress) : (isNeutralTransition ? lerp(neutralTertiaryGlow, listeningTertiaryGlow, transitionProgress) : listeningTertiaryGlow));
@@ -54,33 +64,57 @@ export const drawListening: EmotionDrawFunction = (ctx, time, breathingPhase, tr
   const faceWidth = 225;
   const faceHeight = 150;
   const cornerRadius = 20;
-  
-  // Draw the rounded rectangular head outline with more dramatic pulsing
-  // Interpolate shadow blur and line width during transition
-  const neutralHeadShadowBlur = 30 + Math.sin(time * 1.5) * 10;
-  const happyHeadShadowBlur = 30 + Math.sin(time * 1.5) * 10; // Happy uses same as neutral
-  const thinkingHeadShadowBlur = 30 + Math.sin(time * 1.5) * 10; // Thinking uses same as neutral
-  const listeningHeadShadowBlur = 40 + Math.sin(time * 2.0) * 20;
-  const headShadowBlur = isHappyTransition
-    ? lerp(happyHeadShadowBlur, lerp(neutralHeadShadowBlur, listeningHeadShadowBlur, neutralToListeningPhase), happyToNeutralPhase)
-    : (isThinkingTransition ? lerp(thinkingHeadShadowBlur, listeningHeadShadowBlur, transitionProgress) : (isNeutralTransition ? lerp(neutralHeadShadowBlur, listeningHeadShadowBlur, transitionProgress) : listeningHeadShadowBlur));
-  
-  const neutralHeadLineWidth = 6;
-  const happyHeadLineWidth = 6; // Happy uses same as neutral
-  const thinkingHeadLineWidth = 6; // Thinking uses same as neutral
-  const listeningHeadLineWidth = 7;
-  const headLineWidth = isHappyTransition
-    ? lerp(happyHeadLineWidth, lerp(neutralHeadLineWidth, listeningHeadLineWidth, neutralToListeningPhase), happyToNeutralPhase)
-    : (isThinkingTransition ? lerp(thinkingHeadLineWidth, listeningHeadLineWidth, transitionProgress) : (isNeutralTransition ? lerp(neutralHeadLineWidth, listeningHeadLineWidth, transitionProgress) : listeningHeadLineWidth));
-  
-  ctx.shadowBlur = headShadowBlur;
+
+  const boxPath = () => {
+    ctx.beginPath();
+    ctx.roundRect(-faceWidth / 2, -faceHeight / 2, faceWidth, faceHeight, cornerRadius);
+  };
+
+  // Head intensity: 0 = neutral, 1 = listening (for interpolating box layers during transitions)
+  const headIntensity = isHappyTransition
+    ? (happyToNeutralPhase < 1 ? 0 : neutralToListeningPhase)
+    : (isThinkingTransition ? transitionProgress : (isNeutralTransition ? transitionProgress : 1));
+
+  // 1. Outer ambient glow (synced to breathing) - interpolate neutral <-> listening
+  const neutralLayer1Blur = 48 + boxGlow * 14;
+  const listeningLayer1Blur = 55 + boxGlow * 18;
+  const neutralLayer1Alpha = 0.58 + boxGlow * 0.12;
+  const listeningLayer1Alpha = 0.62 + boxGlow * 0.14;
+  ctx.save();
+  ctx.shadowBlur = lerp(neutralLayer1Blur, listeningLayer1Blur, headIntensity);
+  ctx.shadowColor = 'rgba(0, 255, 255, 0.25)';
+  ctx.strokeStyle = `rgba(0, 255, 255, ${lerp(0.15, 0.2, headIntensity)})`;
+  ctx.lineWidth = lerp(8, 9, headIntensity);
+  ctx.globalAlpha = lerp(neutralLayer1Alpha, listeningLayer1Alpha, headIntensity);
+  boxPath();
+  ctx.stroke();
+  ctx.restore();
+
+  // 2. Inner glow (subtle fill) - synced to breathing
+  const neutralLayer2Alpha = 0.025 + boxGlow * 0.025;
+  const listeningLayer2Alpha = 0.03 + boxGlow * 0.03;
+  ctx.save();
+  ctx.globalAlpha = lerp(neutralLayer2Alpha, listeningLayer2Alpha, headIntensity);
+  ctx.fillStyle = '#00FFFF';
+  boxPath();
+  ctx.fill();
+  ctx.restore();
+
+  // 3. Main head outline with gradient stroke (brighter at top) - synced to breathing
+  const gradient = ctx.createLinearGradient(0, -faceHeight / 2, 0, faceHeight / 2);
+  gradient.addColorStop(0, 'rgba(150, 255, 255, 1)');
+  gradient.addColorStop(0.5, '#00FFFF');
+  gradient.addColorStop(1, 'rgba(0, 200, 255, 0.95)');
+  const neutralLayer3Blur = 28 + boxGlow * 14;
+  const listeningLayer3Blur = 36 + boxGlow * 20;
+  const neutralLayer3Alpha = (0.9 + boxGlow * 0.1) * primaryGlow;
+  const listeningLayer3Alpha = (0.92 + boxGlow * 0.12) * primaryGlow;
+  ctx.shadowBlur = lerp(neutralLayer3Blur, listeningLayer3Blur, headIntensity);
   ctx.shadowColor = '#00FFFF';
-  ctx.strokeStyle = '#00FFFF';
-  ctx.lineWidth = headLineWidth;
-  ctx.globalAlpha = primaryGlow;
-  
-  ctx.beginPath();
-  ctx.roundRect(-faceWidth/2, -faceHeight/2, faceWidth, faceHeight, cornerRadius);
+  ctx.strokeStyle = gradient;
+  ctx.lineWidth = lerp(6, 7, headIntensity);
+  ctx.globalAlpha = lerp(neutralLayer3Alpha, listeningLayer3Alpha, headIntensity);
+  boxPath();
   ctx.stroke();
   
   // LISTENING: Eyes are bigger and closer together
@@ -132,10 +166,10 @@ export const drawListening: EmotionDrawFunction = (ctx, time, breathingPhase, tr
   ctx.translate(-eyeSpacing, -10); // Closer to center
   
   // Interpolate eye outline properties
-  const happyEyeShadowBlur = 30 + Math.sin(time * 1) * 8;
-  const neutralEyeShadowBlur = 30 + Math.sin(time * 1.8) * 8;
-  const thinkingEyeShadowBlur = 30 + Math.sin(time * 1.8) * 8; // Thinking uses same as neutral
-  const listeningEyeShadowBlur = 45 + Math.sin(time * 2.5) * 25;
+  const happyEyeShadowBlur = 30 + (smoothPulse(time, 1, 0, 1) - 0.5) * 16;
+  const neutralEyeShadowBlur = 30 + (smoothPulse(time, 1.8, 0, 1) - 0.5) * 16;
+  const thinkingEyeShadowBlur = 30 + (smoothPulse(time, 1.8, 0, 1) - 0.5) * 16;
+  const listeningEyeShadowBlur = 45 + (smoothPulse(time, 2.5, 0, 1) - 0.5) * 50;
   const eyeShadowBlur = isHappyTransition
     ? lerp(
         lerp(happyEyeShadowBlur, neutralEyeShadowBlur, happyToNeutralPhase),
@@ -220,8 +254,8 @@ export const drawListening: EmotionDrawFunction = (ctx, time, breathingPhase, tr
       ? lerp(neutralHighlightSize, lerp(neutralHighlightSize, listeningHighlightSize, neutralToListeningPhase), happyToNeutralPhase < 1 ? 0 : 1)
       : (isNeutralTransition ? lerp(neutralHighlightSize, listeningHighlightSize, transitionProgress) : listeningHighlightSize);
     
-    const neutralHighlightShadowBlur = 8 + Math.sin(time * 2.5) * 4;
-    const listeningHighlightShadowBlur = 12 + Math.sin(time * 3.5) * 8;
+    const neutralHighlightShadowBlur = 8 + (smoothPulse(time, 2.5, 0, 1) - 0.5) * 8;
+    const listeningHighlightShadowBlur = 12 + (smoothPulse(time, 3.5, 0, 1) - 0.5) * 16;
     const highlightShadowBlur = isHappyTransition
       ? lerp(neutralHighlightShadowBlur, lerp(neutralHighlightShadowBlur, listeningHighlightShadowBlur, neutralToListeningPhase), happyToNeutralPhase < 1 ? 0 : 1)
       : (isNeutralTransition ? lerp(neutralHighlightShadowBlur, listeningHighlightShadowBlur, transitionProgress) : listeningHighlightShadowBlur);
@@ -285,8 +319,8 @@ export const drawListening: EmotionDrawFunction = (ctx, time, breathingPhase, tr
       ? lerp(neutralHighlightSize, lerp(neutralHighlightSize, listeningHighlightSize, neutralToListeningPhase), happyToNeutralPhase < 1 ? 0 : 1)
       : (isNeutralTransition ? lerp(neutralHighlightSize, listeningHighlightSize, transitionProgress) : listeningHighlightSize);
     
-    const neutralHighlightShadowBlur = 8 + Math.sin(time * 2.5) * 4;
-    const listeningHighlightShadowBlur = 12 + Math.sin(time * 3.5) * 8;
+    const neutralHighlightShadowBlur = 8 + (smoothPulse(time, 2.5, 0, 1) - 0.5) * 8;
+    const listeningHighlightShadowBlur = 12 + (smoothPulse(time, 3.5, 0, 1) - 0.5) * 16;
     const highlightShadowBlur = isHappyTransition
       ? lerp(neutralHighlightShadowBlur, lerp(neutralHighlightShadowBlur, listeningHighlightShadowBlur, neutralToListeningPhase), happyToNeutralPhase < 1 ? 0 : 1)
       : (isNeutralTransition ? lerp(neutralHighlightShadowBlur, listeningHighlightShadowBlur, transitionProgress) : listeningHighlightShadowBlur);
@@ -323,9 +357,9 @@ export const drawListening: EmotionDrawFunction = (ctx, time, breathingPhase, tr
       ctx.save();
       ctx.translate(-eyeSpacing, -10);
       sparklePositions.forEach((pos, index) => {
-        const sparkleGlow = 0.6 + Math.sin(time * 3.5 + index * 0.8) * 0.4;
-        const sparkleSize = pos.size + Math.sin(time * 4.5 + index) * 0.8;
-        ctx.shadowBlur = 12 + Math.sin(time * 4 + index * 0.7) * 8;
+        const sparkleGlow = 0.6 + (smoothPulse(time + index * 0.2, 3.5, 0, 1) - 0.5) * 0.8;
+        const sparkleSize = pos.size + (smoothPulse(time + index * 0.15, 4.5, 0, 1) - 0.5) * 1.6;
+        ctx.shadowBlur = 12 + (smoothPulse(time + index * 0.1, 4, 0, 1) - 0.5) * 16;
         ctx.shadowColor = '#00FFFF';
         ctx.fillStyle = '#00FFFF';
         ctx.globalAlpha = sparkleGlow * secondaryGlow * happyElementsAlpha;
@@ -339,9 +373,9 @@ export const drawListening: EmotionDrawFunction = (ctx, time, breathingPhase, tr
       ctx.save();
       ctx.translate(eyeSpacing, -10);
       sparklePositions.forEach((pos, index) => {
-        const sparkleGlow = 0.6 + Math.sin(time * 3.5 + index * 0.8) * 0.4;
-        const sparkleSize = pos.size + Math.sin(time * 4.5 + index) * 0.8;
-        ctx.shadowBlur = 12 + Math.sin(time * 4 + index * 0.7) * 8;
+        const sparkleGlow = 0.6 + (smoothPulse(time + index * 0.2, 3.5, 0, 1) - 0.5) * 0.8;
+        const sparkleSize = pos.size + (smoothPulse(time + index * 0.15, 4.5, 0, 1) - 0.5) * 1.6;
+        ctx.shadowBlur = 12 + (smoothPulse(time + index * 0.1, 4, 0, 1) - 0.5) * 16;
         ctx.shadowColor = '#00FFFF';
         ctx.fillStyle = '#00FFFF';
         ctx.globalAlpha = sparkleGlow * secondaryGlow * happyElementsAlpha;
@@ -358,7 +392,7 @@ export const drawListening: EmotionDrawFunction = (ctx, time, breathingPhase, tr
       ctx.save();
       ctx.translate(0, lerp(-15, 0, happyToNeutralPhase)); // Mouth position moves up as it fades
       
-      ctx.shadowBlur = 30 + Math.sin(time * 1.8) * 8;
+      ctx.shadowBlur = 30 + (smoothPulse(time, 1.8, 0, 1) - 0.5) * 16;
       ctx.shadowColor = '#00FFFF';
       ctx.strokeStyle = '#00FFFF';
       ctx.lineWidth = lerp(7, 0, happyToNeutralPhase);
@@ -392,9 +426,9 @@ export const drawListening: EmotionDrawFunction = (ctx, time, breathingPhase, tr
       ctx.save();
       ctx.translate(-eyeSpacing, -10);
       dripPositions.forEach((pos, index) => {
-        const dripGlow = 0.5 + Math.sin(time * 2 + index * 0.5) * 0.3;
-        const dripSize = pos.size + Math.sin(time * 3 + index) * 0.5;
-        ctx.shadowBlur = 8 + Math.sin(time * 3 + index * 0.6) * 4;
+        const dripGlow = 0.5 + (smoothPulse(time + index * 0.1, 2, 0, 1) - 0.5) * 0.6;
+        const dripSize = pos.size + (smoothPulse(time + index * 0.15, 3, 0, 1) - 0.5) * 1;
+        ctx.shadowBlur = 8 + (smoothPulse(time + index * 0.12, 3, 0, 1) - 0.5) * 8;
         ctx.shadowColor = '#00FFFF';
         ctx.fillStyle = '#00FFFF';
         ctx.globalAlpha = dripGlow * secondaryGlow * 0.7 * thinkingElementsAlpha;
@@ -408,9 +442,9 @@ export const drawListening: EmotionDrawFunction = (ctx, time, breathingPhase, tr
       ctx.save();
       ctx.translate(eyeSpacing, -10);
       dripPositions.forEach((pos, index) => {
-        const dripGlow = 0.5 + Math.sin(time * 2 + index * 0.5) * 0.3;
-        const dripSize = pos.size + Math.sin(time * 3 + index) * 0.5;
-        ctx.shadowBlur = 8 + Math.sin(time * 3 + index * 0.6) * 4;
+        const dripGlow = 0.5 + (smoothPulse(time + index * 0.1, 2, 0, 1) - 0.5) * 0.6;
+        const dripSize = pos.size + (smoothPulse(time + index * 0.15, 3, 0, 1) - 0.5) * 1;
+        ctx.shadowBlur = 8 + (smoothPulse(time + index * 0.12, 3, 0, 1) - 0.5) * 8;
         ctx.shadowColor = '#00FFFF';
         ctx.fillStyle = '#00FFFF';
         ctx.globalAlpha = dripGlow * secondaryGlow * 0.7 * thinkingElementsAlpha;
@@ -444,7 +478,7 @@ export const drawListening: EmotionDrawFunction = (ctx, time, breathingPhase, tr
       dots.forEach((dot, index) => {
         ctx.save();
         ctx.translate(dot.x, -dot.offset);
-        ctx.shadowBlur = 10 + Math.sin(time * 2.5 + index) * 5;
+        ctx.shadowBlur = 10 + (smoothPulse(time + index * 0.2, 2.5, 0, 1) - 0.5) * 10;
         ctx.shadowColor = '#00FFFF';
         ctx.fillStyle = '#00FFFF';
         ctx.globalAlpha = baseAlpha;

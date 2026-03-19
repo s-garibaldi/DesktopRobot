@@ -1,7 +1,7 @@
 import React, { useRef, useEffect, useCallback } from 'react';
 import { Emotion } from '../../App';
 import { emotionDrawFunctions, easeInOut } from './emotions';
-import { lerp } from './emotions/types';
+import { lerp, smoothEase } from './emotions/types';
 import { drawSpeakingMouth } from './emotions/speaking';
 
 interface AnimatedFaceProps {
@@ -102,8 +102,8 @@ const AnimatedFace: React.FC<AnimatedFaceProps> = ({
       }
     }
     
-    // Breathing: slower for smoother outer box motion
-    state.breathingPhase += 0.015;
+    // Breathing: slower for more fluid, gradual motion
+    state.breathingPhase += 0.01;
     
     // Micro-movements (head tilt disabled for smoother outer box)
     state.microMovements.headTilt = 0;
@@ -145,7 +145,7 @@ const AnimatedFace: React.FC<AnimatedFaceProps> = ({
         if (neutralDraw) {
           neutralDraw(ctx, time, state.breathingPhase, easedProgress, 'happy');
         }
-        const breathingScale = 1 + Math.sin(state.breathingPhase) * 0.03;
+        const breathingScale = 1 + (smoothEase(state.breathingPhase) - 0.5) * 0.04;
         ctx.save();
         ctx.scale(breathingScale, breathingScale);
         drawSpeakingMouth(ctx, time, easedProgress);
@@ -167,7 +167,7 @@ const AnimatedFace: React.FC<AnimatedFaceProps> = ({
         if (fromDraw) {
           fromDraw(ctx, time, state.breathingPhase, 1 - easedProgress, 'thinking');
         }
-        const breathingScale = 1 + Math.sin(state.breathingPhase) * 0.03;
+        const breathingScale = 1 + (smoothEase(state.breathingPhase) - 0.5) * 0.04;
         ctx.save();
         ctx.scale(breathingScale, breathingScale);
         drawSpeakingMouth(ctx, time, easedProgress);
@@ -188,7 +188,7 @@ const AnimatedFace: React.FC<AnimatedFaceProps> = ({
       } else if (state.emotionTransition.fromEmotion === 'speaking' && state.emotionTransition.toEmotion === 'listening') {
         // Transition from speaking to listening: same as neutral→listening (eyes grow, move closer) + mouth fades out
         toDraw(ctx, time, state.breathingPhase, easedProgress, 'neutral');
-        const breathingScale = 1 + Math.sin(state.breathingPhase) * 0.03;
+        const breathingScale = 1 + (smoothEase(state.breathingPhase) - 0.5) * 0.04;
         ctx.save();
         ctx.scale(breathingScale, breathingScale);
         drawSpeakingMouth(ctx, time, 1 - easedProgress);
@@ -199,7 +199,7 @@ const AnimatedFace: React.FC<AnimatedFaceProps> = ({
         if (fromDraw) {
           fromDraw(ctx, time, state.breathingPhase, 1, 'neutral');
         }
-        const breathingScale = 1 + Math.sin(state.breathingPhase) * 0.03;
+        const breathingScale = 1 + (smoothEase(state.breathingPhase) - 0.5) * 0.04;
         ctx.save();
         ctx.scale(breathingScale, breathingScale);
         drawSpeakingMouth(ctx, time, 1 - easedProgress);
@@ -207,7 +207,7 @@ const AnimatedFace: React.FC<AnimatedFaceProps> = ({
       } else if (state.emotionTransition.fromEmotion === 'speaking' && state.emotionTransition.toEmotion === 'happy') {
         // Transition from speaking to happy: same as neutral→happy (eyes→crescent, smile in) + waveform mouth fades out
         toDraw(ctx, time, state.breathingPhase, easedProgress, 'neutral');
-        const breathingScale = 1 + Math.sin(state.breathingPhase) * 0.03;
+        const breathingScale = 1 + (smoothEase(state.breathingPhase) - 0.5) * 0.04;
         ctx.save();
         ctx.scale(breathingScale, breathingScale);
         drawSpeakingMouth(ctx, time, 1 - easedProgress);
@@ -226,7 +226,7 @@ const AnimatedFace: React.FC<AnimatedFaceProps> = ({
         if (fromDraw) {
           fromDraw(ctx, time, state.breathingPhase, 1 - easedProgress, 'neutral');
         }
-        const breathingScale = 1 + Math.sin(state.breathingPhase) * 0.03;
+        const breathingScale = 1 + (smoothEase(state.breathingPhase) - 0.5) * 0.04;
         ctx.save();
         ctx.scale(breathingScale, breathingScale);
         drawSpeakingMouth(ctx, time, easedProgress);

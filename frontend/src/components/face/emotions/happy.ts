@@ -1,10 +1,11 @@
-import { EmotionDrawFunction, lerp } from './types';
+import { EmotionDrawFunction, lerp, smoothEase } from './types';
 import { getPupilFloat } from './neutral';
 
 // HAPPY emotion - neon face with crescent eyes, sparkles, and smiling mouth
 export const drawHappy: EmotionDrawFunction = (ctx, time, breathingPhase, transitionProgress = 1, fromEmotion) => {
-  // Enhanced breathing animation
-  const breathingScale = 1 + Math.sin(breathingPhase) * 0.03;
+  // Enhanced breathing animation (smoothEase for fluid motion)
+  const breathEase = smoothEase(breathingPhase);
+  const breathingScale = 1 + (breathEase - 0.5) * 0.04;
   
   // Multi-layered glow pulsing
   const primaryGlow = 0.85 + Math.sin(time * 1.2) * 0.15;

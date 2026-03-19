@@ -18,3 +18,11 @@ export function lerp(start: number, end: number, t: number): number {
 export function easeInOut(t: number): number {
   return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
 }
+
+// Smootherstep: zero 1st, 2nd, 3rd derivative at 0 and 1 — eliminates jerk at turn-around
+export function smoothEase(phase: number): number {
+  const n = Math.sin(phase) * 0.5 + 0.5; // 0 to 1 over half cycle
+  const n2 = n * n;
+  const n3 = n2 * n;
+  return n3 * (n * (n * 6 - 15) + 10);
+}

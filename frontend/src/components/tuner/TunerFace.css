@@ -15,6 +15,39 @@
   flex-shrink: 0;
 }
 
+.tuner-face--shell-less {
+  width: 100%;
+  height: 100%;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.tuner-face--shell-less::before {
+  display: none;
+}
+
+.tuner-face-inner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 225px;
+  height: 150px;
+  position: relative;
+}
+
+/* Full box frame - ensures complete rounded-rect renders during transitions (shell-less only) */
+.tuner-face--transition .tuner-face-box-frame {
+  position: absolute;
+  inset: 0;
+  border: 6px solid #00FFFF;
+  border-radius: 20px;
+  box-shadow: 0 0 30px rgba(0, 255, 255, 0.7);
+  pointer-events: none;
+  z-index: 0;
+}
+
 .tuner-face::before {
   content: '';
   position: absolute;

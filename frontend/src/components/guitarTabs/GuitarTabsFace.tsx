@@ -239,9 +239,11 @@ export interface GuitarTabsFaceProps {
   input: string;
   /** For chords with multiple voicings: which voicing (0 = lowest, 1 = next up the neck, etc.) */
   voicingIndex?: number;
+  /** When false, omit outer shell (for transition overlay) */
+  showShell?: boolean;
 }
 
-export default function GuitarTabsFace({ input, voicingIndex = 0 }: GuitarTabsFaceProps) {
+export default function GuitarTabsFace({ input, voicingIndex = 0, showShell = true }: GuitarTabsFaceProps) {
   const result = useMemo(() => getChordOrScale(input), [input]);
   const chordVoicings = useMemo(() => (result?.type === 'chord' ? getChordVoicings(input) : []), [input, result?.type]);
   const scaleVoicings = useMemo(() => (result?.type === 'scale' ? getScaleVoicings(input) : []), [input, result?.type]);
@@ -260,8 +262,8 @@ export default function GuitarTabsFace({ input, voicingIndex = 0 }: GuitarTabsFa
       ? (chordShape?.name ?? result.shape.name ?? (input.trim() || '—'))
       : (scaleShape?.name ?? result.shape.name ?? '—')
     : null;
-  return (
-    <div className="guitar-tabs-face" data-library="chords-scales">
+  const inner = (
+    <div className="guitar-tabs-face-inner">
       <div className="guitar-tabs-display">
         <div className="guitar-tabs-inner-box" aria-hidden>
           {result ? (
@@ -284,6 +286,16 @@ export default function GuitarTabsFace({ input, voicingIndex = 0 }: GuitarTabsFa
           </p>
         </div>
       </div>
+    </div>
+  );
+
+  if (!showShell) {
+    return <div className="guitar-tabs-face guitar-tabs-face--shell-less guitar-tabs-face--transition">{inner}</div>;
+  }
+
+  return (
+    <div className="guitar-tabs-face" data-library="chords-scales">
+      {inner}
     </div>
   );
 }
