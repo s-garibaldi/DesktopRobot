@@ -458,6 +458,10 @@
   flex-shrink: 0;
 }
 
+.robot-container.backing-track-active .right-panel {
+  align-self: stretch;
+}
+
 .emotion-fullscreen-exit {
   position: absolute;
   top: 1rem;

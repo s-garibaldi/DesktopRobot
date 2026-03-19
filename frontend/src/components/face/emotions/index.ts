@@ -24,6 +24,7 @@ export const emotionDrawFunctions: Record<Emotion, EmotionDrawFunction> = {
   guitarTabs: drawGuitarTabs,
   spotify: drawSpotify,
   tuner: drawTuner,
+  backingTrack: drawNeutral,
 };
 
 // Export individual functions for direct use if needed
