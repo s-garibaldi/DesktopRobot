@@ -505,8 +505,8 @@ function App() {
     const tools = getSessionTools();
 
     // Reflect Push-to-Talk UI state by (de)activating server VAD on the
-    // backend. The Realtime SDK supports live session updates via the
-    // `session.update` event.
+    // backend. Include tools and instructions so the model retains access to
+    // Spotify queue, metronome, and other functions throughout the session.
     const turnDetection = isPTTActive
       ? null
       : {
@@ -521,6 +521,7 @@ function App() {
       type: 'session.update',
       session: {
         turn_detection: turnDetection,
+        tool_choice: 'auto',
         ...(instructions ? { instructions } : {}),
         ...(tools && tools.length > 0 ? { tools } : {}),
       },

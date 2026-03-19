@@ -18,6 +18,7 @@ export async function GET() {
 
     const sessionBody: Record<string, unknown> = {
       model: "gpt-4o-mini-realtime-preview",
+      tool_choice: "auto",
     };
     if (instructions) sessionBody.instructions = instructions;
     if (tools.length > 0) sessionBody.tools = tools;
