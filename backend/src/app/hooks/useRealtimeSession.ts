@@ -283,6 +283,10 @@ export function useRealtimeSession(callbacks: RealtimeSessionCallbacks = {}) {
     sessionRef.current?.transport.sendEvent(ev);
   }, []);
 
+  const updateSessionConfig = useCallback((config: Record<string, any>) => {
+    sessionRef.current?.transport.updateSessionConfig(config);
+  }, []);
+
   const mute = useCallback((m: boolean) => {
     sessionRef.current?.mute(m);
   }, []);
@@ -304,6 +308,7 @@ export function useRealtimeSession(callbacks: RealtimeSessionCallbacks = {}) {
     disconnect,
     sendUserText,
     sendEvent,
+    updateSessionConfig,
     mute,
     pushToTalkStart,
     pushToTalkStop,

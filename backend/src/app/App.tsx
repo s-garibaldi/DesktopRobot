@@ -263,12 +263,24 @@ function App() {
     }
   }, [isPTTActive]);
 
-  // Request music state from parent on mount (ensures spotify_queue_get works after HMR/reload)
+  // Request music state from parent on mount and when session connects (ensures spotify_queue_get works).
+  // Also log iframe status: tools (chord display, Spotify, metronome) only work when embedded.
   useEffect(() => {
-    if (window.parent && window.parent !== window) {
+    const inIframe = typeof window !== 'undefined' && window.parent && window.parent !== window;
+    if (inIframe) {
       window.parent.postMessage({ type: 'backend_request_music_state' }, '*');
+      console.log('[Backend] Running in iframe — chord display, Spotify, metronome tools will work.');
+    } else if (typeof window !== 'undefined') {
+      console.warn('[Backend] NOT in iframe — open the app via the frontend (Tauri), not directly at this URL. Tools will not work.');
     }
   }, []);
+
+  // Re-request music state when session connects so spotify_queue_get has fresh data.
+  useEffect(() => {
+    if (sessionStatus === 'CONNECTED' && window.parent && window.parent !== window) {
+      window.parent.postMessage({ type: 'backend_request_music_state' }, '*');
+    }
+  }, [sessionStatus]);
 
   // Listen for voice commands from Tauri frontend: "microphone off" / "microphone on"
   // Also listen for Spotify track events for queue controller
@@ -504,9 +516,6 @@ function App() {
     const instructions = getSessionInstructions();
     const tools = getSessionTools();
 
-    // Reflect Push-to-Talk UI state by (de)activating server VAD on the
-    // backend. Include tools and instructions so the model retains access to
-    // Spotify queue, metronome, and other functions throughout the session.
     const turnDetection = isPTTActive
       ? null
       : {
@@ -517,6 +526,9 @@ function App() {
           create_response: true,
         };
 
+    // Send session.update with tools, instructions, turn detection, and tool_choice.
+    // Critical: tools and instructions must be included so the model can use
+    // chord display, Spotify, metronome, and other functions.
     sendEvent({
       type: 'session.update',
       session: {

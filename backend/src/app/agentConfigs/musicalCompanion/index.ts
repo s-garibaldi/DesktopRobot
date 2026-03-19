@@ -23,6 +23,28 @@ const OPEN_FINGERINGS: Record<string, string> = {
   Fmaj7: '1-3-2-2-1-1', Gmaj7: '3-2-0-0-0-2',
 };
 
+// Passthrough tool for speech-optimized replies. When other tools return say_aloud,
+// the model may call this to speak that text. Prevents "Tool say_aloud not found" errors.
+const sayAloudTool = tool({
+  name: 'say_aloud',
+  description: 'Speak a brief, speech-optimized reply to the user. Use when you have a short phrase to say (e.g. from a tool\'s say_aloud field). Do not use for long explanations.',
+  parameters: {
+    type: 'object',
+    properties: {
+      text: {
+        type: 'string',
+        description: 'The brief text to speak aloud to the user.',
+      },
+    },
+    required: ['text'],
+    additionalProperties: false,
+  },
+  execute: async (input: any) => {
+    const { text } = input as { text: string };
+    return { success: true, said: text ?? '' };
+  },
+});
+
 // Guitar chord recognition tool — uses music knowledge for notes/theory; fingerings when available
 const recognizeChordTool = tool({
   name: 'recognize_guitar_chord',
@@ -628,11 +650,14 @@ const spotifyQueueAddTool = tool({
   },
 });
 
-/** Get music state; retries once after 300ms if empty (handles race with music_state_update after queue-add). */
+/** Get music state; retries up to twice if empty (handles race with music_state_update after queue-add). */
 async function getMusicStateWithRetry(): Promise<ReturnType<typeof getMusicState>> {
   const state = getMusicState();
   if (state.queue.length > 0 || state.nowPlaying) return state;
-  await new Promise((r) => setTimeout(r, 300));
+  await new Promise((r) => setTimeout(r, 400));
+  const retry1 = getMusicState();
+  if (retry1.queue.length > 0 || retry1.nowPlaying) return retry1;
+  await new Promise((r) => setTimeout(r, 500));
   return getMusicState();
 }
 
@@ -643,6 +668,11 @@ const spotifyQueueGetTool = tool({
     'Get the current Spotify queue. Use when the user asks what is in the queue, what song is next, what is coming up, list the queue, show me the queue, or similar questions about what songs are queued.',
   parameters: { type: 'object', properties: {}, required: [], additionalProperties: false },
   execute: async () => {
+    // Request fresh state from frontend before reading (ensures we have latest queue).
+    if (typeof window !== 'undefined' && window.parent && window.parent !== window) {
+      window.parent.postMessage({ type: 'backend_request_music_state' }, '*');
+      await new Promise((r) => setTimeout(r, 150));
+    }
     const { queue, nowPlaying, status } = await getMusicStateWithRetry();
     const isPlaying = status === 'playing';
     const list = queue.map((item, i) => ({
@@ -990,7 +1020,7 @@ When the user asks to open, show, or start the tuner, use display_tuner. If they
 - Be enthusiastic and encouraging. Use musical terminology when it helps, but keep the main reply concise.
 - Suggest creative ideas and next steps in a sentence or two; don't over-explain unless asked.
 `,
-  tools: [recognizeChordTool, suggestChordProgressionTool, songwritingSuggestionTool, musicTheoryTool, setMetronomeBpmTool, displayGuitarChordTool, displayTunerTool, playSpotifyTrackTool, spotifyQueueAddTool, spotifyQueueGetTool, spotifyQueuePlayTool, spotifyQueueRemoveTool, spotifyQueueReorderTool, spotifyQueueClearTool, listBackingTracksTool, playBackingTrackTool, webSearchTool, ...createMemoryTools('musicalCompanion')],
+  tools: [sayAloudTool, recognizeChordTool, suggestChordProgressionTool, songwritingSuggestionTool, musicTheoryTool, setMetronomeBpmTool, displayGuitarChordTool, displayTunerTool, playSpotifyTrackTool, spotifyQueueAddTool, spotifyQueueGetTool, spotifyQueuePlayTool, spotifyQueueRemoveTool, spotifyQueueReorderTool, spotifyQueueClearTool, listBackingTracksTool, playBackingTrackTool, webSearchTool, ...createMemoryTools('musicalCompanion')],
   handoffs: [],
   handoffDescription: 'Musical companion AI for guitar, songwriting, and music theory',
 });
