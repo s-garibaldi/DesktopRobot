@@ -41,7 +41,7 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
   const [iframeLoaded, setIframeLoaded] = useState(false);
   const [lastEmotionChange, setLastEmotionChange] = useState<number>(0);
   const [agentConfig] = useState('musicalCompanion'); // Musical Companion as the only agent
-  /** Only one of these can be active: opening phrase enters that mode; backing_track/metronome exit on "stop" or idle; backend_mic exits only on "microphone off". */
+  /** Only one of these can be active: opening phrase enters that mode; backing_track exits on "close"; metronome exits on "stop"; backend_mic exits only on "microphone off". */
   const [activeMode, setActiveMode] = useState<ActiveMode>(null);
   const activeModeRef = useRef<ActiveMode>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -910,13 +910,16 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
 
   /** Duration to show "thinking" while "generating" metronome sound/timing before switching to metronome face. */
   const METRONOME_PREPARE_MS = 600;
+  const [isBackingTrackActive, setIsBackingTrackActive] = useState(false);
+  const [isBackingTrackPaused, setIsBackingTrackPaused] = useState(false);
+  const isBackingTrackActiveRef = useRef(false);
   const backingTrackPausedRef = useRef(false);
   const backingTrackPausedMicIdleTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scheduleBackingTrackPausedMicIdleOffRef = useRef<() => void>(() => {});
 
   // Backing track flow:
-  // - Playing: backend mic OFF, no audio input. Voice "pause" → pause + mic ON; "stop/close" → shut down.
-  // - Paused: backend mic ON, user can converse with AI; mic does not turn off on its own. Voice "resume" → resume + mic OFF, no AI output; "stop/close" → shut down.
+  // - Playing: backend mic OFF, no audio input. Voice "pause" → pause + mic ON; "close" → shut down.
+  // - Paused: backend mic ON, user can converse with AI; mic does not turn off on its own. Voice "resume" → resume + mic OFF, no AI output; "close" → shut down.
   // - "microphone on" only turns mic on when paused; when playing, mic stays off.
 
   const handleMicCommand = useCallback((payload: { type: 'set_backend_mic_enabled'; enabled: boolean }) => {
@@ -1043,7 +1046,7 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
 
   const scheduleBackingTrackPausedMicIdleOff = useCallback(() => {
     clearBackingTrackPausedMicIdleTimer();
-    // Idle condition commented out for backing track — mic stays on until user says "microphone off" or "play"/"stop"
+    // Idle condition commented out for backing track — mic stays on until user says "microphone off" or "play"/"close"
     // backingTrackPausedMicIdleTimeoutRef.current = setTimeout(() => {
     //   backingTrackPausedMicIdleTimeoutRef.current = null;
     //   lastKnownMicEnabledRef.current = false;
@@ -1055,10 +1058,13 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
   scheduleBackingTrackPausedMicIdleOffRef.current = scheduleBackingTrackPausedMicIdleOff;
 
   const handleBackingTrackPaused = useCallback(() => {
+    setIsBackingTrackActive(true);
+    setIsBackingTrackPaused(true);
+    isBackingTrackActiveRef.current = true;
     backingTrackPausedRef.current = true;
     lastKnownMicEnabledRef.current = true;
     sendMessageToIframe({ type: 'set_backend_mic_enabled', enabled: true });
-    // Idle condition commented out: mic stays on until user says "microphone off" or "play"/"stop"
+    // Idle condition commented out: mic stays on until user says "microphone off" or "play"/"close"
     // scheduleBackingTrackPausedMicIdleOff();
     console.log('[BACKING TRACK] paused — mic on');
   }, []);
@@ -1125,22 +1131,28 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
   handleMetronomeCommandRef.current = handleMetronomeCommand;
 
   const handleBackingTrackCommand = useCallback(
-    (action: 'describe' | 'pause' | 'play' | 'save' | 'stop', description?: string) => {
+    (action: 'describe' | 'pause' | 'play' | 'save' | 'close', description?: string) => {
       const mode = activeModeRef.current;
-      if (mode === 'metronome' || mode === 'backend_mic') return;
+      const backingTrackOpen = isBackingTrackActiveRef.current || mode === 'backing_track';
+      if (mode === 'metronome') return;
       const h = backingTrackHandlersRef.current;
       if (!h) return;
-      // So the backend does not speak when user says play/pause/stop for the backing track
-      if (action === 'play' || action === 'pause' || action === 'stop') {
+      // So the backend does not speak when user says play/pause/close for the backing track
+      if (action === 'play' || action === 'pause' || action === 'close') {
         sendMessageToIframe({ type: 'backing_track_voice_handled' });
       }
-      if (mode === null) {
+      if (!backingTrackOpen && action === 'describe') {
         setActiveModeAndRef('backing_track');
         savedMicBeforeBackingTrackRef.current = lastKnownMicEnabledRef.current;
         lastKnownMicEnabledRef.current = false;
         sendMessageToIframe({ type: 'set_backend_mic_enabled', enabled: false });
       }
-      if (action === 'stop') {
+      if (!backingTrackOpen && action !== 'describe') return;
+      if (action === 'close') {
+        setIsBackingTrackActive(false);
+        setIsBackingTrackPaused(false);
+        isBackingTrackActiveRef.current = false;
+        backingTrackPausedRef.current = false;
         h.stop();
         setActiveModeAndRef(null);
         lastKnownMicEnabledRef.current = savedMicBeforeBackingTrackRef.current;
@@ -1155,6 +1167,10 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
           h.pause();
           break;
         case 'play':
+          setActiveModeAndRef('backing_track');
+          setIsBackingTrackPaused(false);
+          isBackingTrackActiveRef.current = true;
+          backingTrackPausedRef.current = false;
           h.resume();
           break;
         case 'save':
@@ -1225,7 +1241,8 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
     currentEmotion === 'spotify',
     currentEmotion === 'tuner',
     currentEmotion === 'metronome',
-    activeMode === 'backing_track',
+    isBackingTrackActive,
+    isBackingTrackPaused,
     currentEmotion === 'guitarTabs'
   );
 
@@ -1254,6 +1271,9 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
   }, [isConnected, iframeLoaded, setActiveModeAndRef]);
 
   const handleBackingTrackPlayingStart = useCallback(() => {
+    setIsBackingTrackActive(true);
+    setIsBackingTrackPaused(false);
+    isBackingTrackActiveRef.current = true;
     backingTrackPausedRef.current = false;
     clearBackingTrackPausedMicIdleTimer();
     setActiveModeAndRef('backing_track');
@@ -1264,7 +1284,10 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
   }, [setActiveModeAndRef, clearBackingTrackPausedMicIdleTimer]);
 
   const handleBackingTrackPlayingStop = useCallback(() => {
-    if (activeModeRef.current === 'backing_track') {
+    if (isBackingTrackActiveRef.current || activeModeRef.current === 'backing_track') {
+      setIsBackingTrackActive(false);
+      setIsBackingTrackPaused(false);
+      isBackingTrackActiveRef.current = false;
       backingTrackPausedRef.current = false;
       clearBackingTrackPausedMicIdleTimer();
       setActiveModeAndRef(null);
@@ -1277,7 +1300,7 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
   }, [setActiveModeAndRef, clearBackingTrackPausedMicIdleTimer]);
 
   // Idle timeout: switch to "time" display after 30s of no activity when NOT in metronome/backing_track.
-  // Metronome and backing track are NOT stopped by idle — they run until user says "stop" or "pause".
+  // Metronome and backing track are NOT stopped by idle — they run until user says "stop"/"pause" for metronome or "close"/"pause" for backing track.
   const IDLE_TIMEOUT_MS = 30000;
   useEffect(() => {
     if (!isConnected) return;
@@ -1289,7 +1312,7 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
       const mode = activeModeRef.current;
 
       if (timeSinceLastActivity >= IDLE_TIMEOUT_MS) {
-        // Do not stop metronome or backing track on idle — they run until user says "stop" or "pause"
+        // Do not stop metronome or backing track on idle — they run until user says "stop"/"pause" for metronome or "close"/"pause" for backing track
         if (mode === 'metronome' || mode === 'backing_track') {
           // Only switch to time display if desired; do not exit mode or restore mic
           if (currentEmotion !== 'time' && currentEmotion !== 'metronome' && currentEmotion !== 'guitarTabs' && currentEmotion !== 'spotify' && currentEmotion !== 'tuner' && !isTransitioning) {
@@ -1445,7 +1468,7 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
           <strong> &quot;apple&quot;</strong> (chime), then say BPM — or &quot;apple&quot; + number; <strong>&quot;stop&quot;</strong> (apple + carrot);
           <strong> &quot;carrot&quot;</strong> (chime), then say description — or &quot;carrot&quot; + description in one phrase;
           <strong> &quot;eggplant&quot;</strong> (chime), then say chord — or &quot;eggplant&quot; + chord; <strong>&quot;close display&quot;</strong> (back to neutral);
-          <strong> &quot;pause&quot;</strong> / <strong>&quot;play&quot;</strong> / <strong>&quot;save&quot;</strong> for carrot.
+          <strong> &quot;pause&quot;</strong> / <strong>&quot;play&quot;</strong> / <strong>&quot;save&quot;</strong> / <strong>&quot;close&quot;</strong> for carrot.
           When tuner is showing: <strong>&quot;stop&quot;</strong> / <strong>&quot;close&quot;</strong> / <strong>&quot;close tuner&quot;</strong> to return to neutral.
           When Spotify is showing: <strong>&quot;pause&quot;</strong> / <strong>&quot;play&quot;</strong> / <strong>&quot;stop&quot;</strong> / <strong>&quot;restart&quot;</strong> / <strong>&quot;skip song&quot;</strong> (or &quot;next&quot;); <strong>&quot;rewind X seconds&quot;</strong> / <strong>&quot;fast forward X seconds&quot;</strong>. Ask the AI to &quot;play Song A, Song B, and Song C&quot; for a queue.
         </p>

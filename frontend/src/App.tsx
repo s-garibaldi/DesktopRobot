@@ -31,15 +31,6 @@ function App() {
     playbackState: null,
     showStartPlaybackButton: false,
   });
-  const [tunerTransition, setTunerTransition] = useState<{
-    active: boolean;
-    fromEmotion: Emotion | null;
-    toEmotion: Emotion | null;
-  }>({
-    active: false,
-    fromEmotion: null,
-    toEmotion: null,
-  });
   const [chordDisplayTransition, setChordDisplayTransition] = useState<{
     active: boolean;
     fromEmotion: Emotion | null;
@@ -53,7 +44,6 @@ function App() {
   const [guitarTabsVoicingIndex, setGuitarTabsVoicingIndex] = useState(0);
   const previousEmotionRef = useRef<Emotion>(currentEmotion);
   const spotifyExitTimerRef = useRef<number | null>(null);
-  const tunerTransitionTimerRef = useRef<number | null>(null);
   const chordDisplayTransitionTimerRef = useRef<number | null>(null);
 
   const chordVoicings = getChordVoicings(guitarTabsInput);
@@ -73,11 +63,9 @@ function App() {
     const isSpotifyManagedTransition =
       (previousEmotion === 'spotify' && currentEmotion === 'neutral') ||
       (previousEmotion === 'thinking' && currentEmotion === 'spotify');
-    const isTunerManagedTransition =
-      ((previousEmotion === 'neutral' || previousEmotion === 'thinking' || previousEmotion === 'listening') && currentEmotion === 'tuner') ||
-      (previousEmotion === 'tuner' && currentEmotion === 'neutral');
     const isChordDisplayManagedTransition =
       (previousEmotion === 'neutral' && currentEmotion === 'guitarTabs') ||
+      (previousEmotion === 'thinking' && currentEmotion === 'guitarTabs') ||
       (previousEmotion === 'guitarTabs' && currentEmotion === 'neutral');
 
     if (isSpotifyManagedTransition) {
@@ -101,30 +89,6 @@ function App() {
         });
         spotifyExitTimerRef.current = null;
       }, 520);
-    } else if (isTunerManagedTransition) {
-      setTunerTransition({
-        active: true,
-        fromEmotion: previousEmotion,
-        toEmotion: currentEmotion,
-      });
-      if (tunerTransitionTimerRef.current) {
-        window.clearTimeout(tunerTransitionTimerRef.current);
-      }
-      tunerTransitionTimerRef.current = window.setTimeout(() => {
-        setTunerTransition({
-          active: false,
-          fromEmotion: null,
-          toEmotion: null,
-        });
-        tunerTransitionTimerRef.current = null;
-        if (previousEmotion === 'tuner') {
-          try {
-            (window as { Tuner?: { destroy: () => void } }).Tuner?.destroy();
-          } catch {
-            // Ignore destroy errors
-          }
-        }
-      }, 650);
     } else if (isChordDisplayManagedTransition) {
       setChordDisplayTransition({
         active: true,
@@ -158,19 +122,6 @@ function App() {
         spotifyExitTimerRef.current = null;
       }
     } else if (
-      tunerTransition.active &&
-      (currentEmotion !== tunerTransition.toEmotion || previousEmotion !== tunerTransition.fromEmotion)
-    ) {
-      setTunerTransition({
-        active: false,
-        fromEmotion: null,
-        toEmotion: null,
-      });
-      if (tunerTransitionTimerRef.current) {
-        window.clearTimeout(tunerTransitionTimerRef.current);
-        tunerTransitionTimerRef.current = null;
-      }
-    } else if (
       chordDisplayTransition.active &&
       (currentEmotion !== chordDisplayTransition.toEmotion || previousEmotion !== chordDisplayTransition.fromEmotion)
     ) {
@@ -192,9 +143,6 @@ function App() {
     spotifyExitTransition.active,
     spotifyExitTransition.fromEmotion,
     spotifyExitTransition.toEmotion,
-    tunerTransition.active,
-    tunerTransition.fromEmotion,
-    tunerTransition.toEmotion,
     chordDisplayTransition.active,
     chordDisplayTransition.fromEmotion,
     chordDisplayTransition.toEmotion,
@@ -205,9 +153,6 @@ function App() {
       if (spotifyExitTimerRef.current) {
         window.clearTimeout(spotifyExitTimerRef.current);
       }
-      if (tunerTransitionTimerRef.current) {
-        window.clearTimeout(tunerTransitionTimerRef.current);
-      }
       if (chordDisplayTransitionTimerRef.current) {
         window.clearTimeout(chordDisplayTransitionTimerRef.current);
       }
@@ -215,11 +160,8 @@ function App() {
   }, []);
 
   // Destroy tuner when switching away to prevent it from updating detached DOM (crashes)
-  // Exception: tuner→neutral uses a transition overlay; destroy happens when transition ends
   const handleEmotionChange = useCallback((emotion: Emotion) => {
-    const leavingTuner = currentEmotion === 'tuner' && emotion !== 'tuner';
-    const isTunerToNeutralTransition = leavingTuner && emotion === 'neutral';
-    if (leavingTuner && !isTunerToNeutralTransition) {
+    if (currentEmotion === 'tuner' && emotion !== 'tuner') {
       try {
         (window as { Tuner?: { destroy: () => void } }).Tuner?.destroy();
       } catch {
@@ -233,20 +175,11 @@ function App() {
     if (emotion !== 'spotify' && hasActiveTrack) {
       setSpotifyUserStopped(true);
     }
-    // Set tuner transition synchronously so overlay shows on first render (not after useEffect)
-    const isToTuner = emotion === 'tuner' && (currentEmotion === 'neutral' || currentEmotion === 'thinking' || currentEmotion === 'listening');
-    const isTunerToNeutral = currentEmotion === 'tuner' && emotion === 'neutral';
-    if (isToTuner || isTunerToNeutral) {
-      setTunerTransition({
-        active: true,
-        fromEmotion: currentEmotion,
-        toEmotion: emotion,
-      });
-    }
-    // Set chord display transition (neutral↔chord display, same pattern as tuner)
+    // Set chord display transition (neutral↔chord display, thinking↔chord)
     const isChordDisplayTransition =
       (currentEmotion === 'guitarTabs' && emotion === 'neutral') ||
-      (currentEmotion === 'neutral' && emotion === 'guitarTabs');
+      (currentEmotion === 'neutral' && emotion === 'guitarTabs') ||
+      (currentEmotion === 'thinking' && emotion === 'guitarTabs');
     if (isChordDisplayTransition) {
       setChordDisplayTransition({
         active: true,
@@ -370,43 +303,29 @@ function App() {
       }
     }
 
-    if (tunerTransition.active) {
-      const { fromEmotion, toEmotion } = tunerTransition;
-
-      if ((fromEmotion === 'neutral' || fromEmotion === 'thinking' || fromEmotion === 'listening') && toEmotion === 'tuner') {
-        const exitClass = fromEmotion === 'thinking' ? 'face-layer-thinking-exit' : fromEmotion === 'listening' ? 'face-layer-listening-exit' : 'face-layer-neutral-exit';
-        return (
-          <div className="face-transition-shell face-transition-shell--tuner-enter">
-            <div className={`face-layer ${exitClass}`}>
-              <AnimatedFace emotion={fromEmotion} showFrame={false} />
-            </div>
-            <div className="face-layer face-layer-tuner-enter">
-              <TunerFace showShell={false} />
-            </div>
-          </div>
-        );
-      }
-
-      if (fromEmotion === 'tuner' && toEmotion === 'neutral') {
-        return (
-          <div className="face-transition-shell">
-            <div className="face-layer face-layer-neutral-enter face-layer-neutral-enter-from-tuner">
-              <AnimatedFace emotion="neutral" showFrame={false} />
-            </div>
-            <div className="face-layer face-layer-tuner-exit">
-              <TunerFace showShell={false} />
-            </div>
-          </div>
-        );
-      }
-    }
-
     if (chordDisplayTransition.active) {
       const { fromEmotion, toEmotion } = chordDisplayTransition;
 
+      if (fromEmotion === 'thinking' && toEmotion === 'guitarTabs') {
+        return (
+          <div key="thinking-to-chord" className="face-transition-shell face-transition-shell--chord-enter">
+            <div className="face-layer face-layer-chord-display-enter face-layer-chord-display-enter--from-thinking">
+              <GuitarTabsFace
+                input={guitarTabsInput}
+                voicingIndex={guitarTabsVoicingIndex}
+                showShell={false}
+              />
+            </div>
+            <div className="face-layer face-layer-thinking-exit">
+              <AnimatedFace emotion="thinking" showFrame={false} />
+            </div>
+          </div>
+        );
+      }
+
       if (fromEmotion === 'neutral' && toEmotion === 'guitarTabs') {
         return (
-          <div className="face-transition-shell face-transition-shell--chord-enter">
+          <div key="neutral-to-chord" className="face-transition-shell face-transition-shell--chord-enter">
             <div className="face-layer face-layer-chord-display-enter">
               <GuitarTabsFace
                 input={guitarTabsInput}
@@ -423,7 +342,7 @@ function App() {
 
       if (fromEmotion === 'guitarTabs' && toEmotion === 'neutral') {
         return (
-          <div className="face-transition-shell">
+          <div key="chord-to-neutral" className="face-transition-shell">
             <div className="face-layer face-layer-neutral-enter face-layer-neutral-enter-from-chord">
               <AnimatedFace emotion="neutral" showFrame={false} />
             </div>
@@ -459,8 +378,8 @@ function App() {
         <div className={`robot-container${currentEmotion === 'guitarTabs' ? ' guitar-tabs-active' : ''}${currentEmotion === 'spotify' ? ' spotify-active' : ''}${currentEmotion === 'tuner' ? ' tuner-active' : ''}`}>
           <div className="left-panel">
             <div className="animated-face-wrapper">
-              <div className={`face-stage${(spotifyExitTransition.active || tunerTransition.active || chordDisplayTransition.active) ? ' face-stage-transition' : ''}`}>
-                {(spotifyExitTransition.active || tunerTransition.active || chordDisplayTransition.active) ? (
+              <div className={`face-stage${(spotifyExitTransition.active || chordDisplayTransition.active) ? ' face-stage-transition' : ''}`}>
+                {(spotifyExitTransition.active || chordDisplayTransition.active) ? (
                   renderTransitionFace()
                 ) : (
                   <div className="face-layer face-layer-current">

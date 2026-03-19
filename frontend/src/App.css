@@ -189,43 +189,40 @@
   box-shadow: none;
 }
 
-/* Face→tuner: outer box uses same animation as tuner - perfectly in sync */
-.face-transition-shell--tuner-enter {
-  animation: tuner-phase2-fade-in 0.51s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.105s both;
-}
-
 .face-layer-neutral-enter {
   animation: neutral-face-zoom-in 0.52s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
-/* Tuner→neutral: neutral enter uses same smooth staggered animation as tuner enter */
-/* Tuner→neutral: Phase 2 - neutral zooms in from dot (like time→neutral) */
-.face-layer-neutral-enter-from-tuner {
-  animation: tuner-phase2-neutral-zoom-in 0.51s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.105s both;
-  transform-origin: center center;
-  will-change: transform, opacity;
-}
-
 /* Chord display→neutral: chord zooms out first, then neutral zooms in (clear stagger) */
 .face-layer-neutral-enter-from-chord {
-  animation: tuner-phase2-neutral-zoom-in 0.51s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.35s both;
+  animation-name: tuner-phase2-neutral-zoom-in;
+  animation-duration: 0.51s;
+  animation-delay: 0.35s;
+  animation-timing-function: cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  animation-fill-mode: both;
   transform-origin: center center;
   will-change: transform, opacity;
 }
 
-/* To-tuner: Phase 1 - face zooms out to point (like neutral→time) */
+/* To-tuner / thinking→chord: Phase 1 - face zooms out to point (like neutral→time) */
 .face-layer-thinking-exit,
 .face-layer-neutral-exit,
 .face-layer-listening-exit {
   pointer-events: none;
-  animation: tuner-phase1-face-collapse 0.105s cubic-bezier(0.25, 0.46, 0.45, 0.94) both;
+  animation-name: tuner-phase1-face-collapse;
+  animation-duration: 0.105s;
+  animation-timing-function: cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  animation-fill-mode: both;
   transform-origin: center center;
   will-change: transform, opacity;
 }
 
 /* Neutral→chord: slower zoom out */
 .face-layer-neutral-exit--to-chord {
-  animation: tuner-phase1-face-collapse 0.25s cubic-bezier(0.25, 0.46, 0.45, 0.94) both;
+  animation-name: tuner-phase1-face-collapse;
+  animation-duration: 0.25s;
+  animation-timing-function: cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  animation-fill-mode: both;
 }
 
 .face-layer-spotify-exit,
@@ -249,21 +246,6 @@
   animation: spotify-part-collapse 0.52s cubic-bezier(0.4, 0, 0.2, 1) both;
 }
 
-.face-layer-tuner-exit,
-.face-layer-tuner-enter {
-  width: 100%;
-  height: 100%;
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.face-layer-tuner-exit {
-  pointer-events: none;
-}
-
 .face-layer-chord-display-exit,
 .face-layer-chord-display-enter {
   width: 100%;
@@ -281,35 +263,39 @@
 
 /* Chord display→neutral: Phase 1 - chord display zooms out to dot (slower than tuner) */
 .face-layer-chord-display-exit .guitar-tabs-face {
-  animation: tuner-phase1-face-collapse 0.25s cubic-bezier(0.25, 0.46, 0.45, 0.94) both;
+  animation-name: tuner-phase1-face-collapse;
+  animation-duration: 0.25s;
+  animation-timing-function: cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  animation-fill-mode: both;
   transform-origin: center center;
   will-change: transform, opacity;
 }
 
 /* Neutral→chord display: Phase 2 - chord zooms in from dot (starts after neutral collapse) */
 .face-layer-chord-display-enter .guitar-tabs-face {
-  animation: tuner-phase2-neutral-zoom-in 0.51s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.35s both;
+  animation-name: tuner-phase2-neutral-zoom-in;
+  animation-duration: 0.51s;
+  animation-delay: 0.35s;
+  animation-timing-function: cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  animation-fill-mode: both;
   transform-origin: center center;
   will-change: transform, opacity;
 }
 
-/* Neutral→chord: outer edge black during zoom-in */
-.face-layer-chord-display-enter .guitar-tabs-inner-box {
+/* Thinking→chord: chord fades in at full size (like time in neutral→time) */
+.face-layer-chord-display-enter--from-thinking .guitar-tabs-face {
+  animation-name: tuner-phase2-fade-in;
+  animation-duration: 0.51s;
+  animation-delay: 0.105s;
+  animation-timing-function: cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  animation-fill-mode: both;
+  will-change: opacity;
+}
+
+/* Neutral→chord: outer edge black during zoom-in (not for thinking→chord) */
+.face-layer-chord-display-enter:not(.face-layer-chord-display-enter--from-thinking) .guitar-tabs-inner-box {
   border-color: black;
   box-shadow: none;
-}
-
-/* Tuner→neutral: Phase 1 - tuner fades out in first 15% (like time→neutral) */
-.face-layer-tuner-exit .tuner-face-inner {
-  animation: tuner-phase1-fade-out 0.105s cubic-bezier(0.25, 0.46, 0.45, 0.94) both;
-  will-change: opacity;
-}
-
-/* Face→tuner: Phase 2 - tuner fades in at full size, no scale (like time) */
-/* Box frame (tuner-face-box-frame) provides complete rounded-rect; inner fades in */
-.face-layer-tuner-enter .tuner-face-inner {
-  animation: tuner-phase2-fade-in 0.51s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.105s both;
-  will-change: opacity;
 }
 
 @keyframes neutral-face-zoom-in {

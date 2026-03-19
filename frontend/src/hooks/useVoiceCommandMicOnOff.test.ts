@@ -5,6 +5,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import {
+  isCloseBackingTrackCommand,
   isCloseDisplayCommand,
   isCloseTunerCommand,
   isSpotifyPlayOrResumeCommand,
@@ -59,6 +60,21 @@ describe('isCloseDisplayCommand', () => {
   it('rejects unrelated phrases', () => {
     expect(isCloseDisplayCommand('stop')).toBe(false);
     expect(isCloseDisplayCommand('eggplant')).toBe(false);
+  });
+});
+
+describe('isCloseBackingTrackCommand', () => {
+  it('matches explicit close phrases for backing track', () => {
+    expect(isCloseBackingTrackCommand('close')).toBe(true);
+    expect(isCloseBackingTrackCommand('close backing track')).toBe(true);
+    expect(isCloseBackingTrackCommand('close the backing track')).toBe(true);
+    expect(isCloseBackingTrackCommand('close track')).toBe(true);
+    expect(isCloseBackingTrackCommand('close carrot')).toBe(true);
+  });
+
+  it('rejects stop so backing track does not compete with generic stop handlers', () => {
+    expect(isCloseBackingTrackCommand('stop')).toBe(false);
+    expect(isCloseBackingTrackCommand('stop backing track')).toBe(false);
   });
 });
 
