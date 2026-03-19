@@ -195,19 +195,19 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
       return;
     }
     // Spotify face stays until user switches; ignore backend-driven emotion changes while on spotify
-    if (currentEmotion === 'spotify') {
+    if (currentEmotion === 'spotify' && emotion !== 'thinking' && emotion !== 'listening' && emotion !== 'speaking') {
       return;
     }
     // Tuner stays until user switches; ignore backend-driven emotion changes while on tuner
-    if (currentEmotion === 'tuner') {
+    if (currentEmotion === 'tuner' && emotion !== 'thinking' && emotion !== 'listening' && emotion !== 'speaking') {
       return;
     }
     // Metronome stays on until user says "stop" or "pause"; ignore backend-driven emotion changes while on metronome
-    if (currentEmotion === 'metronome') {
+    if (currentEmotion === 'metronome' && emotion !== 'thinking' && emotion !== 'listening' && emotion !== 'speaking') {
       return;
     }
-    // Backing track face stays on until the track is closed; ignore backend-driven emotion changes while active
-    if (currentEmotion === 'backingTrack') {
+    // Backing track face stays on until the track is closed, but allow transient listening/speaking states.
+    if (currentEmotion === 'backingTrack' && emotion !== 'listening' && emotion !== 'speaking') {
       return;
     }
 
@@ -494,10 +494,14 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
               isCallingToolRef.current = false;
               setIsCallingTool(false);
               lastActivityTimeRef.current = Date.now();
-              // After tool call ends, go to neutral unless AI starts speaking, metronome is running, or we just showed guitar tab
+              // After tool call ends, restore the active face unless AI starts speaking.
               const justShowedGuitarTab = Date.now() - lastGuitarTabDisplayFromBackendTimeRef.current < 3000;
               if (!isSpeakingRef.current && !isListeningRef.current && activeModeRef.current !== 'metronome' && !justShowedGuitarTab) {
-                handleEmotionChange('neutral', `backend_tool_end:${log.payload.eventType || log.payload.eventName}`, true);
+                if (isBackingTrackActiveRef.current) {
+                  handleEmotionChange('backingTrack', `backend_tool_end:${log.payload.eventType || log.payload.eventName}`, true);
+                } else {
+                  handleEmotionChange('neutral', `backend_tool_end:${log.payload.eventType || log.payload.eventName}`, true);
+                }
               }
               return;
             }
@@ -569,10 +573,14 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
               // if (activeModeRef.current === 'backing_track' && backingTrackPausedRef.current) {
               //   scheduleBackingTrackPausedMicIdleOffRef.current?.();
               // }
-              // Audio playback finished → neutral, but not when metronome is running or we just showed guitar tab
+              // Audio playback finished → restore active face, but not when metronome is running or we just showed guitar tab
               const justShowedGuitarTabOnSpeakingEnd = Date.now() - lastGuitarTabDisplayFromBackendTimeRef.current < 3000;
               if (!isListeningRef.current && !isCallingToolRef.current && activeModeRef.current !== 'metronome' && !justShowedGuitarTabOnSpeakingEnd) {
-                handleEmotionChange('neutral', 'ai_speaking_end', true);
+                if (isBackingTrackActiveRef.current) {
+                  handleEmotionChange('backingTrack', 'ai_speaking_end', true);
+                } else {
+                  handleEmotionChange('neutral', 'ai_speaking_end', true);
+                }
               }
               break;
               
@@ -594,10 +602,10 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
                 console.log('[RealtimeBridge] ignoring backend_auto_mic_off while metronome is paused');
                 break;
               }
-              // Backend detected 5s of no audio input — play chime and turn off mic (same as "microphone off" voice command)
+              // Backend detected 6s of idle after AI output — play chime and turn off mic (same as "microphone off" voice command)
               playChimeDown();
               handleMicCommandRef.current?.({ type: 'set_backend_mic_enabled', enabled: false });
-              console.log('[RealtimeBridge] backend_auto_mic_off: mic turned off due to 5s idle');
+              console.log('[RealtimeBridge] backend_auto_mic_off: mic turned off due to 6s idle');
               break;
 
             case 'spotify_playback_state':

@@ -150,6 +150,7 @@ function App() {
   }, [sdkAudioElement]);
 
   const idleTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const MIC_IDLE_AUTO_OFF_MS = 6000;
 
   const clearIdleTimer = React.useCallback(() => {
     if (idleTimeoutRef.current) {
@@ -157,6 +158,23 @@ function App() {
       idleTimeoutRef.current = null;
     }
   }, []);
+
+  // Voice command from Tauri frontend: "microphone off" / "hey bot" to disable/enable backend mic input
+  const [backendMicEnabledByVoice, setBackendMicEnabledByVoice] = useState<boolean>(true);
+
+  const scheduleIdleAutoOff = React.useCallback(() => {
+    clearIdleTimer();
+    if (!backendMicEnabledByVoice) return;
+    idleTimeoutRef.current = setTimeout(() => {
+      idleTimeoutRef.current = null;
+      if (!backendMicEnabledByVoice) return;
+      if (window.parent && window.parent !== window) {
+        window.parent.postMessage({ type: 'backend_auto_mic_off' }, '*');
+      }
+      setBackendMicEnabledByVoice(false);
+      console.log(`[Backend] auto mic-off after ${MIC_IDLE_AUTO_OFF_MS}ms idle following AI output`);
+    }, MIC_IDLE_AUTO_OFF_MS);
+  }, [backendMicEnabledByVoice, clearIdleTimer]);
 
   const {
     connect,
@@ -171,8 +189,8 @@ function App() {
       handoffTriggeredRef.current = true;
       setSelectedAgentName(agentName);
     },
-    // Idle-time auto mic-off: after AI finishes speaking, wait MIC_IDLE_AUTO_OFF_MS then send backend_auto_mic_off to frontend.
-    // onAIOutputComplete: scheduleIdleAutoOff,
+    onUserInputTranscription: clearIdleTimer,
+    onAIOutputComplete: scheduleIdleAutoOff,
   });
 
   const [sessionStatus, setSessionStatus] =
@@ -190,8 +208,6 @@ function App() {
       return stored ? stored === 'true' : true;
     },
   );
-  // Voice command from Tauri frontend: "microphone off" / "hey bot" to disable/enable backend mic input
-  const [backendMicEnabledByVoice, setBackendMicEnabledByVoice] = useState<boolean>(true);
 
   // Initialize the recording hook.
   const { startRecording, stopRecording, downloadRecording } =

@@ -45,6 +45,7 @@ function App() {
   const [guitarTabsInput, setGuitarTabsInput] = useState('');
   const [guitarTabsVoicingIndex, setGuitarTabsVoicingIndex] = useState(0);
   const previousEmotionRef = useRef<Emotion>(currentEmotion);
+  const previousBackingTrackActiveRef = useRef(backingTrackState.active);
   const spotifyExitTimerRef = useRef<number | null>(null);
   const chordDisplayTransitionTimerRef = useRef<number | null>(null);
 
@@ -207,11 +208,13 @@ function App() {
   }, [spotifyPlaybackState?.trackName ?? null, spotifyPlaybackState?.duration ?? 0, currentEmotion, spotifyUserStopped, handleEmotionChange]);
 
   useEffect(() => {
-    if (backingTrackState.active) {
+    const wasActive = previousBackingTrackActiveRef.current;
+    if (backingTrackState.active && !wasActive) {
       handleEmotionChange('backingTrack');
-    } else if (currentEmotion === 'backingTrack') {
+    } else if (!backingTrackState.active && currentEmotion === 'backingTrack') {
       handleEmotionChange('neutral');
     }
+    previousBackingTrackActiveRef.current = backingTrackState.active;
   }, [backingTrackState.active, currentEmotion, handleEmotionChange]);
 
   const handleGuitarTabDisplayCommand = (action: 'show' | 'close', description?: string) => {
