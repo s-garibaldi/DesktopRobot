@@ -53,13 +53,13 @@ const METRONOME_START_COOLDOWN_MS = 6000;
 /** Ignore "close display" for this long after chord was shown from backend (avoids agent saying "say close display to go back" triggering close). */
 const GUITAR_TAB_CLOSE_COOLDOWN_MS = 6000;
 const PHRASE_OFF = 'microphone off';
-const PHRASE_ON = 'microphone on';
+const PHRASE_ON = 'hey robot';
 const PHRASE_BACKING_TRACK = 'carrot';
 const PHRASE_DISPLAY = 'eggplant';
 const PHRASE_CLOSE_DISPLAY = 'close display';
 const PHRASE_METRONOME = 'apple';
 
-/** Play a short ascending chime (C5 → E5) to acknowledge e.g. "carrot", "apple", "microphone on". */
+/** Play a short ascending chime (C5 → E5) to acknowledge e.g. "carrot", "apple", "hey robot". */
 function playChime(): void {
   if (typeof window === 'undefined') return;
   try {
@@ -300,7 +300,7 @@ export function isCloseTunerCommand(transcript: string): boolean {
 
 /**
  * Listens for vocal commands via Web Speech API:
- * - "microphone off" / "microphone on" → onCommand
+ * - "microphone off" / "hey robot" → onCommand
  * - "apple" + number or a number (40–240) → onMetronomeCommand('start' | 'setBpm', bpm)
  * - "stop" → onMetronomeCommand('stop')
  * - "carrot" + description → onBackingTrackCommand('describe', description)
@@ -449,7 +449,7 @@ export function useVoiceCommandMicOnOff(
             lastCommandTimeRef.current = now;
             playChime();
             onCommandRef.current({ type: 'set_backend_mic_enabled', enabled: true });
-            console.log('Voice command (interim): microphone on');
+            console.log('Voice command (interim): hey robot');
             continue;
           }
           if (isMicOffCommand(transcript)) {
@@ -587,7 +587,7 @@ export function useVoiceCommandMicOnOff(
             lastCommandTimeRef.current = now;
             playChime();
             onCommandRef.current({ type: 'set_backend_mic_enabled', enabled: true });
-            console.log('Voice command: microphone on');
+            console.log('Voice command: hey robot');
             return;
           }
           if (isStopOrCloseCommand(transcript) && !isInMetronomeStopCooldown(now)) {
@@ -623,7 +623,7 @@ export function useVoiceCommandMicOnOff(
             lastCommandTimeRef.current = now;
             playChime();
             onCommandRef.current({ type: 'set_backend_mic_enabled', enabled: true });
-            console.log('Voice command: microphone on');
+            console.log('Voice command: hey robot');
             return;
           }
           if (isCloseBackingTrackCommand(transcript)) {
@@ -698,7 +698,7 @@ export function useVoiceCommandMicOnOff(
             lastCommandTimeRef.current = now;
             playChime();
             onCommandRef.current({ type: 'set_backend_mic_enabled', enabled: true });
-            console.log('Voice command: microphone on');
+            console.log('Voice command: hey robot');
             return;
           }
           if (isCloseBackingTrackCommand(transcript)) {
@@ -785,7 +785,7 @@ export function useVoiceCommandMicOnOff(
           if (isMicOnCommand(transcript)) {
             playChime();
             onCommandRef.current({ type: 'set_backend_mic_enabled', enabled: true });
-            console.log('Voice command (backing track): microphone on');
+            console.log('Voice command (backing track): hey robot');
             return;
           }
           if (isCloseBackingTrackCommand(transcript) && !isInMetronomeStopCooldown(now)) {
@@ -827,7 +827,7 @@ export function useVoiceCommandMicOnOff(
             lastCommandTimeRef.current = now;
             playChime();
             onCommandRef.current({ type: 'set_backend_mic_enabled', enabled: true });
-            console.log('Voice command (backing track paused): microphone on');
+            console.log('Voice command (backing track paused): hey robot');
             return;
           }
           if (isCloseBackingTrackCommand(transcript)) {
@@ -943,7 +943,7 @@ export function useVoiceCommandMicOnOff(
           lastCommandTimeRef.current = now;
           playChime();
           onCommandRef.current({ type: 'set_backend_mic_enabled', enabled: true });
-          console.log('Voice command: microphone on');
+          console.log('Voice command: hey robot');
           return;
         }
         if (

@@ -441,6 +441,7 @@ export default function SpotifyPanel({ backendUrl, onPlaybackStateChange, onStop
     if (token && !new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '').get('code')) {
       setCallbackError(null);
       setAgentPlaybackError(null);
+      window.dispatchEvent(new CustomEvent('spotify-connected'));
     }
   }, [token]);
 
@@ -542,6 +543,14 @@ export default function SpotifyPanel({ backendUrl, onPlaybackStateChange, onStop
     });
     window.location.href = url;
   }, []);
+
+  useEffect(() => {
+    const handler = () => {
+      void handleConnect();
+    };
+    window.addEventListener('spotify-connect-request', handler);
+    return () => window.removeEventListener('spotify-connect-request', handler);
+  }, [handleConnect]);
 
   const handleLogout = useCallback(() => {
     localStorage.removeItem(SPOTIFY_TOKEN_KEY);

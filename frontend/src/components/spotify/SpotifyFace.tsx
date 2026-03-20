@@ -6,6 +6,8 @@ interface SpotifyFaceProps {
   onTogglePlay?: () => void;
   showStartPlaybackButton?: boolean;
   onStartPlayback?: () => void;
+  showConnectButton?: boolean;
+  onConnectSpotify?: () => void;
   showShell?: boolean;
 }
 
@@ -14,6 +16,8 @@ export default function SpotifyFace({
   onTogglePlay,
   showStartPlaybackButton = false,
   onStartPlayback,
+  showConnectButton = false,
+  onConnectSpotify,
   showShell = true,
 }: SpotifyFaceProps) {
   const hasTrack = playbackState && (playbackState.trackName || playbackState.duration > 0);
@@ -25,7 +29,23 @@ export default function SpotifyFace({
       className="spotify-face-inner"
       data-playing={isPlaying ? 'true' : undefined}
     >
-      {hasTrack ? (
+      {showConnectButton ? (
+        <div className="spotify-face-empty spotify-face-empty--connect">
+          <span className="spotify-face-empty-icon">♪</span>
+          <p className="spotify-face-empty-text">Spotify needs to reconnect</p>
+          {onConnectSpotify && (
+            <button
+              type="button"
+              className="spotify-face-connect-btn"
+              onClick={onConnectSpotify}
+              title="Connect Spotify"
+              aria-label="Connect Spotify"
+            >
+              Connect Spotify
+            </button>
+          )}
+        </div>
+      ) : hasTrack ? (
         <div className="spotify-face-track">
           <div className="spotify-face-cover-wrap">
             {playbackState.albumImageUrl ? (

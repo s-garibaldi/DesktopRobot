@@ -19,6 +19,7 @@ function App() {
   const [backingTrackState, setBackingTrackState] = useState<BackingTrackFaceState>({ active: false, paused: false });
   const [spotifyUserStopped, setSpotifyUserStopped] = useState(false);
   const [showSpotifyStartPlaybackButton, setShowSpotifyStartPlaybackButton] = useState(false);
+  const [showSpotifyConnectButton, setShowSpotifyConnectButton] = useState(false);
   const [spotifyStartPlaybackPressed, setSpotifyStartPlaybackPressed] = useState(false);
   const [spotifyExitTransition, setSpotifyExitTransition] = useState<{
     active: boolean;
@@ -243,10 +244,35 @@ function App() {
     return () => window.removeEventListener('spotify-agent-requested-playback', handleRequest);
   }, [spotifyStartPlaybackPressed]);
 
+  useEffect(() => {
+    const handlePlaybackFailed = (event: Event) => {
+      const reason = (event as CustomEvent<{ reason?: string }>).detail?.reason;
+      if (reason !== 'not_connected') return;
+      setShowSpotifyConnectButton(true);
+      setShowSpotifyStartPlaybackButton(false);
+      handleEmotionChange('spotify');
+    };
+
+    const handleConnected = () => {
+      setShowSpotifyConnectButton(false);
+    };
+
+    window.addEventListener('spotify-playback-failed', handlePlaybackFailed);
+    window.addEventListener('spotify-connected', handleConnected);
+    return () => {
+      window.removeEventListener('spotify-playback-failed', handlePlaybackFailed);
+      window.removeEventListener('spotify-connected', handleConnected);
+    };
+  }, [handleEmotionChange]);
+
   const handleSpotifyFaceStartPlayback = useCallback(() => {
     setSpotifyStartPlaybackPressed(true);
     setShowSpotifyStartPlaybackButton(false);
     window.dispatchEvent(new CustomEvent('spotify-start-playback-request'));
+  }, []);
+
+  const handleSpotifyFaceConnect = useCallback(() => {
+    window.dispatchEvent(new CustomEvent('spotify-connect-request'));
   }, []);
 
   const renderPrimaryFace = () => {
@@ -262,6 +288,8 @@ function App() {
       return (
         <SpotifyFace
           playbackState={spotifyPlaybackState}
+          showConnectButton={showSpotifyConnectButton}
+          onConnectSpotify={handleSpotifyFaceConnect}
           showStartPlaybackButton={showSpotifyStartPlaybackButton}
           onStartPlayback={handleSpotifyFaceStartPlayback}
         />

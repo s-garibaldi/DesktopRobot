@@ -225,6 +225,10 @@
   height: 100%;
 }
 
+.spotify-face-empty--connect {
+  gap: 0.55rem;
+}
+
 .spotify-face-empty-icon {
   font-size: 1.75rem;
   opacity: 0.45;
@@ -244,4 +248,25 @@
   letter-spacing: 0.02em;
   color: rgba(0, 255, 255, 0.92);
   text-shadow: 0 0 8px rgba(0, 255, 255, 0.35);
+}
+
+.spotify-face-connect-btn {
+  border: 2px solid #00ffff;
+  background: rgba(0, 255, 255, 0.12);
+  color: #00ffff;
+  border-radius: 999px;
+  padding: 0.34rem 0.68rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  text-shadow: 0 0 6px rgba(0, 255, 255, 0.34);
+  box-shadow: 0 0 12px rgba(0, 255, 255, 0.22);
+  transition: background 0.2s ease, box-shadow 0.2s ease, transform 0.15s ease;
+}
+
+.spotify-face-connect-btn:hover {
+  background: rgba(0, 255, 255, 0.18);
+  box-shadow: 0 0 16px rgba(0, 255, 255, 0.3);
+  transform: translateY(-1px);
 }

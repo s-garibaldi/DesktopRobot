@@ -159,7 +159,7 @@ function App() {
     }
   }, []);
 
-  // Voice command from Tauri frontend: "microphone off" / "hey bot" to disable/enable backend mic input
+  // Voice command from Tauri frontend: "microphone off" / "hey robot" to disable/enable backend mic input
   const [backendMicEnabledByVoice, setBackendMicEnabledByVoice] = useState<boolean>(true);
 
   const scheduleIdleAutoOff = React.useCallback(() => {
@@ -299,7 +299,7 @@ function App() {
     }
   }, [sessionStatus]);
 
-  // Listen for voice commands from Tauri frontend: "microphone off" / "microphone on"
+  // Listen for voice commands from Tauri frontend: "microphone off" / "hey robot"
   // Also listen for Spotify track events for queue controller
   useEffect(() => {
     const handleParentMessage = async (event: MessageEvent) => {

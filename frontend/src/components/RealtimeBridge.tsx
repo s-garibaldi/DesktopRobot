@@ -935,29 +935,29 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
   // Backing track flow:
   // - Playing: backend mic OFF, no audio input. Voice "pause" → pause + mic ON; "close" → shut down.
   // - Paused: backend mic ON, user can converse with AI; mic does not turn off on its own. Voice "resume" → resume + mic OFF, no AI output; "close" → shut down.
-  // - "microphone on" only turns mic on when paused; when playing, mic stays off.
+  // - "hey robot" only turns mic on when paused; when playing, mic stays off.
 
   const handleMicCommand = useCallback((payload: { type: 'set_backend_mic_enabled'; enabled: boolean }) => {
     const mode = activeModeRef.current;
     if (payload.enabled) {
-      // "microphone on" when in backing_track: only when paused (when playing, mic stays off)
+      // "hey robot" when in backing_track: only when paused (when playing, mic stays off)
       if (mode === 'backing_track') {
         if (!backingTrackPausedRef.current) {
-          console.log('[microphone on] Backing track is playing — mic stays off (say "pause" first)');
+          console.log('[hey robot] Backing track is playing — mic stays off (say "pause" first)');
           return;
         }
         if (!iframeRef.current?.contentWindow) return;
         lastKnownMicEnabledRef.current = true;
         sendMessageToIframe({ type: 'set_backend_mic_enabled', enabled: true });
-        console.log('[microphone on] Backing track paused — mic on');
+        console.log('[hey robot] Backing track paused — mic on');
         return;
       }
       if (mode === 'metronome') {
-        console.log('[microphone on] Skipping — in metronome (say "stop" first to exit)');
+        console.log('[hey robot] Skipping — in metronome (say "stop" first to exit)');
         return;
       }
       if (!iframeRef.current?.contentWindow) {
-        console.warn('[microphone on] Cannot send to backend — iframe not ready');
+        console.warn('[hey robot] Cannot send to backend — iframe not ready');
         return;
       }
       setActiveModeAndRef('backend_mic');
@@ -1483,7 +1483,7 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
 
       {micStatus === 'granted' && isConnected && (
         <p className="voice-command-hint">
-          Voice: <strong>&quot;microphone off&quot;</strong> / <strong>&quot;microphone on&quot;</strong>;
+          Voice: <strong>&quot;microphone off&quot;</strong> / <strong>&quot;hey robot&quot;</strong>;
           <strong> &quot;apple&quot;</strong> (chime), then say BPM — or &quot;apple&quot; + number; <strong>&quot;stop&quot;</strong> (apple + carrot);
           <strong> &quot;carrot&quot;</strong> (chime), then say description — or &quot;carrot&quot; + description in one phrase;
           <strong> &quot;eggplant&quot;</strong> (chime), then say chord — or &quot;eggplant&quot; + chord; <strong>&quot;close display&quot;</strong> (back to neutral);
