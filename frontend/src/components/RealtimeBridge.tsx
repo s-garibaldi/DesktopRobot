@@ -114,6 +114,8 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
   const lastMetronomeStartTimeRef = useRef(0);
   /** Set when chord display is shown from backend; voice hook ignores "close display" for a few seconds so AI saying it doesn't dismiss. */
   const lastGuitarTabDisplayFromBackendTimeRef = useRef(0);
+  /** Set when tuner is shown from backend; voice hook ignores immediate close phrases so AI speech does not dismiss it. */
+  const lastTunerDisplayFromBackendTimeRef = useRef(0);
   /** When metronome is paused, keep backend mic on until the user explicitly resumes/stops/turns it off. */
   const metronomePausedMicIdleTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -213,8 +215,8 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
     if (currentEmotion === 'spotify' && emotion !== 'thinking' && emotion !== 'listening' && emotion !== 'speaking') {
       return;
     }
-    // Tuner stays until user switches; ignore backend-driven emotion changes while on tuner
-    if (currentEmotion === 'tuner' && emotion !== 'thinking' && emotion !== 'listening' && emotion !== 'speaking') {
+    // Tuner stays until explicitly closed; do not let backend listening/speaking states replace it.
+    if (currentEmotion === 'tuner') {
       return;
     }
     // Metronome stays on until user says "stop" or "pause"; ignore backend-driven emotion changes while on metronome
@@ -667,6 +669,7 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
               const handler = onTunerCommandRef.current;
               if (typeof handler !== 'function') break;
               if (data.action === 'show') {
+                lastTunerDisplayFromBackendTimeRef.current = Date.now();
                 handler('show');
                 console.log('RealtimeBridge: tuner_display show from backend');
               } else if (data.action === 'close') {
@@ -778,6 +781,21 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
 
             case 'music_clear':
               musicController.clearQueue();
+              if (isListeningRef.current) {
+                isListeningRef.current = false;
+                setIsListening(false);
+              }
+              if (isCallingToolRef.current) {
+                isCallingToolRef.current = false;
+                setIsCallingTool(false);
+              }
+              if (!isSpeakingRef.current && activeModeRef.current !== 'metronome') {
+                if (musicController.getNowPlaying()) {
+                  handleEmotionChange('spotify', 'music_clear', true);
+                } else {
+                  handleEmotionChange('neutral', 'music_clear', true);
+                }
+              }
               break;
 
             case 'music_play_index': {
@@ -1283,6 +1301,7 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
     {
       lastMetronomeStartTime: lastMetronomeStartTimeRef,
       lastGuitarTabDisplayFromBackendTime: lastGuitarTabDisplayFromBackendTimeRef,
+      lastTunerDisplayFromBackendTime: lastTunerDisplayFromBackendTimeRef,
     },
     currentEmotion === 'spotify',
     currentEmotion === 'tuner',

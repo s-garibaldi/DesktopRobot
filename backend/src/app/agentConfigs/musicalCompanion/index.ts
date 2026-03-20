@@ -358,7 +358,7 @@ const displayGuitarChordTool = tool({
     return {
       success: true,
       chord: chordStr,
-      message: `Showing ${chordStr} on the guitar tab. Say "close display" to return to the main face.`,
+      message: `Showing ${chordStr} on the guitar tab now.`,
     };
   },
 });
@@ -614,6 +614,32 @@ function getSpotifyPlaybackPreflightFailure(): { success: false; reason: string;
   return null;
 }
 
+function getSpotifyAuthPreflightFailure(): { success: false; reason: string; message: string } | null {
+  const { spotify } = getMusicState();
+  if (spotify.authState === 'restoring') {
+    return {
+      success: false,
+      reason: 'spotify_restoring',
+      message: 'Spotify is still reconnecting. Try again in a moment.',
+    };
+  }
+  if (spotify.authState === 'expired') {
+    return {
+      success: false,
+      reason: 'spotify_session_expired',
+      message: spotify.message || 'Spotify session expired. Reconnect Spotify in the app.',
+    };
+  }
+  if (spotify.authState === 'not_connected') {
+    return {
+      success: false,
+      reason: 'spotify_not_connected',
+      message: spotify.message || 'Spotify is not connected. Connect Spotify in the app first.',
+    };
+  }
+  return null;
+}
+
 // Add one or more songs to the queue; frontend MusicController starts playback if nothing is playing.
 const spotifyQueueAddTool = tool({
   name: 'spotify_queue_add',
@@ -637,7 +663,7 @@ const spotifyQueueAddTool = tool({
     if (list.length === 0) {
       return { success: false, message: 'Specify at least one song to add (e.g. "Blinding Lights" or "Song A, Song B").' };
     }
-    const preflightFailure = getSpotifyPlaybackPreflightFailure();
+    const preflightFailure = getSpotifyAuthPreflightFailure();
     if (preflightFailure) return preflightFailure;
     const items: { uri: string; title: string; artist: string; albumArtUrl?: string; durationMs?: number }[] = [];
     for (const q of list) {
@@ -1001,6 +1027,7 @@ When the user asks to open, show, or start the tuner, use display_tuner. If they
 - Use play_spotify_track when the user asks to play ONE song (e.g. "play Bohemian Rhapsody"). Use spotify_queue_add when the user asks to play MULTIPLE songs (e.g. "play A, B, and C", "play Song A then Song B", "queue X, Y, Z")—pass each song as a separate query in one string. Use spotify_queue_get when the user asks what is in the queue, what song is next, what is coming up, or to list the queue. Use spotify_queue_play when the user says "play the queue" or "start the queue" and the queue has items. Use spotify_queue_remove, spotify_queue_reorder, and spotify_queue_clear for queue management. The user must have connected Spotify in the app (Premium required).
 - Spotify tool policy: Spotify tools are available to you in this session. For any request to play, queue, skip, pause, resume, inspect, reorder, or clear Spotify music, you MUST call the matching Spotify tool or client action path before replying. Do not say you cannot access Spotify, cannot control Spotify, or do not have Spotify functions unless a Spotify tool call actually fails. If a Spotify tool fails, briefly explain the failure and suggest connecting Spotify in the app.
 - If the user asks to queue songs, add songs to the queue, play multiple songs, or play something next, do not answer with plain text first. Call 'spotify_queue_add'.
+- If Spotify is already playing or there is already something queued, and the user asks for another song without explicitly asking to replace the current song, treat that as a queue request and call 'spotify_queue_add'. Follow-up phrases like "do it again", "another one", "add another", "queue this too", "play this next", or "add this one too" should also use 'spotify_queue_add'.
 - Backing tracks: Use list_backing_tracks when the user asks what backing tracks are available, wants to browse or choose (e.g. "what do you have for blues?", "what backing tracks do I have?"). You get the full list from the library and can suggest options. Only call play_backing_track when the user has given an explicit affirmative to play (e.g. "yes", "play it", "that one", "sounds good", "go ahead"). When suggesting a track, describe it and ask if they want it; once they say yes, use play_backing_track with the agreed description (e.g. "blues in A minor around 90 bpm"). The track loops until they say "stop" or use voice controls.
 - Use search_web to find current information, recent music news, new songs, artist information, or any up-to-date content
 - Use store_memory to save user preferences, favorite chords, musical interests, or skill level
@@ -1021,7 +1048,7 @@ When the user asks to open, show, or start the tuner, use display_tuner. If they
 - "Explain major scales" / "Circle of fifths" → Use music_theory_help; give a one-sentence summary first, then ask "Want me to go deeper on that?"
 - "What chords go well with Am?" → Use recognize_guitar_chord for Am, then suggest_chord_progression in A minor or related key
 - "Start a metronome" / "Play a metronome for rumba" / "Metronome at 120" / "Set metronome for waltz" → Always use set_metronome_bpm (you start it from here; do not refuse).
-- "Play Bohemian Rhapsody" (one song) → play_spotify_track. "Play A, B, and C" / "Play Song A then Song B" / "Queue these: X, Y, Z" → spotify_queue_add with queries "A, B, C" (or "Song A, Song B" etc). "What's in the queue?" / "What song is next?" / "What's coming up?" → spotify_queue_get. "Play the queue" → spotify_queue_play. "Remove the second song" / "Clear the queue" → spotify_queue_remove / spotify_queue_clear.
+- "Play Bohemian Rhapsody" (one song) → play_spotify_track. "Play A, B, and C" / "Play Song A then Song B" / "Queue these: X, Y, Z" → spotify_queue_add with queries "A, B, C" (or "Song A, Song B" etc). "What's in the queue?" / "What song is next?" / "What's coming up?" → spotify_queue_get. "Play the queue" → spotify_queue_play. "Remove the second song" / "Clear the queue" → spotify_queue_remove / spotify_queue_clear. If Spotify is already active, then "add another one", "queue this too", "play this next", or "do it again with [song]" → spotify_queue_add.
 - "Add Shape of You to the queue" / "Queue Shape of You next" / "Play Shape of You, then Blinding Lights" → spotify_queue_add, not say_aloud.
 - "What backing tracks do you have?" / "What do you have for blues?" / "What can I jam to?" → Use list_backing_tracks (with optional query like "blues"); then summarize 1–2 options and ask if they want one. "Play a blues backing track" / "Yes, play it" / "That one" / "I want to jam in A minor" (direct request or affirmative) → Use play_backing_track. Do NOT call play_backing_track until they say yes or equivalent.
 - User says "I love jazz" → Use store_memory to save this preference

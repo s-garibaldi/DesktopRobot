@@ -52,6 +52,8 @@ const METRONOME_BPM_TIMEOUT_MS = 5000;
 const METRONOME_START_COOLDOWN_MS = 6000;
 /** Ignore "close display" for this long after chord was shown from backend (avoids agent saying "say close display to go back" triggering close). */
 const GUITAR_TAB_CLOSE_COOLDOWN_MS = 6000;
+/** Ignore tuner-close phrases for this long after tuner was shown from backend. */
+const TUNER_CLOSE_COOLDOWN_MS = 6000;
 const PHRASE_OFF = 'microphone off';
 const PHRASE_ON = 'hey robot';
 const PHRASE_BACKING_TRACK = 'carrot';
@@ -320,6 +322,7 @@ export function useVoiceCommandMicOnOff(
   voiceCooldownRefs?: {
     lastMetronomeStartTime: MutableRefObject<number>;
     lastGuitarTabDisplayFromBackendTime: MutableRefObject<number>;
+    lastTunerDisplayFromBackendTime: MutableRefObject<number>;
   },
   isSpotifyActive?: boolean,
   isTunerActive?: boolean,
@@ -353,6 +356,7 @@ export function useVoiceCommandMicOnOff(
 
   const lastMetronomeStartTimeRef = voiceCooldownRefs?.lastMetronomeStartTime;
   const lastGuitarTabDisplayFromBackendTimeRef = voiceCooldownRefs?.lastGuitarTabDisplayFromBackendTime;
+  const lastTunerDisplayFromBackendTimeRef = voiceCooldownRefs?.lastTunerDisplayFromBackendTime;
 
   const isInMetronomeStopCooldown = (now: number): boolean => {
     if (!lastMetronomeStartTimeRef) return false;
@@ -363,6 +367,11 @@ export function useVoiceCommandMicOnOff(
     if (!lastGuitarTabDisplayFromBackendTimeRef) return false;
     const elapsed = now - lastGuitarTabDisplayFromBackendTimeRef.current;
     return elapsed >= 0 && elapsed < GUITAR_TAB_CLOSE_COOLDOWN_MS;
+  };
+  const isInTunerCloseCooldown = (now: number): boolean => {
+    if (!lastTunerDisplayFromBackendTimeRef) return false;
+    const elapsed = now - lastTunerDisplayFromBackendTimeRef.current;
+    return elapsed >= 0 && elapsed < TUNER_CLOSE_COOLDOWN_MS;
   };
   const enabledRef = useRef(enabled);
   const waitingForBackingDescriptionRef = useRef(false);
@@ -479,6 +488,10 @@ export function useVoiceCommandMicOnOff(
             // No interim handling for skip - only final results; prevents double-skip when interim + final both fire
           }
           if (isTunerActiveRef.current && onTunerCommandRef.current && isCloseTunerCommand(transcript)) {
+            if (isInTunerCloseCooldown(now)) {
+              console.log('Voice command (interim): ignoring tuner close (backend cooldown)');
+              continue;
+            }
             lastCommandTimeRef.current = now;
             playChimeDown();
             onTunerCommandRef.current('close');
@@ -925,6 +938,10 @@ export function useVoiceCommandMicOnOff(
 
         // When tuner face is active, "stop", "close", "close tuner" etc. close it and return to neutral
         if (isTunerActiveRef.current && onTunerCommandRef.current && isCloseTunerCommand(transcript)) {
+          if (isInTunerCloseCooldown(now)) {
+            console.log('Voice command: ignoring tuner close (backend cooldown)');
+            return;
+          }
           lastCommandTimeRef.current = now;
           playChimeDown();
           onTunerCommandRef.current('close');
