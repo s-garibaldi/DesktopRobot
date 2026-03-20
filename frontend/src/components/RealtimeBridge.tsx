@@ -211,16 +211,18 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
     if (currentEmotion === 'guitarTabs') {
       return;
     }
-    // Spotify face stays until user switches; ignore backend-driven emotion changes while on spotify
-    if (currentEmotion === 'spotify' && emotion !== 'thinking' && emotion !== 'listening' && emotion !== 'speaking') {
+    // Spotify stays visually locked until explicitly closed/stopped by the user.
+    // Do not let backend listening/speaking/thinking states replace it while paused or active.
+    if (currentEmotion === 'spotify' && emotion !== 'spotify') {
       return;
     }
     // Tuner stays until explicitly closed; do not let backend listening/speaking states replace it.
     if (currentEmotion === 'tuner') {
       return;
     }
-    // Metronome stays on until user says "stop" or "pause"; ignore backend-driven emotion changes while on metronome
-    if (currentEmotion === 'metronome' && emotion !== 'thinking' && emotion !== 'listening' && emotion !== 'speaking') {
+    // Metronome stays visually locked until the user explicitly pauses or closes it.
+    // Do not let backend listening/speaking/thinking states replace the metronome face once active.
+    if (currentEmotion === 'metronome' && emotion !== 'metronome') {
       return;
     }
     // Backing track face stays on until the track is closed, but allow transient listening/speaking states.

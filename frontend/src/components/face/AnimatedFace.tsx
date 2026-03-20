@@ -22,6 +22,7 @@ const AnimatedFace: React.FC<AnimatedFaceProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const animationRef = useRef<number>();
   const timeRef = useRef(0);
+  const cssSizeRef = useRef({ width: 400, height: 400 });
 
   // Track previous emotion for transitions
   const prevEmotionRef = useRef<Emotion>(emotion);
@@ -111,12 +112,21 @@ const AnimatedFace: React.FC<AnimatedFaceProps> = ({
     state.microMovements.eyeMovement.y = Math.cos(time * 0.25) * 0.1;
     state.microMovements.mouthMovement = Math.sin(time * 0.15) * 0.3;
     
-    // Clear canvas
+    const { width: cssWidth, height: cssHeight } = cssSizeRef.current;
+    const pixelScaleX = canvas.width / cssWidth;
+    const pixelScaleY = canvas.height / cssHeight;
+
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.setTransform(pixelScaleX, 0, 0, pixelScaleY, 0, 0);
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
     
     // Set up coordinate system
-    const centerX = canvas.width / 2;
-    const centerY = canvas.height / 2;
+    const centerX = cssWidth / 2;
+    const centerY = cssHeight / 2;
     
     ctx.save();
     ctx.translate(centerX, centerY);
@@ -470,10 +480,19 @@ const AnimatedFace: React.FC<AnimatedFaceProps> = ({
   const setCanvasSize = useCallback((w: number, h: number) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    canvas.width = w;
-    canvas.height = h;
+
+    cssSizeRef.current = { width: w, height: h };
+
+    const deviceScale = Math.min(window.devicePixelRatio || 1, 3.5);
+    const renderScale = fillContainer
+      ? Math.max(2.1, deviceScale * 1.15)
+      : Math.max(2.4, deviceScale * 1.28);
+    canvas.width = Math.round(w * renderScale);
+    canvas.height = Math.round(h * renderScale);
+    canvas.style.width = `${w}px`;
+    canvas.style.height = `${h}px`;
     animate();
-  }, [animate]);
+  }, [animate, fillContainer]);
 
   useEffect(() => {
     const canvas = canvasRef.current;

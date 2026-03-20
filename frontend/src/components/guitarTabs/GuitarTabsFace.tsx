@@ -28,6 +28,8 @@ function EmptyTabChart() {
       viewBox={`${-FRET_LABEL_LEFT_MARGIN} 0 ${width + FRET_LABEL_LEFT_MARGIN} ${height}`}
       className="guitar-tabs-diagram empty-diagram"
       preserveAspectRatio="xMidYMid meet"
+      shapeRendering="geometricPrecision"
+      textRendering="geometricPrecision"
     >
       {Array.from({ length: EMPTY_NUM_FRETS + 1 }, (_, i) => (
         <line
@@ -74,17 +76,18 @@ function ChordDiagram({ shape }: { shape: ChordShape }) {
       viewBox={`${-FRET_LABEL_LEFT_MARGIN} 0 ${width + FRET_LABEL_LEFT_MARGIN} ${height}`}
       className="guitar-tabs-diagram chord-diagram"
       preserveAspectRatio="xMidYMid meet"
+      shapeRendering="geometricPrecision"
+      textRendering="geometricPrecision"
     >
       <defs>
         <filter id="glow">
-          <feGaussianBlur stdDeviation="2" result="blur" />
+          <feGaussianBlur stdDeviation="0.8" result="blur" />
           <feMerge>
             <feMergeNode in="blur" />
             <feMergeNode in="SourceGraphic" />
           </feMerge>
         </filter>
       </defs>
-      {/* Fret lines */}
       {Array.from({ length: numFrets + 1 }, (_, i) => (
         <line
           key={i}
@@ -95,7 +98,6 @@ function ChordDiagram({ shape }: { shape: ChordShape }) {
           className="diagram-line diagram-line-fret"
         />
       ))}
-      {/* String lines */}
       {Array.from({ length: 6 }, (_, i) => (
         <line
           key={i}
@@ -109,7 +111,6 @@ function ChordDiagram({ shape }: { shape: ChordShape }) {
       <text x={padding - 2 - FRET_LABEL_X_OFFSET} y={padding + fretSpacing * 0.5} className="fret-label fret-label-left" textAnchor="end">
         {fretOffset}
       </text>
-      {/* Barre */}
       {shape.barre &&
         shape.frets[shape.barre.fromString] === shape.barre.fret && (
           <rect
@@ -123,7 +124,6 @@ function ChordDiagram({ shape }: { shape: ChordShape }) {
             filter="url(#glow)"
           />
         )}
-      {/* Dots and X/O */}
       {shape.frets.map((fret, stringIndex) => {
         const x = stringX(stringIndex);
         if (fret === -1) {
@@ -178,10 +178,12 @@ function ScaleDiagram({ shape }: { shape: ScaleShape }) {
       viewBox={`${-FRET_LABEL_LEFT_MARGIN} 0 ${width + FRET_LABEL_LEFT_MARGIN} ${height}`}
       className="guitar-tabs-diagram scale-diagram"
       preserveAspectRatio="xMidYMid meet"
+      shapeRendering="geometricPrecision"
+      textRendering="geometricPrecision"
     >
       <defs>
         <filter id="glow-scale">
-          <feGaussianBlur stdDeviation="1.5" result="blur" />
+          <feGaussianBlur stdDeviation="0.7" result="blur" />
           <feMerge>
             <feMergeNode in="blur" />
             <feMergeNode in="SourceGraphic" />

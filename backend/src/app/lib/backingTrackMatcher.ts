@@ -299,22 +299,24 @@ export function parseBackingTrackCommand(command: string): SearchCriteria {
     }
   }
   
-  // Extract key: "in A minor", "in E", "A minor", "key of G", etc.
-  const keyMatch =
-    s.match(/\bin\s+([a-g][#b♯♭]?\s*(?:major|minor|m)?)\b/i) ||
-    s.match(/\b([a-g][#b♯♭]?\s*(?:major|minor|m))\b/i) ||
-    s.match(/\b(?:key\s+of\s+)?([a-g][#b♯♭]?\s*(?:major|minor|m)?)\b/i);
-  if (keyMatch) {
-    criteria.key = keyMatch[1].trim();
-  }
-
-  // Extract genre (look for common genres; check before key so "blues in A" works)
+  // Extract genre first so requests like "play a blues backing track" don't
+  // accidentally treat the article "a" as the key of A.
   const genres = ['bossa nova', 'blues', 'rock', 'jazz', 'pop', 'funk', 'reggae', 'country', 'latin', 'soul'];
   for (const genre of genres) {
     if (s.includes(genre)) {
       criteria.genre = genre;
       break;
     }
+  }
+
+  // Extract key only from explicit key phrases or full named keys.
+  // This avoids false positives like the article "a" in "play a blues backing track".
+  const explicitKeyMatch =
+    s.match(/\bin\s+([a-g][#b♯♭]?\s*(?:major|minor|m)?)\b/i) ||
+    s.match(/\bkey\s+of\s+([a-g][#b♯♭]?\s*(?:major|minor|m)?)\b/i) ||
+    s.match(/\b([a-g][#b♯♭]?\s*(?:major|minor|m))\b/i);
+  if (explicitKeyMatch) {
+    criteria.key = explicitKeyMatch[1].trim();
   }
   
   // Extract scale (look for scale names)

@@ -522,7 +522,7 @@ const playSpotifyTrackTool = tool({
     if (!q) {
       return { success: false, message: 'Please specify a song or artist to play (e.g. "Bohemian Rhapsody" or "Blinding Lights The Weeknd").' };
     }
-    const preflightFailure = getSpotifyPlaybackPreflightFailure();
+    const preflightFailure = getSpotifyPlaybackPreflightFailureForState(await getFreshMusicState());
     if (preflightFailure) return preflightFailure;
     try {
       const result = await searchSpotifyTrack(q);
@@ -581,8 +581,16 @@ async function searchAndGetQueueItem(query: string): Promise<{ uri: string; titl
   };
 }
 
-function getSpotifyPlaybackPreflightFailure(): { success: false; reason: string; message: string } | null {
-  const { spotify } = getMusicState();
+async function getFreshMusicState(): Promise<ReturnType<typeof getMusicState>> {
+  if (typeof window !== 'undefined' && window.parent && window.parent !== window) {
+    window.parent.postMessage({ type: 'backend_request_music_state' }, '*');
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  return getMusicState();
+}
+
+function getSpotifyPlaybackPreflightFailureForState(state: ReturnType<typeof getMusicState>): { success: false; reason: string; message: string } | null {
+  const { spotify } = state;
   if (spotify.authState === 'restoring') {
     return {
       success: false,
@@ -614,8 +622,8 @@ function getSpotifyPlaybackPreflightFailure(): { success: false; reason: string;
   return null;
 }
 
-function getSpotifyAuthPreflightFailure(): { success: false; reason: string; message: string } | null {
-  const { spotify } = getMusicState();
+function getSpotifyAuthPreflightFailureForState(state: ReturnType<typeof getMusicState>): { success: false; reason: string; message: string } | null {
+  const { spotify } = state;
   if (spotify.authState === 'restoring') {
     return {
       success: false,
@@ -663,7 +671,7 @@ const spotifyQueueAddTool = tool({
     if (list.length === 0) {
       return { success: false, message: 'Specify at least one song to add (e.g. "Blinding Lights" or "Song A, Song B").' };
     }
-    const preflightFailure = getSpotifyAuthPreflightFailure();
+    const preflightFailure = getSpotifyAuthPreflightFailureForState(await getFreshMusicState());
     if (preflightFailure) return preflightFailure;
     const items: { uri: string; title: string; artist: string; albumArtUrl?: string; durationMs?: number }[] = [];
     for (const q of list) {
@@ -853,11 +861,11 @@ const spotifyQueuePlayTool = tool({
     'Start playing the Spotify queue. Use when the user says "play the queue", "start the queue", or "play" and the queue already has songs but nothing is playing.',
   parameters: { type: 'object', properties: {}, required: [], additionalProperties: false },
   execute: async () => {
-    const { queue, status, nowPlaying } = getMusicState();
+    const { queue, status, nowPlaying } = await getFreshMusicState();
     if (status === 'playing') {
       return { success: true, message: 'Already playing.' };
     }
-    const preflightFailure = getSpotifyPlaybackPreflightFailure();
+    const preflightFailure = getSpotifyPlaybackPreflightFailureForState(await getFreshMusicState());
     if (preflightFailure) return preflightFailure;
     if (status === 'paused' && nowPlaying) {
       postClientAction('music_resume');
@@ -932,7 +940,7 @@ const listBackingTracksTool = tool({
 // Play backing track from library based on user's criteria
 const playBackingTrackTool = tool({
   name: 'play_backing_track',
-  description: 'Search the backing track library and play a track that matches the user\'s criteria (BPM, genre, key, scales). Only call this when the user has given an explicit affirmative to play (e.g. "yes", "play it", "that one", "sounds good", "go ahead"). Do NOT call it when you are merely suggesting or discussing options—wait for the user to agree before playing.',
+  description: 'Search the backing track library and play a track that matches the user\'s criteria (BPM, genre, key, scales). Call this for direct play requests like "play a blues backing track", "give me a rock backing track in E", "I want to jam in A minor", or after the user confirms a suggested option with "yes", "play it", "that one", "sounds good", or "go ahead". Do NOT call it when you are merely listing or discussing options without a request to start playback.',
   parameters: {
     type: 'object',
     properties: {
@@ -1028,7 +1036,7 @@ When the user asks to open, show, or start the tuner, use display_tuner. If they
 - Spotify tool policy: Spotify tools are available to you in this session. For any request to play, queue, skip, pause, resume, inspect, reorder, or clear Spotify music, you MUST call the matching Spotify tool or client action path before replying. Do not say you cannot access Spotify, cannot control Spotify, or do not have Spotify functions unless a Spotify tool call actually fails. If a Spotify tool fails, briefly explain the failure and suggest connecting Spotify in the app.
 - If the user asks to queue songs, add songs to the queue, play multiple songs, or play something next, do not answer with plain text first. Call 'spotify_queue_add'.
 - If Spotify is already playing or there is already something queued, and the user asks for another song without explicitly asking to replace the current song, treat that as a queue request and call 'spotify_queue_add'. Follow-up phrases like "do it again", "another one", "add another", "queue this too", "play this next", or "add this one too" should also use 'spotify_queue_add'.
-- Backing tracks: Use list_backing_tracks when the user asks what backing tracks are available, wants to browse or choose (e.g. "what do you have for blues?", "what backing tracks do I have?"). You get the full list from the library and can suggest options. Only call play_backing_track when the user has given an explicit affirmative to play (e.g. "yes", "play it", "that one", "sounds good", "go ahead"). When suggesting a track, describe it and ask if they want it; once they say yes, use play_backing_track with the agreed description (e.g. "blues in A minor around 90 bpm"). The track loops until they say "stop" or use voice controls.
+- Backing tracks: Use list_backing_tracks when the user asks what backing tracks are available, wants to browse, compare, or choose (e.g. "what do you have for blues?", "what backing tracks do I have?"). Use play_backing_track when the user directly asks to start one (e.g. "play a blues backing track", "give me a rock backing track in E", "I want to jam in A minor") or when they confirm a suggested option (e.g. "yes", "play it", "that one", "sounds good", "go ahead"). When suggesting a track, describe it and ask if they want it; once they say yes, use play_backing_track with the agreed description. The track loops until they say "close" or use voice controls.
 - Use search_web to find current information, recent music news, new songs, artist information, or any up-to-date content
 - Use store_memory to save user preferences, favorite chords, musical interests, or skill level
 - Use retrieve_memories to recall information from previous conversations
@@ -1050,7 +1058,7 @@ When the user asks to open, show, or start the tuner, use display_tuner. If they
 - "Start a metronome" / "Play a metronome for rumba" / "Metronome at 120" / "Set metronome for waltz" → Always use set_metronome_bpm (you start it from here; do not refuse).
 - "Play Bohemian Rhapsody" (one song) → play_spotify_track. "Play A, B, and C" / "Play Song A then Song B" / "Queue these: X, Y, Z" → spotify_queue_add with queries "A, B, C" (or "Song A, Song B" etc). "What's in the queue?" / "What song is next?" / "What's coming up?" → spotify_queue_get. "Play the queue" → spotify_queue_play. "Remove the second song" / "Clear the queue" → spotify_queue_remove / spotify_queue_clear. If Spotify is already active, then "add another one", "queue this too", "play this next", or "do it again with [song]" → spotify_queue_add.
 - "Add Shape of You to the queue" / "Queue Shape of You next" / "Play Shape of You, then Blinding Lights" → spotify_queue_add, not say_aloud.
-- "What backing tracks do you have?" / "What do you have for blues?" / "What can I jam to?" → Use list_backing_tracks (with optional query like "blues"); then summarize 1–2 options and ask if they want one. "Play a blues backing track" / "Yes, play it" / "That one" / "I want to jam in A minor" (direct request or affirmative) → Use play_backing_track. Do NOT call play_backing_track until they say yes or equivalent.
+- "What backing tracks do you have?" / "What do you have for blues?" / "What can I jam to?" → Use list_backing_tracks (with optional query like "blues"); then summarize 1–2 options and ask if they want one. "Play a blues backing track" / "Give me a rock backing track in E" / "I want to jam in A minor" / "Yes, play it" / "That one" → Use play_backing_track.
 - User says "I love jazz" → Use store_memory to save this preference
 - User asks "What's my favorite genre?" → Use retrieve_memories to recall
 
