@@ -15,6 +15,13 @@ export interface MusicState {
   currentIndex: number;
   nowPlaying: { title: string; artist: string } | null;
   status: 'playing' | 'paused' | 'stopped';
+  spotify: {
+    authState: 'connected' | 'not_connected' | 'expired' | 'restoring';
+    deviceState: 'ready' | 'not_ready';
+    canPlayback: boolean;
+    reconnectRequired: boolean;
+    message: string | null;
+  };
 }
 
 let state: MusicState = {
@@ -22,6 +29,13 @@ let state: MusicState = {
   currentIndex: -1,
   nowPlaying: null,
   status: 'stopped',
+  spotify: {
+    authState: 'not_connected',
+    deviceState: 'not_ready',
+    canPlayback: false,
+    reconnectRequired: false,
+    message: null,
+  },
 };
 
 export function getMusicState(): MusicState {

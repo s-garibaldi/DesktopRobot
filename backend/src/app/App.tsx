@@ -315,6 +315,13 @@ function App() {
           currentIndex: data.currentIndex ?? -1,
           nowPlaying: data.nowPlaying ?? null,
           status: data.status ?? 'stopped',
+          spotify: {
+            authState: data.spotify?.authState ?? 'not_connected',
+            deviceState: data.spotify?.deviceState ?? 'not_ready',
+            canPlayback: Boolean(data.spotify?.canPlayback),
+            reconnectRequired: Boolean(data.spotify?.reconnectRequired),
+            message: typeof data.spotify?.message === 'string' ? data.spotify.message : null,
+          },
         });
         return;
       }

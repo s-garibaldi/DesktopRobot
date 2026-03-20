@@ -22,6 +22,14 @@ interface RealtimeBridgeProps {
   onSpotifyStop?: () => void;
 }
 
+type SpotifyHealthState = {
+  authState: 'connected' | 'not_connected' | 'expired' | 'restoring';
+  deviceState: 'ready' | 'not_ready';
+  canPlayback: boolean;
+  reconnectRequired: boolean;
+  message: string | null;
+};
+
 export type ActiveMode = 'backing_track' | 'metronome' | 'backend_mic' | null;
 
 const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({ 
@@ -43,6 +51,13 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
   );
   const [iframeLoaded, setIframeLoaded] = useState(false);
   const [lastEmotionChange, setLastEmotionChange] = useState<number>(0);
+  const [spotifyHealth, setSpotifyHealth] = useState<SpotifyHealthState>({
+    authState: 'not_connected',
+    deviceState: 'not_ready',
+    canPlayback: false,
+    reconnectRequired: false,
+    message: null,
+  });
   const [agentConfig] = useState('musicalCompanion'); // Musical Companion as the only agent
   /** Only one of these can be active: opening phrase enters that mode; backing_track exits on "close"; metronome exits on "stop"; backend_mic exits only on "microphone off". */
   const [activeMode, setActiveMode] = useState<ActiveMode>(null);
@@ -423,6 +438,7 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
                 currentIndex: -1,
                 nowPlaying: np ? { title: np.item.title, artist: np.item.artist } : null,
                 status,
+                spotify: spotifyHealth,
               },
               origin
             );
@@ -795,6 +811,18 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
 
             case 'spotify_stop': {
               console.log('[RealtimeBridge] spotify_stop from backend (queue empty)');
+              if (isListeningRef.current) {
+                isListeningRef.current = false;
+                setIsListening(false);
+              }
+              if (isSpeakingRef.current) {
+                isSpeakingRef.current = false;
+                setIsSpeaking(false);
+              }
+              if (isCallingToolRef.current) {
+                isCallingToolRef.current = false;
+                setIsCallingTool(false);
+              }
               window.dispatchEvent(new CustomEvent('spotify-queue-stopped'));
               onSpotifyStop?.();
               lastKnownMicEnabledRef.current = true;
@@ -810,7 +838,7 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
 
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
-  }, [backendOrigin, onEmotionChange, currentEmotion, lastEmotionChange, onSpotifyStop]);
+  }, [backendOrigin, onEmotionChange, currentEmotion, lastEmotionChange, onSpotifyStop, spotifyHealth]);
   // Note: We use refs (isListeningRef, isSpeakingRef, isCallingToolRef) instead of state
   // variables in the dependency array to avoid infinite re-render loops
 
@@ -836,6 +864,7 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
             currentIndex: -1,
             nowPlaying: np ? { title: np.item.title, artist: np.item.artist } : null,
             status,
+            spotify: spotifyHealth,
           },
           origin
         );
@@ -852,7 +881,7 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
       }
     });
     return unsub;
-  }, [realtimeUrl, iframeLoaded]);
+  }, [realtimeUrl, iframeLoaded, spotifyHealth]);
 
   // FACE_EVENT from MusicController - stable events for face state (GROOVING when playing, NEUTRAL when stopped)
   useEffect(() => {
@@ -1476,6 +1505,7 @@ const RealtimeBridge: React.FC<RealtimeBridgeProps> = ({
       <SpotifyPanel
             backendUrl={realtimeUrl}
             onPlaybackStateChange={onSpotifyPlaybackStateChange}
+            onHealthChange={setSpotifyHealth}
             onStop={onSpotifyStop}
             useBackendForPlayback={isConnected && iframeLoaded}
             sendToBackendIframe={sendMessageToIframe}

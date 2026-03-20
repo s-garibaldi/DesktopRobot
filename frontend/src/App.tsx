@@ -403,6 +403,13 @@ function App() {
     return null;
   };
 
+  const shouldShowNeutralSpotifyConnect =
+    currentEmotion === 'neutral' ||
+    currentEmotion === 'time' ||
+    currentEmotion === 'listening' ||
+    currentEmotion === 'thinking' ||
+    currentEmotion === 'speaking';
+
   return (
     <div className="app">
       <div className={isEmotionFullscreen ? 'app-fullscreen' : undefined}>
@@ -427,6 +434,16 @@ function App() {
                   <div className="face-layer face-layer-current">
                     {renderPrimaryFace()}
                   </div>
+                )}
+                {shouldShowNeutralSpotifyConnect && (
+                  <button
+                    type="button"
+                    className="neutral-spotify-connect-button neutral-spotify-connect-button--inside-face"
+                    onClick={handleSpotifyFaceConnect}
+                    aria-label="Connect Spotify"
+                  >
+                    Connect Spotify
+                  </button>
                 )}
               </div>
               {!isEmotionFullscreen && currentEmotion !== 'guitarTabs' && currentEmotion !== 'spotify' && currentEmotion !== 'tuner' && currentEmotion !== 'backingTrack' && (

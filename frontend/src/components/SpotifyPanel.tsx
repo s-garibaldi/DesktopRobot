@@ -37,13 +37,20 @@ function loadStoredToken(): string | null {
 interface SpotifyPanelProps {
   backendUrl: string;
   onPlaybackStateChange?: (state: PlaybackState | null) => void;
+  onHealthChange?: (state: {
+    authState: 'connected' | 'not_connected' | 'expired' | 'restoring';
+    deviceState: 'ready' | 'not_ready';
+    canPlayback: boolean;
+    reconnectRequired: boolean;
+    message: string | null;
+  }) => void;
   onStop?: () => void;
   /** When true, use backend iframe for playback (same context as Realtime AI audio) */
   useBackendForPlayback?: boolean;
   sendToBackendIframe?: (msg: object) => void;
 }
 
-export default function SpotifyPanel({ backendUrl, onPlaybackStateChange, onStop, useBackendForPlayback = false, sendToBackendIframe }: SpotifyPanelProps) {
+export default function SpotifyPanel({ backendUrl, onPlaybackStateChange, onHealthChange, onStop, useBackendForPlayback = false, sendToBackendIframe }: SpotifyPanelProps) {
   const [token, setToken] = useState<string | null>(loadStoredToken);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<SpotifyTrack[]>([]);
@@ -167,6 +174,35 @@ export default function SpotifyPanel({ backendUrl, onPlaybackStateChange, onStop
   const activateElement = player.activateElement;
   const setVolume = useBackend ? () => {} : (frontendPlayer as { setVolume?: (n: number) => void }).setVolume ?? (() => {});
   const reconnectPlayer = useBackend ? () => {} : (frontendPlayer as { reconnect?: () => void }).reconnect ?? (() => {});
+
+  useEffect(() => {
+    const authState =
+      restoringSession
+        ? 'restoring'
+        : callbackError && /expired|connect again/i.test(callbackError)
+          ? 'expired'
+          : token
+            ? 'connected'
+            : 'not_connected';
+    const deviceState = playerReady ? 'ready' : 'not_ready';
+    const reconnectRequired = authState === 'expired' || authState === 'not_connected';
+    const message =
+      callbackError ??
+      agentPlaybackError ??
+      playerError ??
+      (reconnectRequired ? 'Spotify is not connected.' : null);
+
+    const healthState = {
+      authState,
+      deviceState,
+      canPlayback: authState === 'connected' && deviceState === 'ready',
+      reconnectRequired,
+      message,
+    } as const;
+
+    onHealthChange?.(healthState);
+    window.dispatchEvent(new CustomEvent('spotify-health-change', { detail: healthState }));
+  }, [token, restoringSession, callbackError, agentPlaybackError, playerError, playerReady, onHealthChange]);
 
   // Send token to backend when using backend playback; re-send when iframe reloads
   useEffect(() => {

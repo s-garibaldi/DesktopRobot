@@ -522,6 +522,8 @@ const playSpotifyTrackTool = tool({
     if (!q) {
       return { success: false, message: 'Please specify a song or artist to play (e.g. "Bohemian Rhapsody" or "Blinding Lights The Weeknd").' };
     }
+    const preflightFailure = getSpotifyPlaybackPreflightFailure();
+    if (preflightFailure) return preflightFailure;
     try {
       const result = await searchSpotifyTrack(q);
       if (!result) {
@@ -579,6 +581,39 @@ async function searchAndGetQueueItem(query: string): Promise<{ uri: string; titl
   };
 }
 
+function getSpotifyPlaybackPreflightFailure(): { success: false; reason: string; message: string } | null {
+  const { spotify } = getMusicState();
+  if (spotify.authState === 'restoring') {
+    return {
+      success: false,
+      reason: 'spotify_restoring',
+      message: 'Spotify is still reconnecting. Try again in a moment.',
+    };
+  }
+  if (spotify.authState === 'expired') {
+    return {
+      success: false,
+      reason: 'spotify_session_expired',
+      message: spotify.message || 'Spotify session expired. Reconnect Spotify in the app.',
+    };
+  }
+  if (spotify.authState === 'not_connected') {
+    return {
+      success: false,
+      reason: 'spotify_not_connected',
+      message: spotify.message || 'Spotify is not connected. Connect Spotify in the app first.',
+    };
+  }
+  if (!spotify.canPlayback || spotify.deviceState !== 'ready') {
+    return {
+      success: false,
+      reason: 'spotify_device_not_ready',
+      message: spotify.message || 'Spotify playback is not ready yet. Open or reconnect Spotify in the app.',
+    };
+  }
+  return null;
+}
+
 // Add one or more songs to the queue; frontend MusicController starts playback if nothing is playing.
 const spotifyQueueAddTool = tool({
   name: 'spotify_queue_add',
@@ -602,6 +637,8 @@ const spotifyQueueAddTool = tool({
     if (list.length === 0) {
       return { success: false, message: 'Specify at least one song to add (e.g. "Blinding Lights" or "Song A, Song B").' };
     }
+    const preflightFailure = getSpotifyPlaybackPreflightFailure();
+    if (preflightFailure) return preflightFailure;
     const items: { uri: string; title: string; artist: string; albumArtUrl?: string; durationMs?: number }[] = [];
     for (const q of list) {
       const item = await searchAndGetQueueItem(q);
@@ -794,6 +831,8 @@ const spotifyQueuePlayTool = tool({
     if (status === 'playing') {
       return { success: true, message: 'Already playing.' };
     }
+    const preflightFailure = getSpotifyPlaybackPreflightFailure();
+    if (preflightFailure) return preflightFailure;
     if (status === 'paused' && nowPlaying) {
       postClientAction('music_resume');
       return { success: true, message: 'Resuming playback.' };
