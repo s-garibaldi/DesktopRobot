@@ -882,7 +882,7 @@ const spotifyQueuePlayTool = tool({
 // List or search backing tracks (no playback). Use when user asks what's available or wants to choose.
 const listBackingTracksTool = tool({
   name: 'list_backing_tracks',
-  description: 'List backing tracks in the library, optionally filtered by a natural language query (e.g. "blues", "in A minor", "around 90 bpm"). Use when the user asks what backing tracks are available, wants to browse options, or choose before playing. Does not play anything—use play_backing_track after they confirm.',
+  description: 'List backing tracks in the library, optionally filtered by a natural language query (e.g. "blues", "in A minor", "around 90 bpm"). Use this only when the user is browsing, comparing, asking what is available, or choosing. This tool does not start playback.',
   parameters: {
     type: 'object',
     properties: {
@@ -940,7 +940,7 @@ const listBackingTracksTool = tool({
 // Play backing track from library based on user's criteria
 const playBackingTrackTool = tool({
   name: 'play_backing_track',
-  description: 'Search the backing track library and play a track that matches the user\'s criteria (BPM, genre, key, scales). Call this for direct play requests like "play a blues backing track", "give me a rock backing track in E", "I want to jam in A minor", or after the user confirms a suggested option with "yes", "play it", "that one", "sounds good", or "go ahead". Do NOT call it when you are merely listing or discussing options without a request to start playback.',
+  description: 'Search the backing track library and start playback of the best matching track. Use this for any direct request to create/start/play/jam to a backing track, such as "play a blues backing track", "give me a rock backing track in E", "I want to jam in A minor", "start a jazz backing track", or after the user confirms a suggested option with "yes", "play it", "that one", "sounds good", or "go ahead". Do NOT use list_backing_tracks for direct play requests.',
   parameters: {
     type: 'object',
     properties: {
@@ -1036,7 +1036,7 @@ When the user asks to open, show, or start the tuner, use display_tuner. If they
 - Spotify tool policy: Spotify tools are available to you in this session. For any request to play, queue, skip, pause, resume, inspect, reorder, or clear Spotify music, you MUST call the matching Spotify tool or client action path before replying. Do not say you cannot access Spotify, cannot control Spotify, or do not have Spotify functions unless a Spotify tool call actually fails. If a Spotify tool fails, briefly explain the failure and suggest connecting Spotify in the app.
 - If the user asks to queue songs, add songs to the queue, play multiple songs, or play something next, do not answer with plain text first. Call 'spotify_queue_add'.
 - If Spotify is already playing or there is already something queued, and the user asks for another song without explicitly asking to replace the current song, treat that as a queue request and call 'spotify_queue_add'. Follow-up phrases like "do it again", "another one", "add another", "queue this too", "play this next", or "add this one too" should also use 'spotify_queue_add'.
-- Backing tracks: Use list_backing_tracks when the user asks what backing tracks are available, wants to browse, compare, or choose (e.g. "what do you have for blues?", "what backing tracks do I have?"). Use play_backing_track when the user directly asks to start one (e.g. "play a blues backing track", "give me a rock backing track in E", "I want to jam in A minor") or when they confirm a suggested option (e.g. "yes", "play it", "that one", "sounds good", "go ahead"). When suggesting a track, describe it and ask if they want it; once they say yes, use play_backing_track with the agreed description. The track loops until they say "close" or use voice controls.
+- Backing tracks: For any direct action request to play, start, generate, create, or jam to a backing track, you MUST call play_backing_track immediately. Examples: "play a blues backing track", "start a jazz backing track", "give me something in E minor", "I want to jam in A minor", "make me a rock backing track". Only use list_backing_tracks when the user is explicitly browsing, comparing, or asking what is available. If you suggest options first, then once they say yes, use play_backing_track with the agreed description. The track loops until they say "close" or use voice controls.
 - Use search_web to find current information, recent music news, new songs, artist information, or any up-to-date content
 - Use store_memory to save user preferences, favorite chords, musical interests, or skill level
 - Use retrieve_memories to recall information from previous conversations
@@ -1058,7 +1058,7 @@ When the user asks to open, show, or start the tuner, use display_tuner. If they
 - "Start a metronome" / "Play a metronome for rumba" / "Metronome at 120" / "Set metronome for waltz" → Always use set_metronome_bpm (you start it from here; do not refuse).
 - "Play Bohemian Rhapsody" (one song) → play_spotify_track. "Play A, B, and C" / "Play Song A then Song B" / "Queue these: X, Y, Z" → spotify_queue_add with queries "A, B, C" (or "Song A, Song B" etc). "What's in the queue?" / "What song is next?" / "What's coming up?" → spotify_queue_get. "Play the queue" → spotify_queue_play. "Remove the second song" / "Clear the queue" → spotify_queue_remove / spotify_queue_clear. If Spotify is already active, then "add another one", "queue this too", "play this next", or "do it again with [song]" → spotify_queue_add.
 - "Add Shape of You to the queue" / "Queue Shape of You next" / "Play Shape of You, then Blinding Lights" → spotify_queue_add, not say_aloud.
-- "What backing tracks do you have?" / "What do you have for blues?" / "What can I jam to?" → Use list_backing_tracks (with optional query like "blues"); then summarize 1–2 options and ask if they want one. "Play a blues backing track" / "Give me a rock backing track in E" / "I want to jam in A minor" / "Yes, play it" / "That one" → Use play_backing_track.
+- "What backing tracks do you have?" / "What do you have for blues?" / "What can I jam to?" → Use list_backing_tracks (with optional query like "blues"); then summarize 1–2 options and ask if they want one. "Play a blues backing track" / "Start a jazz backing track" / "Give me a rock backing track in E" / "I want to jam in A minor" / "Make me a backing track for blues in A" / "Yes, play it" / "That one" → Use play_backing_track immediately.
 - User says "I love jazz" → Use store_memory to save this preference
 - User asks "What's my favorite genre?" → Use retrieve_memories to recall
 
